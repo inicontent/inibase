@@ -9,7 +9,7 @@ import {
   renameSync,
 } from "fs";
 import { join, parse } from "path";
-import { createDecipheriv, createCipheriv, pbkdf2Sync } from "crypto";
+import { createDecipheriv, createCipheriv, scryptSync } from "crypto";
 import Utils from "./utils";
 import File from "./file";
 
@@ -150,44 +150,28 @@ export default class Inibase {
     return new Error(errorMessage);
   }
 
-  public encodeID(id: number, secretKey?: string): string {
+  public encodeID(id: number, secretKey?: string | number): string {
     if (!secretKey) secretKey = this.databasePath;
 
-    const cipher = createCipheriv(
-      "aes-256-cbc",
-      pbkdf2Sync(secretKey, "salt", 100000, 32, "sha256"),
-      pbkdf2Sync(secretKey, "salt", 10000, 16, "sha1")
-    );
+    const salt = scryptSync(secretKey.toString(), "salt", 32),
+      cipher = createCipheriv("aes-256-cbc", salt, salt.subarray(0, 16));
 
-    return Buffer.concat([
-      cipher.update(Buffer.from(id.toString())),
-      cipher.final(),
-    ]).toString("hex");
+    return cipher.update(id.toString(), "utf8", "hex") + cipher.final("hex");
   }
 
-  public decodeID(input: string, secretKey?: string): number {
+  public decodeID(input: string, secretKey?: string | number): number {
     if (!secretKey) secretKey = this.databasePath;
-    const decipher = createDecipheriv(
-      "aes-256-cbc",
-      pbkdf2Sync(secretKey, "salt", 100000, 32, "sha256"),
-      pbkdf2Sync(secretKey, "salt", 10000, 16, "sha1")
-    );
+    const salt = scryptSync(secretKey.toString(), "salt", 32),
+      decipher = createDecipheriv("aes-256-cbc", salt, salt.subarray(0, 16));
     return Number(
-      Buffer.concat([
-        decipher.update(Buffer.from(input as string, "hex")),
-        decipher.final(),
-      ])
+      decipher.update(input as string, "hex", "utf8") + decipher.final("utf8")
     );
   }
 
   public isValidID(input: any): boolean {
-    if (Array.isArray(input)) return input.every(this.isValidID);
-    try {
-      this.decodeID(input);
-      return true;
-    } catch (error) {
-      return false;
-    }
+    return Array.isArray(input)
+      ? input.every(this.isValidID)
+      : typeof input === "string" && input.length === 32;
   }
 
   public validateData(
@@ -292,28 +276,61 @@ export default class Inibase {
 
   public setTableSchema(tableName: string, schema: Schema): void {
     const encodeSchema = (schema: Schema) => {
-      let RETURN: any[][] = [],
-        index = 0;
-      for (const field of schema) {
-        if (!RETURN[index]) RETURN[index] = [];
-        RETURN[index].push(field.id ? this.decodeID(field.id as string) : null);
-        RETURN[index].push(field.key ?? null);
-        RETURN[index].push(field.required ?? null);
-        RETURN[index].push(field.type ?? null);
-        RETURN[index].push(
-          (field.type === "array" || field.type === "object") &&
-            field.children &&
+        let RETURN: any[][] = [],
+          index = 0;
+        for (const field of schema) {
+          if (!RETURN[index]) RETURN[index] = [];
+          RETURN[index].push(
+            field.id ? this.decodeID(field.id as string) : null
+          );
+          RETURN[index].push(field.key ?? null);
+          RETURN[index].push(field.required ?? null);
+          RETURN[index].push(field.type ?? null);
+          RETURN[index].push(
+            (field.type === "array" || field.type === "object") &&
+              field.children &&
+              Utils.isArrayOfObjects(field.children)
+              ? encodeSchema(field.children as Schema) ?? null
+              : null
+          );
+          index++;
+        }
+        return RETURN;
+      },
+      addIdToSchema = (schema: Schema, oldIndex: number = 0) =>
+        schema.map((field) => {
+          if (
+            (field.type === "array" || field.type === "object") &&
             Utils.isArrayOfObjects(field.children)
-            ? encodeSchema(field.children as Schema) ?? null
-            : null
-        );
-        index++;
-      }
-      return RETURN;
-    };
+          ) {
+            if (!field.id) {
+              oldIndex++;
+              field = { ...field, id: this.encodeID(oldIndex) };
+            } else oldIndex = this.decodeID(field.id as string);
+            field.children = addIdToSchema(field.children as Schema, oldIndex);
+            oldIndex += field.children.length;
+          } else if (field.id) oldIndex = this.decodeID(field.id as string);
+          else {
+            oldIndex++;
+            field = { ...field, id: this.encodeID(oldIndex) };
+          }
+          return field;
+        }),
+      findLastIdNumber = (schema: Schema): number => {
+        const lastField = schema[schema.length - 1];
+        if (lastField) {
+          if (
+            (lastField.type === "array" || lastField.type === "object") &&
+            Utils.isArrayOfObjects(lastField.children)
+          )
+            return findLastIdNumber(lastField.children as Schema);
+          else return this.decodeID(lastField.id as string);
+        } else return 0;
+      };
 
     // remove id from schema
     schema = schema.filter((field) => field.key !== "id");
+    schema = addIdToSchema(schema, findLastIdNumber(schema));
     const TablePath = join(this.databasePath, tableName),
       TableSchemaPath = join(TablePath, "schema.inib");
     if (!existsSync(TablePath)) mkdirSync(TablePath, { recursive: true });
