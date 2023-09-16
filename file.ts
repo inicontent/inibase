@@ -1,4 +1,4 @@
-import { createWriteStream, unlinkSync, renameSync } from "fs";
+import { createWriteStream, unlinkSync, renameSync, existsSync } from "fs";
 import { open } from "fs/promises";
 import { parse } from "path";
 import { ComparisonOperator, FieldType } from ".";
@@ -68,27 +68,38 @@ export const replace = async (
         string | boolean | number | null | (string | boolean | number | null)[]
       >
 ) => {
-  const file = await open(filePath),
-    writeStream = createWriteStream(`${filePath}.tmp`);
-  if (replacements instanceof Object) {
-    let lineCount = 0;
-    for await (const line of file.readLines()) {
-      lineCount++;
+  if (existsSync(filePath)) {
+    const file = await open(filePath, "w+"),
+      writeStream = file.createWriteStream();
+    if (typeof replacements === "object" && !Array.isArray(replacements)) {
+      let lineCount = 0;
+      for await (const line of file.readLines()) {
+        lineCount++;
+        writeStream.write(
+          (lineCount in replacements
+            ? Utils.encode(replacements[lineCount])
+            : line) + "\n"
+        );
+      }
+    } else
+      for await (const _line of file.readLines())
+        writeStream.write(Utils.encode(replacements) + "\n");
+
+    writeStream.end();
+  } else if (typeof replacements === "object" && !Array.isArray(replacements)) {
+    const file = await open(filePath, "w"),
+      writeStream = file.createWriteStream(),
+      largestLinesNumbers =
+        Math.max(...Object.keys(replacements).map(Number)) + 1;
+    for (let lineCount = 1; lineCount < largestLinesNumbers; lineCount++) {
       writeStream.write(
         (lineCount in replacements
           ? Utils.encode(replacements[lineCount])
-          : line) + "\n"
+          : "") + "\n"
       );
     }
-  } else {
-    for await (const line of file.readLines()) {
-      writeStream.write(Utils.encode(replacements) + "\n");
-    }
+    writeStream.end();
   }
-
-  writeStream.end();
-  unlinkSync(filePath);
-  renameSync(`${filePath}.tmp`, filePath);
 };
 
 export const remove = async (

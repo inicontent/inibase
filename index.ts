@@ -226,9 +226,10 @@ export default class Inibase {
             return (
               value === null ||
               (typeof value === "string" &&
-                /^((https?|www):\/\/)?[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]+(\/[^\s]*)?$/.test(
-                  value
-                ))
+                (value[0] === "#" ||
+                  /^((https?|www):\/\/)?[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]+(\/[^\s]*)?$/.test(
+                    value
+                  )))
             );
           case "table":
             // feat: check if id exists
@@ -1103,12 +1104,39 @@ export default class Inibase {
     this.validateData(data, schema, true);
     data = this.formatData(data, schema, true);
     if (!where) {
-      const pathesContents = this.joinPathesContents(
-        join(this.databasePath, tableName),
-        data
-      );
-      for (const [path, content] of Object.entries(pathesContents))
-        await File.replace(path, content);
+      if (Utils.isArrayOfObjects(data)) {
+        if (
+          !(data as Data[]).every(
+            (item) => item.hasOwnProperty("id") && this.isValidID(item.id)
+          )
+        )
+          throw this.throwError("INVALID_ID");
+        await this.put(
+          tableName,
+          data,
+          (data as Data[]).map((item) => item.id)
+        );
+      } else if (data.hasOwnProperty("id")) {
+        if (!this.isValidID((data as Data).id))
+          throw this.throwError("INVALID_ID", (data as Data).id);
+        await this.put(
+          tableName,
+          data,
+          this.decodeID((data as Data).id as string)
+        );
+      } else {
+        const pathesContents = this.joinPathesContents(
+          join(this.databasePath, tableName),
+          Utils.isArrayOfObjects(data)
+            ? (data as Data[]).map((item) => ({
+                ...item,
+                updated_at: new Date(),
+              }))
+            : { ...data, updated_at: new Date() }
+        );
+        for (const [path, content] of Object.entries(pathesContents))
+          await File.replace(path, content);
+      }
     } else if (this.isValidID(where)) {
       let Ids = where as string | string[];
       if (!Array.isArray(Ids)) Ids = [Ids];
@@ -1126,9 +1154,18 @@ export default class Inibase {
         throw this.throwError("INVALID_ID");
       await this.put(tableName, data, Object.keys(lineNumbers).map(Number));
     } else if (Utils.isNumber(where)) {
+      // where in this case, is the line(s) number(s) and not id(s)
       const pathesContents = Object.fromEntries(
         Object.entries(
-          this.joinPathesContents(join(this.databasePath, tableName), data)
+          this.joinPathesContents(
+            join(this.databasePath, tableName),
+            Utils.isArrayOfObjects(data)
+              ? (data as Data[]).map((item) => ({
+                  ...item,
+                  updated_at: new Date(),
+                }))
+              : { ...data, updated_at: new Date() }
+          )
         ).map(([key, value]) => [
           key,
           ([...(Array.isArray(where) ? where : [where])] as number[]).reduce(

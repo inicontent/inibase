@@ -45,7 +45,9 @@ export const isArrayOfObjects = (arr: any) => {
 };
 
 export const isObject = (obj: any) =>
-  obj != null && obj.constructor.name === "Object";
+  obj != null &&
+  (obj.constructor.name === "Object" ||
+    (typeof obj === "object" && !Array.isArray(obj)));
 
 export const deepMerge = (target: any, source: any): any => {
   for (const key in source) {
