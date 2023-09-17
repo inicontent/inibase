@@ -32,6 +32,7 @@ export type FieldType =
   | "url"
   | "table"
   | "object"
+  | "password"
   | "array";
 type Field =
   | {
@@ -453,6 +454,10 @@ export default class Inibase {
     } else if (!Array.isArray(data)) {
       let RETURN: Data = {};
       for (const field of schema) {
+        if (!data.hasOwnProperty(field.key)) {
+          RETURN[field.key] = this.getDefaultValue(field);
+          continue;
+        }
         if (formatOnlyAvailiableKeys && !data.hasOwnProperty(field.key))
           continue;
 
@@ -513,23 +518,33 @@ export default class Inibase {
             RETURN[field.key] = Utils.isNumber(data[field.key])
               ? parseFloat(data[field.key])
               : this.decodeID(data[field.key]);
-        } else if (data[field.key]) RETURN[field.key] = data[field.key];
-
-        if (!data.hasOwnProperty(field.key))
-          RETURN[field.key] = this.getDefaultValue(field.type);
+        } else if (field.type === "password")
+          RETURN[field.key] =
+            data[field.key].length === 161
+              ? data[field.key]
+              : Utils.hashPassword(data[field.key]);
+        else RETURN[field.key] = data[field.key];
       }
       return RETURN;
     } else return [];
   }
 
-  private getDefaultValue(
-    type: FieldType
-  ): boolean | null | Array<null> | object {
-    switch (type) {
+  private getDefaultValue(field: Field): any {
+    switch (field.type) {
       case "array":
-        return [];
+        return Utils.isArrayOfObjects(field.children)
+          ? [
+              this.getDefaultValue({
+                ...field,
+                type: "object",
+                children: field.children as Schema,
+              }),
+            ]
+          : [];
       case "object":
-        return {};
+        return Utils.combineObjects(
+          field.children.map((f) => ({ [f.key]: this.getDefaultValue(f) }))
+        );
       case "boolean":
         return false;
       default:
@@ -546,40 +561,30 @@ export default class Inibase {
         string,
         string | boolean | number | null | (string | boolean | number | null)[]
       > = {};
-      const combineObjects = (objectArray: Record<string, any>[]) => {
-        const combinedValues: Record<string, any> = {};
 
-        for (const obj of objectArray as any)
-          for (const key in obj)
-            if (obj.hasOwnProperty(key)) {
-              if (!combinedValues[key]) combinedValues[key] = [];
-              combinedValues[key].push(obj[key]);
-            }
-
-        return combinedValues;
-      };
-
-      if (Utils.isArrayOfObjects(data)) {
-        RETURN = combineObjects(
+      if (Utils.isArrayOfObjects(data))
+        RETURN = Utils.combineObjects(
           (data as Data[]).map((single_data) => CombineData(single_data))
         );
-      } else {
+      else {
         for (const [key, value] of Object.entries(data)) {
-          if (Array.isArray(value)) {
-            if (Utils.isArrayOfObjects(value)) {
+          if (Utils.isObject(value))
+            Object.assign(RETURN, CombineData(value, `${key}.`));
+          else if (Array.isArray(value)) {
+            if (Utils.isArrayOfObjects(value))
               Object.assign(
                 RETURN,
-                CombineData(combineObjects(value), (prefix ?? "") + key + ".*.")
+                CombineData(
+                  Utils.combineObjects(value),
+                  (prefix ?? "") + key + ".*."
+                )
               );
-            } else {
+            else
               RETURN[(prefix ?? "") + key] = Utils.encode(value) as
                 | boolean
                 | number
                 | string
                 | null;
-            }
-          } else if (typeof value === "object") {
-            Object.assign(RETURN, CombineData(value, `${key}.`));
           } else
             RETURN[(prefix ?? "") + key] = Utils.encode(value) as
               | boolean
@@ -687,9 +692,9 @@ export default class Inibase {
               if (!RETURN[index]) RETURN[index] = {};
               RETURN[index][field.key] = value
                 ? await this.get(field.key, value as number, options)
-                : this.getDefaultValue(field.type);
+                : this.getDefaultValue(field);
             }
-          } else if (Utils.isArrayOfObjects(field.children))
+          } else if (Utils.isArrayOfObjects(field.children)) {
             Object.entries(
               (await getItemsFromSchema(
                 path,
@@ -703,6 +708,7 @@ export default class Inibase {
               if (!RETURN[index]) RETURN[index] = {};
               RETURN[index][field.key] = item;
             });
+          }
         } else if (field.type === "table") {
           if (
             existsSync(join(this.databasePath, field.key)) &&
@@ -734,7 +740,7 @@ export default class Inibase {
               if (!RETURN[index]) RETURN[index] = {};
               RETURN[index][field.key] = value
                 ? await this.get(field.key, value as number, options)
-                : this.getDefaultValue(field.type);
+                : this.getDefaultValue(field);
             }
           }
         } else if (
@@ -753,7 +759,7 @@ export default class Inibase {
             )) ?? {}
           ).forEach(([index, item]) => {
             if (!RETURN[index]) RETURN[index] = {};
-            RETURN[index][field.key] = item ?? this.getDefaultValue(field.type);
+            RETURN[index][field.key] = item ?? this.getDefaultValue(field);
           });
         }
       }
@@ -1083,7 +1089,7 @@ export default class Inibase {
     for (const [path, content] of Object.entries(pathesContents))
       appendFileSync(
         path,
-        (Array.isArray(content) ? content.join("\n") : content) + "\n",
+        (Array.isArray(content) ? content.join("\n") : content ?? "") + "\n",
         "utf8"
       );
     return Utils.isArrayOfObjects(RETURN)
