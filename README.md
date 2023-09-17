@@ -431,7 +431,7 @@ type Schema = Field[];
   - [x] Table
   - [x] Object
   - [x] Array
-  - [ ] Password
+  - [x] Password
   - [ ] IP
 - [ ] Suggest [new feature +](https://github.com/inicontent/inibase/discussions/new?category=ideas)
 
