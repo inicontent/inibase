@@ -1,4 +1,8 @@
-# Inibase [![](https://img.shields.io/npm/dm/inibase.svg?style=flat)](https://www.npmjs.org/package/inibase) [![Node.js CI](https://github.com/inicontent/inibase/actions/workflows/node.js.yml/badge.svg)](https://github.com/inicontent/inibase/actions/workflows/node.js.yml) [![GitHub stars](https://img.shields.io/github/stars/inicontent/inibase?style=social)](https://github.com/inicontent/inibase)
+![Inibase banner](./.github/assets/banner.jpg)
+
+# Inibase
+
+[![npmjs](https://img.shields.io/npm/dm/inibase.svg?style=flat)](https://www.npmjs.org/package/inibase) [![Node.js Version](https://img.shields.io/badge/node-18.11.0-blue)](https://nodejs.org/) [![License](https://img.shields.io/github/license/inicontent/inibase.svg?style=flat&colorA=18181B&colorB=28CF8D)](./LICENSE) [![Activity](https://img.shields.io/github/commit-activity/m/inicontent/inibase)](https://github.com/inicontent/inibase/pulse) [![GitHub stars](https://img.shields.io/github/stars/inicontent/inibase?style=social)](https://github.com/inicontent/inibase)
 
 > File-based relational database, simple to use and can handle large data :fire:
 
@@ -45,13 +49,13 @@ Become a sponsor and have your company logo here 👉 [GitHub Sponsors](https://
 ## Install
 
 ```js
-// using npm
+// npm
 npm install inibase
 
-// using pnpm
+// pnpm
 pnpm add inibase
 
-// using yarn
+// yarn
 yarn add inibase
 ```
 
