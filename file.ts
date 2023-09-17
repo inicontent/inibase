@@ -177,14 +177,24 @@ export const search = async (
       | number
       | boolean
       | null
-      | (string | number | boolean | null)[]
+      | (string | number | boolean | null)[],
+    fieldType: FieldType
   ): boolean => {
     // check if not array or object
     switch (operator) {
       case "=":
-        return value === comparedAtValue;
+        return fieldType === "password" &&
+          typeof value === "string" &&
+          typeof comparedAtValue === "string"
+          ? Utils.comparePassword(value, comparedAtValue)
+          : value === comparedAtValue;
       case "!=":
-        return !handleComparisonOperator("=", value, comparedAtValue);
+        return !handleComparisonOperator(
+          "=",
+          value,
+          comparedAtValue,
+          fieldType
+        );
       case ">":
         return (
           value !== null && comparedAtValue !== null && value > comparedAtValue
@@ -214,7 +224,12 @@ export const search = async (
             comparedAtValue.includes(value))
         );
       case "![]":
-        return !handleComparisonOperator("[]", value, comparedAtValue);
+        return !handleComparisonOperator(
+          "[]",
+          value,
+          comparedAtValue,
+          fieldType
+        );
       case "*":
         return (
           value !== null &&
@@ -225,7 +240,12 @@ export const search = async (
           ).test(value.toString())
         );
       case "!*":
-        return !handleComparisonOperator("*", value, comparedAtValue);
+        return !handleComparisonOperator(
+          "*",
+          value,
+          comparedAtValue,
+          fieldType
+        );
       default:
         throw new Error(operator);
     }
@@ -257,18 +277,25 @@ export const search = async (
             handleComparisonOperator(
               single_operator,
               decodedLine,
-              comparedAtValue[index]
+              comparedAtValue[index],
+              fieldType
             )
           )) ||
           operator.every((single_operator, index) =>
             handleComparisonOperator(
               single_operator,
               decodedLine,
-              comparedAtValue[index]
+              comparedAtValue[index],
+              fieldType
             )
           ))) ||
         (!Array.isArray(operator) &&
-          handleComparisonOperator(operator, decodedLine, comparedAtValue)))
+          handleComparisonOperator(
+            operator,
+            decodedLine,
+            comparedAtValue,
+            fieldType
+          )))
     ) {
       foundItems++;
       if (offset && foundItems < offset) continue;
