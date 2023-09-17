@@ -1,4 +1,5 @@
 import { FieldType } from ".";
+import { scryptSync, randomBytes, timingSafeEqual } from "crypto";
 
 export const encode = (
   input: string | number | boolean | null | (string | number | boolean | null)[]
@@ -32,7 +33,7 @@ export const decode = (
       .replaceAll("\\n", "\n")
       .replaceAll("\\r", "\r") || null;
 
-  if (input === null) return null;
+  if (input === null || input === "") return null;
   if (!isNaN(Number(input)) && isFinite(Number(input)))
     return fieldType === "boolean" ? Boolean(Number(input)) : Number(input);
   return (input as string).includes(",")
@@ -60,10 +61,41 @@ export const deepMerge = (target: any, source: any): any => {
   return target;
 };
 
+export const combineObjects = (objectArray: Record<string, any>[]) => {
+  const combinedValues: Record<string, any> = {};
+
+  for (const obj of objectArray as any)
+    for (const key in obj)
+      if (!combinedValues.hasOwnProperty(key)) combinedValues[key] = obj[key];
+
+  return combinedValues;
+};
+
 export const isNumber = (input: any): boolean =>
   Array.isArray(input)
     ? input.every(isNumber)
     : !isNaN(parseFloat(input)) && !isNaN(input - 0);
+
+export const hashPassword = (password: string) => {
+  const salt = randomBytes(16).toString("hex");
+  const buf = scryptSync(password, salt, 64);
+  // return "161" length string
+  return `${buf.toString("hex")}.${salt}`;
+};
+
+export const comparePassword = (
+  storedPassword: string,
+  suppliedPassword: string
+) => {
+  // split() returns array
+  const [hashedPassword, salt] = storedPassword.split(".");
+  // we need to pass buffer values to timingSafeEqual
+  const hashedPasswordBuf = Buffer.from(hashedPassword, "hex");
+  // we hash the new sign-in password
+  const suppliedPasswordBuf = scryptSync(suppliedPassword, salt, 64);
+  // compare the new supplied password with the stored hashed password
+  return timingSafeEqual(hashedPasswordBuf, suppliedPasswordBuf);
+};
 
 export default class Utils {
   static encode = encode;
@@ -71,5 +103,8 @@ export default class Utils {
   static isNumber = isNumber;
   static isObject = isObject;
   static deepMerge = deepMerge;
+  static hashPassword = hashPassword;
+  static combineObjects = combineObjects;
+  static comparePassword = comparePassword;
   static isArrayOfObjects = isArrayOfObjects;
 }
