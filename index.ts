@@ -18,7 +18,6 @@ export { File, Utils };
 export type Data = {
   id?: number | string;
   [key: string]: any;
-  [id: number]: any;
   created_at?: Date;
   updated_at?: Date;
 };
@@ -667,8 +666,8 @@ export default class Inibase {
       schema: Schema,
       linesNumber: number[],
       prefix?: string
-    ): Promise<Data> => {
-      let RETURN: Data = {};
+    ) => {
+      let RETURN: Record<number, Data> = {};
       for (const field of schema) {
         if (
           (field.type === "array" || field.type === "object") &&
@@ -706,7 +705,12 @@ export default class Inibase {
               )) ?? {}
             ).forEach(([index, item]) => {
               if (!RETURN[index]) RETURN[index] = {};
-              RETURN[index][field.key] = item;
+              RETURN[index][field.key] =
+                field.type === "array" &&
+                Utils.isObject(item) &&
+                Object.values(item).every((i) => i === null)
+                  ? []
+                  : item;
             });
           }
         } else if (field.type === "table") {
@@ -1054,7 +1058,11 @@ export default class Inibase {
 
   public async post(
     tableName: string,
-    data: Data | Data[]
+    data: Data | Data[],
+    options: Options = {
+      page: 1,
+      per_page: 15,
+    }
   ): Promise<Data | Data[] | null> {
     const schema = this.getTableSchema(tableName);
     let RETURN: Data | Data[] | null | undefined;
@@ -1092,12 +1100,14 @@ export default class Inibase {
         (Array.isArray(content) ? content.join("\n") : content ?? "") + "\n",
         "utf8"
       );
-    return Utils.isArrayOfObjects(RETURN)
-      ? RETURN.map((data: Data) => {
-          data.id = this.encodeID(data.id as number);
-          return data;
-        })
-      : { ...RETURN, id: this.encodeID((RETURN as Data).id as number) };
+
+    return this.get(
+      tableName,
+      Utils.isArrayOfObjects(RETURN)
+        ? RETURN.map((data: Data) => data.id)
+        : ((RETURN as Data).id as number),
+      options
+    );
   }
 
   public async put(
