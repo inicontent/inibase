@@ -1,4 +1,4 @@
-![Inibase banner](./.github/assets/banner.jpg)
+[![Inibase banner](./.github/assets/banner.jpg)](https://github.com/inicontent/inibase)
 
 # Inibase :pencil:
 
