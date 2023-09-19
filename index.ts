@@ -79,12 +79,22 @@ type pageInfo = {
 
 export type Criteria =
   | {
-      [logic in "and" | "or"]?: Criteria;
+      [logic in "and" | "or"]?: Criteria | (string | number | boolean | null)[];
     }
   | {
       [key: string]: string | number | boolean | Criteria;
     }
   | null;
+
+declare global {
+  type Entries<T> = {
+    [K in keyof T]: [K, T[K]];
+  }[keyof T][];
+
+  interface ObjectConstructor {
+    entries<T extends object>(o: T): Entries<T>;
+  }
+}
 
 export default class Inibase {
   public database: string;
@@ -563,7 +573,7 @@ export default class Inibase {
           (data as Data[]).map((single_data) => CombineData(single_data))
         );
       else {
-        for (const [key, value] of Object.entries(data)) {
+        for (const [key, value] of Object.entries(data as Data)) {
           if (Utils.isObject(value))
             Object.assign(RETURN, CombineData(value, `${key}.`));
           else if (Array.isArray(value)) {
@@ -809,7 +819,7 @@ export default class Inibase {
         )) ?? {}
       );
       if (RETURN.length && !Array.isArray(where)) RETURN = RETURN[0];
-    } else if (typeof where === "object" && !Array.isArray(where)) {
+    } else if (Utils.isObject(where)) {
       // Criteria
       const FormatObjectCriteriaValue = (
         value: string
@@ -856,11 +866,14 @@ export default class Inibase {
       const applyCriteria = async (
         criteria?: Criteria,
         allTrue?: boolean
-      ): Promise<Data | null> => {
-        let RETURN: Data = {};
+      ): Promise<Record<number, Data> | null> => {
+        let RETURN: Record<number, Data> = {};
         if (!criteria) return null;
-        if (criteria.and && typeof criteria.and === "object") {
-          const searchResult = await applyCriteria(criteria.and, true);
+        if (criteria.and && Utils.isObject(criteria.and)) {
+          const searchResult = await applyCriteria(
+            criteria.and as Criteria,
+            true
+          );
           if (searchResult) {
             RETURN = Utils.deepMerge(
               RETURN,
@@ -876,108 +889,112 @@ export default class Inibase {
           } else return null;
         }
 
-        if (criteria.or && typeof criteria.or === "object") {
-          const searchResult = await applyCriteria(criteria.or);
+        if (criteria.or && Utils.isObject(criteria.or)) {
+          const searchResult = await applyCriteria(criteria.or as Criteria);
           delete criteria.or;
           if (searchResult) RETURN = Utils.deepMerge(RETURN, searchResult);
         }
 
-        let index = -1;
-        for (const [key, value] of Object.entries(criteria)) {
-          index++;
-          if (
-            allTrue &&
-            index > 0 &&
-            (!Object.keys(RETURN).length ||
-              Object.values(RETURN).every(
-                (item) => Object.keys(item).length >= index
-              ))
-          )
-            break;
-          let searchOperator:
-              | ComparisonOperator
-              | ComparisonOperator[]
-              | undefined = undefined,
-            searchComparedAtValue:
-              | string
-              | number
-              | boolean
-              | null
-              | (string | number | boolean | null)[]
-              | undefined = undefined,
-            searchLogicalOperator: "and" | "or" | undefined = undefined;
-          if (typeof value === "object") {
-            if (value?.or && Array.isArray(value.or)) {
-              const searchCriteria = value.or
-                .map(
-                  (
-                    single_or
-                  ): [ComparisonOperator, string | number | boolean | null] =>
-                    typeof single_or === "string"
-                      ? FormatObjectCriteriaValue(single_or)
-                      : ["=", single_or]
+        if (Object.keys(criteria).length > 0) {
+          allTrue = true;
+          let index = -1;
+          for (const [key, value] of Object.entries(criteria)) {
+            index++;
+            let searchOperator:
+                | ComparisonOperator
+                | ComparisonOperator[]
+                | undefined = undefined,
+              searchComparedAtValue:
+                | string
+                | number
+                | boolean
+                | null
+                | (string | number | boolean | null)[]
+                | undefined = undefined,
+              searchLogicalOperator: "and" | "or" | undefined = undefined;
+            if (Utils.isObject(value)) {
+              if (
+                (value as Criteria)?.or &&
+                Array.isArray((value as Criteria).or)
+              ) {
+                const searchCriteria = (
+                  (value as Criteria).or as (string | number | boolean)[]
                 )
-                .filter((a) => a) as [ComparisonOperator, string | number][];
-              if (searchCriteria.length > 0) {
-                searchOperator = searchCriteria.map(
-                  (single_or) => single_or[0]
-                );
-                searchComparedAtValue = searchCriteria.map(
-                  (single_or) => single_or[1]
-                );
-                searchLogicalOperator = "or";
+                  .map(
+                    (
+                      single_or
+                    ): [ComparisonOperator, string | number | boolean | null] =>
+                      typeof single_or === "string"
+                        ? FormatObjectCriteriaValue(single_or)
+                        : ["=", single_or]
+                  )
+                  .filter((a) => a) as [ComparisonOperator, string | number][];
+                if (searchCriteria.length > 0) {
+                  searchOperator = searchCriteria.map(
+                    (single_or) => single_or[0]
+                  );
+                  searchComparedAtValue = searchCriteria.map(
+                    (single_or) => single_or[1]
+                  );
+                  searchLogicalOperator = "or";
+                }
+                delete (value as Criteria).or;
               }
-              delete value.or;
-            }
-            if (value?.and && Array.isArray(value.and)) {
-              const searchCriteria = value.and
+              if (
+                (value as Criteria)?.and &&
+                Array.isArray((value as Criteria).and)
+              ) {
+                const searchCriteria = (
+                  (value as Criteria).and as (string | number | boolean)[]
+                )
+                  .map(
+                    (
+                      single_and
+                    ): [ComparisonOperator, string | number | boolean | null] =>
+                      typeof single_and === "string"
+                        ? FormatObjectCriteriaValue(single_and)
+                        : ["=", single_and]
+                  )
+                  .filter((a) => a) as [ComparisonOperator, string | number][];
+                if (searchCriteria.length > 0) {
+                  searchOperator = searchCriteria.map(
+                    (single_and) => single_and[0]
+                  );
+                  searchComparedAtValue = searchCriteria.map(
+                    (single_and) => single_and[1]
+                  );
+                  searchLogicalOperator = "and";
+                }
+                delete (value as Criteria).and;
+              }
+            } else if (Array.isArray(value)) {
+              const searchCriteria = value
                 .map(
                   (
-                    single_and
+                    single
                   ): [ComparisonOperator, string | number | boolean | null] =>
-                    typeof single_and === "string"
-                      ? FormatObjectCriteriaValue(single_and)
-                      : ["=", single_and]
+                    typeof single === "string"
+                      ? FormatObjectCriteriaValue(single)
+                      : ["=", single]
                 )
                 .filter((a) => a) as [ComparisonOperator, string | number][];
               if (searchCriteria.length > 0) {
-                searchOperator = searchCriteria.map(
-                  (single_and) => single_and[0]
-                );
+                searchOperator = searchCriteria.map((single) => single[0]);
                 searchComparedAtValue = searchCriteria.map(
-                  (single_and) => single_and[1]
+                  (single) => single[1]
                 );
                 searchLogicalOperator = "and";
               }
-              delete value.and;
+            } else if (typeof value === "string") {
+              const ComparisonOperatorValue = FormatObjectCriteriaValue(value);
+              if (ComparisonOperatorValue) {
+                searchOperator = ComparisonOperatorValue[0];
+                searchComparedAtValue = ComparisonOperatorValue[1];
+              }
+            } else {
+              searchOperator = "=";
+              searchComparedAtValue = value as number | boolean;
             }
-          } else if (Array.isArray(value)) {
-            const searchCriteria = value
-              .map(
-                (
-                  single
-                ): [ComparisonOperator, string | number | boolean | null] =>
-                  typeof single === "string"
-                    ? FormatObjectCriteriaValue(single)
-                    : ["=", single]
-              )
-              .filter((a) => a) as [ComparisonOperator, string | number][];
-            if (searchCriteria.length > 0) {
-              searchOperator = searchCriteria.map((single) => single[0]);
-              searchComparedAtValue = searchCriteria.map((single) => single[1]);
-              searchLogicalOperator = "and";
-            }
-          } else if (typeof value === "string") {
-            const ComparisonOperatorValue = FormatObjectCriteriaValue(value);
-            if (ComparisonOperatorValue) {
-              searchOperator = ComparisonOperatorValue[0];
-              searchComparedAtValue = ComparisonOperatorValue[1];
-            }
-          } else {
-            searchOperator = "=";
-            searchComparedAtValue = value;
-          }
-          if (searchOperator && searchComparedAtValue) {
             const [searchResult, totlaItems] = await File.search(
               join(
                 this.databasePath,
@@ -997,12 +1014,20 @@ export default class Inibase {
               if (!this.pageInfoArray[key]) this.pageInfoArray[key] = {};
               this.pageInfoArray[key].total_items = totlaItems;
             }
+            if (allTrue && index > 0) {
+              if (!Object.keys(RETURN).length) RETURN = {};
+              RETURN = Object.fromEntries(
+                Object.entries(RETURN).filter(
+                  ([_index, item]) => Object.keys(item).length > index
+                )
+              );
+              if (!Object.keys(RETURN).length) RETURN = {};
+            }
           }
         }
-        return Object.keys(RETURN).length > 0 ? RETURN : null;
+        return Object.keys(RETURN).length ? RETURN : null;
       };
-
-      RETURN = await applyCriteria(where);
+      RETURN = await applyCriteria(where as Criteria);
       if (RETURN) {
         if (onlyLinesNumbers) return Object.keys(RETURN).map(Number);
         const alreadyExistsColumns = Object.keys(Object.values(RETURN)[0]).map(
@@ -1040,17 +1065,21 @@ export default class Inibase {
         );
       }
     }
-    return RETURN
-      ? Utils.isArrayOfObjects(RETURN)
-        ? (RETURN as Data[]).map((data: Data) => {
-            data.id = this.encodeID(data.id as number);
-            return data;
-          })
-        : {
-            ...(RETURN as Data),
-            id: this.encodeID((RETURN as Data).id as number),
-          }
-      : null;
+    if (
+      !RETURN ||
+      (Utils.isObject(RETURN) && !Object.keys(RETURN).length) ||
+      (Array.isArray(RETURN) && !RETURN.length)
+    )
+      return null;
+    return Utils.isArrayOfObjects(RETURN)
+      ? (RETURN as Data[]).map((data: Data) => {
+          data.id = this.encodeID(data.id as number);
+          return data;
+        })
+      : {
+          ...(RETURN as Data),
+          id: this.encodeID((RETURN as Data).id as number),
+        };
   }
 
   public async post(
