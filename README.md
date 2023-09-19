@@ -1,6 +1,6 @@
 ![Inibase banner](./.github/assets/banner.jpg)
 
-# Inibase
+# Inibase :pencil:
 
 [![npmjs](https://img.shields.io/npm/dm/inibase.svg?style=flat)](https://www.npmjs.org/package/inibase) [![Node.js Version](https://img.shields.io/badge/node-18.11.0-blue)](https://nodejs.org/) [![License](https://img.shields.io/github/license/inicontent/inibase.svg?style=flat&colorA=18181B&colorB=28CF8D)](./LICENSE) [![Activity](https://img.shields.io/github/commit-activity/m/inicontent/inibase)](https://github.com/inicontent/inibase/pulse) [![GitHub stars](https://img.shields.io/github/stars/inicontent/inibase?style=social)](https://github.com/inicontent/inibase)
 
@@ -8,12 +8,13 @@
 
 ## Features
 
-- **Lightweight** 🪶 (~50kb)
+- **Lightweight** 🪶 (~60kb)
 - **Minimalist** :white_circle:
 - **TypeScript** :large_blue_diamond:
 - **Super-Fast** :turtle:
 - **Suitable for large data** :page_with_curl:
 - **Safe** :lock:
+- **Easy to use** :hourglass:
 - **...** and much more :rocket:
 
 ## Usage
@@ -54,14 +55,16 @@ npm install inibase
 
 // pnpm
 pnpm add inibase
-
-// yarn
-yarn add inibase
 ```
+
+## How it works?
+
+To semplify the idea, each database has tables, each table has columns, each column will be stored in a seperated file. When POSTing new data, it will be appended to each columns file as new line. When GETing data, the file will be readed line-by-line so it can handle large data (without consuming a lot of resources)
 
 ## Examples
 
-#### POST
+<details>
+<summary>POST</summary>
 
 ```js
 import Inibase from "inibase";
@@ -268,7 +271,10 @@ const product = await db.post("product", product_data);
 // ]
 ```
 
-#### GET
+</details>
+
+<details>
+<summary>GET</summary>
 
 ```js
 import Inibase from "inibase";
@@ -338,7 +344,10 @@ const users = await db.get("user", { favoriteFoods: "[]Pizza" });
 // ]
 ```
 
-#### PUT
+</details>
+
+<details>
+<summary>PUT</summary>
 
 ```js
 import Inibase from "inibase";
@@ -354,7 +363,10 @@ await db.put("user", { isActive: false }, "1d88385d4b1581f8fb059334dec30f4c");
 await db.put("user", { isActive: false }, { isActive: true });
 ```
 
-#### DELETE
+</details>
+
+<details>
+<summary>DELETE</summary>
 
 ```js
 import Inibase from "inibase";
@@ -370,11 +382,33 @@ await db.put("user", "1d88385d4b1581f8fb059334dec30f4c");
 await db.put("user", { isActive: false });
 ```
 
+</details>
+
 ## Typescript
 
-#### Schema
+<details>
+<summary>Schema</summary>
 
 ```js
+type Schema = Field[];
+type Field = {
+  id?: string | number | null | undefined,
+  key: string,
+  required?: boolean,
+} & (
+  | {
+      type: Exclude<FieldType, "array" | "object">,
+      required?: boolean,
+    }
+  | {
+      type: "array",
+      children: FieldType | FieldType[] | Schema,
+    }
+  | {
+      type: "object",
+      children: Schema,
+    }
+);
 type FieldType =
   | "string"
   | "number"
@@ -384,31 +418,25 @@ type FieldType =
   | "url"
   | "table"
   | "object"
-  | "array";
-type Field =
-  | {
-      id?: string | number | null | undefined,
-      key: string,
-      type: Exclude<FieldType, "array" | "object">,
-      required?: boolean,
-    }
-  | {
-      id?: string | number | null | undefined,
-      key: string,
-      type: "array",
-      required?: boolean,
-      children: FieldType | FieldType[] | Schema,
-    }
-  | {
-      id?: string | number | null | undefined,
-      key: string,
-      type: "object",
-      required?: boolean,
-      children: Schema,
-    };
-
-type Schema = Field[];
+  | "array"
+  | "password";
 ```
+
+</details>
+
+<details>
+<summary>Data</summary>
+
+```js
+type Data = {
+  id?: number | string,
+  [key: string]: any,
+  created_at?: Date,
+  updated_at?: Date,
+};
+```
+
+</details>
 
 ## Roadmap
 
@@ -433,7 +461,10 @@ type Schema = Field[];
   - [x] Array
   - [x] Password
   - [ ] IP
-- [ ] Suggest [new feature +](https://github.com/inicontent/inibase/discussions/new?category=ideas)
+- [ ] Features:
+  - [ ] Encryption
+  - [ ] Compress data
+  - [ ] Suggest [new feature +](https://github.com/inicontent/inibase/discussions/new?category=ideas)
 
 ## License
 
