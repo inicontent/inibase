@@ -183,11 +183,17 @@ export const search = async (
     // check if not array or object
     switch (operator) {
       case "=":
-        return fieldType === "password" &&
-          typeof value === "string" &&
-          typeof comparedAtValue === "string"
-          ? Utils.comparePassword(value, comparedAtValue)
-          : value === comparedAtValue;
+        switch (fieldType) {
+          case "password":
+            return typeof value === "string" &&
+              typeof comparedAtValue === "string"
+              ? Utils.comparePassword(value, comparedAtValue)
+              : false;
+          case "boolean":
+            return Number(value) - Number(comparedAtValue) === 0;
+          default:
+            return value === comparedAtValue;
+        }
       case "!=":
         return !handleComparisonOperator(
           "=",
@@ -268,8 +274,7 @@ export const search = async (
     lineCount++;
     const decodedLine = Utils.decode(line, fieldType);
     if (
-      decodedLine &&
-      ((Array.isArray(operator) &&
+      (Array.isArray(operator) &&
         Array.isArray(comparedAtValue) &&
         ((logicalOperator &&
           logicalOperator === "or" &&
@@ -289,13 +294,13 @@ export const search = async (
               fieldType
             )
           ))) ||
-        (!Array.isArray(operator) &&
-          handleComparisonOperator(
-            operator,
-            decodedLine,
-            comparedAtValue,
-            fieldType
-          )))
+      (!Array.isArray(operator) &&
+        handleComparisonOperator(
+          operator,
+          decodedLine,
+          comparedAtValue,
+          fieldType
+        ))
     ) {
       foundItems++;
       if (offset && foundItems < offset) continue;
