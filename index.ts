@@ -31,29 +31,26 @@ export type FieldType =
   | "url"
   | "table"
   | "object"
-  | "password"
-  | "array";
-type Field =
+  | "array"
+  | "password";
+type Field = {
+  id?: string | number | null | undefined;
+  key: string;
+  required?: boolean;
+} & (
   | {
-      id?: string | number | null | undefined;
-      key: string;
       type: Exclude<FieldType, "array" | "object">;
       required?: boolean;
     }
   | {
-      id?: string | number | null | undefined;
-      key: string;
       type: "array";
-      required?: boolean;
       children: FieldType | FieldType[] | Schema;
     }
   | {
-      id?: string | number | null | undefined;
-      key: string;
       type: "object";
-      required?: boolean;
       children: Schema;
-    };
+    }
+);
 
 export type Schema = Field[];
 
