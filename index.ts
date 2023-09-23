@@ -9,7 +9,6 @@ import {
   renameSync,
 } from "fs";
 import { join, parse } from "path";
-import { createDecipheriv, createCipheriv, scryptSync } from "crypto";
 import Utils from "./utils";
 import File from "./file";
 
