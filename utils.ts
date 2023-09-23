@@ -1,5 +1,11 @@
 import { FieldType } from ".";
-import { scryptSync, randomBytes, timingSafeEqual } from "crypto";
+import {
+  scryptSync,
+  randomBytes,
+  timingSafeEqual,
+  createDecipheriv,
+  createCipheriv,
+} from "crypto";
 
 export const encode = (
   input: string | number | boolean | null | (string | number | boolean | null)[]
@@ -97,11 +103,35 @@ export const comparePassword = (
   return timingSafeEqual(hashedPasswordBuf, suppliedPasswordBuf);
 };
 
+export const encodeID = (id: number, secretKey: string | number): string => {
+  const salt = scryptSync(secretKey.toString(), "salt", 32),
+    cipher = createCipheriv("aes-256-cbc", salt, salt.subarray(0, 16));
+
+  return cipher.update(id.toString(), "utf8", "hex") + cipher.final("hex");
+};
+
+export const decodeID = (input: string, secretKey: string | number): number => {
+  const salt = scryptSync(secretKey.toString(), "salt", 32),
+    decipher = createDecipheriv("aes-256-cbc", salt, salt.subarray(0, 16));
+  return Number(
+    decipher.update(input as string, "hex", "utf8") + decipher.final("utf8")
+  );
+};
+
+export const isValidID = (input: any): boolean => {
+  return Array.isArray(input)
+    ? input.every(isValidID)
+    : typeof input === "string" && input.length === 32;
+};
+
 export default class Utils {
   static encode = encode;
   static decode = decode;
+  static encodeID = encodeID;
+  static decodeID = decodeID;
   static isNumber = isNumber;
   static isObject = isObject;
+  static isValidID = isValidID;
   static deepMerge = deepMerge;
   static hashPassword = hashPassword;
   static combineObjects = combineObjects;

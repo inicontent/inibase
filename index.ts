@@ -157,30 +157,6 @@ export default class Inibase {
     return new Error(errorMessage);
   }
 
-  public encodeID(id: number, secretKey?: string | number): string {
-    if (!secretKey) secretKey = this.databasePath;
-
-    const salt = scryptSync(secretKey.toString(), "salt", 32),
-      cipher = createCipheriv("aes-256-cbc", salt, salt.subarray(0, 16));
-
-    return cipher.update(id.toString(), "utf8", "hex") + cipher.final("hex");
-  }
-
-  public decodeID(input: string, secretKey?: string | number): number {
-    if (!secretKey) secretKey = this.databasePath;
-    const salt = scryptSync(secretKey.toString(), "salt", 32),
-      decipher = createDecipheriv("aes-256-cbc", salt, salt.subarray(0, 16));
-    return Number(
-      decipher.update(input as string, "hex", "utf8") + decipher.final("utf8")
-    );
-  }
-
-  public isValidID(input: any): boolean {
-    return Array.isArray(input)
-      ? input.every(this.isValidID)
-      : typeof input === "string" && input.length === 32;
-  }
-
   public validateData(
     data: Data | Data[],
     schema: Schema,
@@ -248,16 +224,17 @@ export default class Inibase {
                   value.every(
                     (element) =>
                       element.hasOwnProperty("id") &&
-                      this.isValidID((element as Data).id)
+                      Utils.isValidID((element as Data).id)
                   )) ||
                   value.every(Utils.isNumber) ||
-                  this.isValidID(value))
+                  Utils.isValidID(value))
               );
             else if (Utils.isObject(value))
               return (
-                value.hasOwnProperty("id") && this.isValidID((value as Data).id)
+                value.hasOwnProperty("id") &&
+                Utils.isValidID((value as Data).id)
               );
-            else return Utils.isNumber(value) || this.isValidID(value);
+            else return Utils.isNumber(value) || Utils.isValidID(value);
           default:
             return true;
         }
@@ -289,7 +266,9 @@ export default class Inibase {
         for (const field of schema) {
           if (!RETURN[index]) RETURN[index] = [];
           RETURN[index].push(
-            field.id ? this.decodeID(field.id as string) : null
+            field.id
+              ? Utils.decodeID(field.id as string, this.databasePath)
+              : null
           );
           RETURN[index].push(field.key ?? null);
           RETURN[index].push(field.required ?? null);
@@ -313,14 +292,22 @@ export default class Inibase {
           ) {
             if (!field.id) {
               oldIndex++;
-              field = { ...field, id: this.encodeID(oldIndex) };
-            } else oldIndex = this.decodeID(field.id as string);
+              field = {
+                ...field,
+                id: Utils.encodeID(oldIndex, this.databasePath),
+              };
+            } else
+              oldIndex = Utils.decodeID(field.id as string, this.databasePath);
             field.children = addIdToSchema(field.children as Schema, oldIndex);
             oldIndex += field.children.length;
-          } else if (field.id) oldIndex = this.decodeID(field.id as string);
+          } else if (field.id)
+            oldIndex = Utils.decodeID(field.id as string, this.databasePath);
           else {
             oldIndex++;
-            field = { ...field, id: this.encodeID(oldIndex) };
+            field = {
+              ...field,
+              id: Utils.encodeID(oldIndex, this.databasePath),
+            };
           }
           return field;
         }),
@@ -332,7 +319,7 @@ export default class Inibase {
             Utils.isArrayOfObjects(lastField.children)
           )
             return findLastIdNumber(lastField.children as Schema);
-          else return this.decodeID(lastField.id as string);
+          else return Utils.decodeID(lastField.id as string, this.databasePath);
         } else return 0;
       };
 
@@ -357,11 +344,9 @@ export default class Inibase {
                     (field.type === "array" ? ".*." : ".")
                 )
               );
-            } else if (this.isValidID(field.id))
-              RETURN[this.decodeID(field.id)] = File.encodeFileName(
-                (prefix ?? "") + field.key,
-                "inib"
-              );
+            } else if (Utils.isValidID(field.id))
+              RETURN[Utils.decodeID(field.id, this.databasePath)] =
+                File.encodeFileName((prefix ?? "") + field.key, "inib");
           }
           return RETURN;
         },
@@ -403,7 +388,7 @@ export default class Inibase {
             ? decodeSchema(field)
             : Object.fromEntries(
                 Object.entries({
-                  id: this.encodeID(field[0]),
+                  id: Utils.encodeID(field[0], this.databasePath),
                   key: field[1],
                   required: field[2],
                   type: field[3],
@@ -428,7 +413,12 @@ export default class Inibase {
       );
     }
     return [
-      { id: this.encodeID(0), key: "id", type: "number", required: true },
+      {
+        id: Utils.encodeID(0, this.databasePath),
+        key: "id",
+        type: "number",
+        required: true,
+      },
       ...(this.cache.get(TableSchemaPath) as unknown as Schema),
     ];
   }
@@ -477,26 +467,28 @@ export default class Inibase {
                       data[field.key].every(
                         (item: any) =>
                           item.hasOwnProperty("id") &&
-                          (this.isValidID(item.id) || Utils.isNumber(item.id))
+                          (Utils.isValidID(item.id) || Utils.isNumber(item.id))
                       )
                     )
                       data[field.key].map((item: any) =>
                         Utils.isNumber(item.id)
                           ? parseFloat(item.id)
-                          : this.decodeID(item.id)
+                          : Utils.decodeID(item.id, this.databasePath)
                       );
                   } else if (
-                    this.isValidID(data[field.key]) ||
+                    Utils.isValidID(data[field.key]) ||
                     Utils.isNumber(data[field.key])
                   )
                     RETURN[field.key] = data[field.key].map(
                       (item: number | string) =>
                         Utils.isNumber(item)
                           ? parseFloat(item as string)
-                          : this.decodeID(item as string)
+                          : Utils.decodeID(item as string, this.databasePath)
                     );
-                } else if (this.isValidID(data[field.key]))
-                  RETURN[field.key] = [this.decodeID(data[field.key])];
+                } else if (Utils.isValidID(data[field.key]))
+                  RETURN[field.key] = [
+                    Utils.decodeID(data[field.key], this.databasePath),
+                  ];
                 else if (Utils.isNumber(data[field.key]))
                   RETURN[field.key] = [parseFloat(data[field.key])];
               } else if (data.hasOwnProperty(field.key))
@@ -511,19 +503,19 @@ export default class Inibase {
           if (Utils.isObject(data[field.key])) {
             if (
               data[field.key].hasOwnProperty("id") &&
-              (this.isValidID(data[field.key].id) ||
+              (Utils.isValidID(data[field.key].id) ||
                 Utils.isNumber(data[field.key]))
             )
               RETURN[field.key] = Utils.isNumber(data[field.key].id)
                 ? parseFloat(data[field.key].id)
-                : this.decodeID(data[field.key].id);
+                : Utils.decodeID(data[field.key].id, this.databasePath);
           } else if (
-            this.isValidID(data[field.key]) ||
+            Utils.isValidID(data[field.key]) ||
             Utils.isNumber(data[field.key])
           )
             RETURN[field.key] = Utils.isNumber(data[field.key])
               ? parseFloat(data[field.key])
-              : this.decodeID(data[field.key]);
+              : Utils.decodeID(data[field.key], this.databasePath);
         } else if (field.type === "password")
           RETURN[field.key] =
             data[field.key].length === 161
@@ -791,7 +783,7 @@ export default class Inibase {
           )
         )
       );
-    } else if (this.isValidID(where) || Utils.isNumber(where)) {
+    } else if (Utils.isValidID(where) || Utils.isNumber(where)) {
       let Ids = where as string | number | (string | number)[];
       if (!Array.isArray(Ids)) Ids = [Ids];
       const idFilePath = join(this.databasePath, tableName, "id.inib");
@@ -802,7 +794,7 @@ export default class Inibase {
         "[]",
         Utils.isNumber(Ids)
           ? Ids.map((id) => parseFloat(id as string))
-          : Ids.map((id) => this.decodeID(id as string)),
+          : Ids.map((id) => Utils.decodeID(id as string, this.databasePath)),
         undefined,
         Ids.length
       );
@@ -1073,12 +1065,12 @@ export default class Inibase {
       return null;
     return Utils.isArrayOfObjects(RETURN)
       ? (RETURN as Data[]).map((data: Data) => {
-          data.id = this.encodeID(data.id as number);
+          data.id = Utils.encodeID(data.id as number, this.databasePath);
           return data;
         })
       : {
           ...(RETURN as Data),
-          id: this.encodeID((RETURN as Data).id as number),
+          id: Utils.encodeID((RETURN as Data).id as number, this.databasePath),
         };
   }
 
@@ -1149,7 +1141,7 @@ export default class Inibase {
       if (Utils.isArrayOfObjects(data)) {
         if (
           !(data as Data[]).every(
-            (item) => item.hasOwnProperty("id") && this.isValidID(item.id)
+            (item) => item.hasOwnProperty("id") && Utils.isValidID(item.id)
           )
         )
           throw this.throwError("INVALID_ID");
@@ -1159,12 +1151,12 @@ export default class Inibase {
           (data as Data[]).map((item) => item.id)
         );
       } else if (data.hasOwnProperty("id")) {
-        if (!this.isValidID((data as Data).id))
+        if (!Utils.isValidID((data as Data).id))
           throw this.throwError("INVALID_ID", (data as Data).id);
         await this.put(
           tableName,
           data,
-          this.decodeID((data as Data).id as string)
+          Utils.decodeID((data as Data).id as string, this.databasePath)
         );
       } else {
         const pathesContents = this.joinPathesContents(
@@ -1179,7 +1171,7 @@ export default class Inibase {
         for (const [path, content] of Object.entries(pathesContents))
           await File.replace(path, content);
       }
-    } else if (this.isValidID(where)) {
+    } else if (Utils.isValidID(where)) {
       let Ids = where as string | string[];
       if (!Array.isArray(Ids)) Ids = [Ids];
       const idFilePath = join(this.databasePath, tableName, "id.inib");
@@ -1188,7 +1180,7 @@ export default class Inibase {
         idFilePath,
         "number",
         "[]",
-        Ids.map((id) => this.decodeID(id)),
+        Ids.map((id) => Utils.decodeID(id, this.databasePath)),
         undefined,
         Ids.length
       );
@@ -1243,7 +1235,7 @@ export default class Inibase {
         ))
           unlinkSync(join(this.databasePath, tableName, file));
       }
-    } else if (this.isValidID(where)) {
+    } else if (Utils.isValidID(where)) {
       let Ids = where as string | string[];
       if (!Array.isArray(Ids)) Ids = [Ids];
       const idFilePath = join(this.databasePath, tableName, "id.inib");
@@ -1252,7 +1244,7 @@ export default class Inibase {
         idFilePath,
         "number",
         "[]",
-        Ids.map((id) => this.decodeID(id)),
+        Ids.map((id) => Utils.decodeID(id, this.databasePath)),
         undefined,
         Ids.length
       );
