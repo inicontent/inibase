@@ -12,8 +12,6 @@ import { join, parse } from "path";
 import Utils from "./utils";
 import File from "./file";
 
-export { File, Utils };
-
 export type Data = {
   id?: number | string;
   [key: string]: any;
