@@ -100,7 +100,7 @@ export default class Inibase {
   public pageInfoArray: Record<string, Record<string, number>>;
   public pageInfo: pageInfo;
 
-  constructor(databaseName: string, mainFolder: string = "/") {
+  constructor(databaseName: string, mainFolder: string = ".") {
     this.database = databaseName;
     this.databasePath = join(mainFolder, databaseName);
     this.cache = new Map<string, any>();
