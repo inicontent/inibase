@@ -1160,10 +1160,13 @@ export default class Inibase {
           join(this.databasePath, tableName),
           Utils.isArrayOfObjects(data)
             ? (data as Data[]).map((item) => ({
-                ...item,
+                ...(({ id, ...restOfData }) => restOfData)(item),
                 updated_at: new Date(),
               }))
-            : { ...data, updated_at: new Date() }
+            : {
+                ...(({ id, ...restOfData }) => restOfData)(data as Data),
+                updated_at: new Date(),
+              }
         );
         for (const [path, content] of Object.entries(pathesContents))
           await File.replace(path, content);
@@ -1185,7 +1188,7 @@ export default class Inibase {
         throw this.throwError("INVALID_ID");
       await this.put(tableName, data, Object.keys(lineNumbers).map(Number));
     } else if (Utils.isNumber(where)) {
-      // where in this case, is the line(s) number(s) and not id(s)
+      // "where" in this case, is the line(s) number(s) and not id(s)
       const pathesContents = Object.fromEntries(
         Object.entries(
           this.joinPathesContents(
