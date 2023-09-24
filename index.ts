@@ -119,14 +119,14 @@ export default class Inibase {
   ): Error {
     const errorMessages: Record<string, Record<string, string>> = {
       en: {
+        FIELD_REQUIRED: "REQUIRED: {variable}",
         NO_SCHEMA: "NO_SCHEMA: {variable}",
         NO_ITEMS: "NO_ITEMS: {variable}",
+        NO_DATA: "NO_DATA: {variable}",
         INVALID_ID: "INVALID_ID: {variable}",
         INVALID_TYPE: "INVALID_TYPE: {variable}",
-        REQUIRED: "REQUIRED: {variable}",
-        NO_DATA: "NO_DATA: {variable}",
         INVALID_OPERATOR: "INVALID_OPERATOR: {variable}",
-        PARAMETERS: "PARAMETERS: {variable}",
+        INVALID_PARAMETERS: "PARAMETERS: {variable}",
       },
       // Add more languages and error messages as needed
     };
@@ -251,7 +251,7 @@ export default class Inibase {
               skipRequiredField
             );
         } else if (field.required && !skipRequiredField)
-          throw this.throwError("REQUIRED", field.key);
+          throw this.throwError("FIELD_REQUIRED", field.key);
       }
     }
   }
@@ -1224,7 +1224,7 @@ export default class Inibase {
       if (!lineNumbers || !Array.isArray(lineNumbers) || !lineNumbers.length)
         throw this.throwError("NO_ITEMS", tableName);
       return this.put(tableName, data, lineNumbers);
-    } else throw this.throwError("PARAMETERS", tableName);
+    } else throw this.throwError("INVALID_PARAMETERS", tableName);
   }
 
   public async delete(
@@ -1290,6 +1290,6 @@ export default class Inibase {
       if (!lineNumbers || !Array.isArray(lineNumbers) || !lineNumbers.length)
         throw this.throwError("NO_ITEMS", tableName);
       return this.delete(tableName, lineNumbers);
-    } else throw this.throwError("PARAMETERS", tableName);
+    } else throw this.throwError("INVALID_PARAMETERS", tableName);
   }
 }
