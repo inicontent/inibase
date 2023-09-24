@@ -1229,8 +1229,9 @@ export default class Inibase {
 
   public async delete(
     tableName: string,
-    where?: number | string | (number | string)[] | Criteria
-  ) {
+    where?: number | string | (number | string)[] | Criteria,
+    _id?: string | string[]
+  ): Promise<string | string[]> {
     const schema = this.getTableSchema(tableName);
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
     if (!where) {
@@ -1241,6 +1242,7 @@ export default class Inibase {
         ))
           unlinkSync(join(this.databasePath, tableName, file));
       }
+      return "*";
     } else if (Utils.isValidID(where)) {
       let Ids = where as string | string[];
       if (!Array.isArray(Ids)) Ids = [Ids];
@@ -1256,10 +1258,24 @@ export default class Inibase {
       );
       if (!lineNumbers || !Object.keys(lineNumbers).length)
         throw this.throwError("INVALID_ID");
-      await this.delete(tableName, Object.keys(lineNumbers).map(Number));
+      return this.delete(
+        tableName,
+        Object.keys(lineNumbers).map(Number),
+        where as string | string[]
+      );
     } else if (Utils.isNumber(where)) {
       const files = readdirSync(join(this.databasePath, tableName));
       if (files.length) {
+        if (!_id)
+          _id = Object.values(
+            await File.get(
+              join(this.databasePath, tableName, "id.inib"),
+              "number",
+              where as number | number[]
+            )
+          )
+            .map(Number)
+            .map((id) => Utils.encodeID(id, this.databasePath));
         for (const file in files.filter(
           (fileName: string) => fileName !== "schema.inib"
         ))
@@ -1267,12 +1283,13 @@ export default class Inibase {
             join(this.databasePath, tableName, file),
             where as number | number[]
           );
+        return Array.isArray(_id) && _id.length === 1 ? _id[0] : _id;
       }
     } else if (typeof where === "object" && !Array.isArray(where)) {
       const lineNumbers = this.get(tableName, where, undefined, true);
       if (!lineNumbers || !Array.isArray(lineNumbers) || !lineNumbers.length)
         throw this.throwError("NO_ITEMS", tableName);
-      await this.delete(tableName, lineNumbers);
+      return this.delete(tableName, lineNumbers);
     } else throw this.throwError("PARAMETERS", tableName);
   }
 }
