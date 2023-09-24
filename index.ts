@@ -347,21 +347,7 @@ export default class Inibase {
           }
           return RETURN;
         },
-        findChangedProperties = (
-          obj1: Record<string, string>,
-          obj2: Record<string, string>
-        ): Record<string, string> | null => {
-          const result: Record<string, string> = {};
-
-          for (const key1 in obj1) {
-            if (obj2.hasOwnProperty(key1) && obj1[key1] !== obj2[key1]) {
-              result[obj1[key1]] = obj2[key1];
-            }
-          }
-
-          return Object.keys(result).length ? result : null;
-        },
-        replaceOldPathes = findChangedProperties(
+        replaceOldPathes = Utils.findChangedProperties(
           schemaToIdsPath(this.getTableSchema(tableName)),
           schemaToIdsPath(schema)
         );

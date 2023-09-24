@@ -124,6 +124,19 @@ export const isValidID = (input: any): boolean => {
     : typeof input === "string" && input.length === 32;
 };
 
+export const findChangedProperties = (
+  obj1: Record<string, string>,
+  obj2: Record<string, string>
+): Record<string, string> | null => {
+  const result: Record<string, string> = {};
+
+  for (const key1 in obj1)
+    if (obj2.hasOwnProperty(key1) && obj1[key1] !== obj2[key1])
+      result[obj1[key1]] = obj2[key1];
+
+  return Object.keys(result).length ? result : null;
+};
+
 export default class Utils {
   static encode = encode;
   static decode = decode;
@@ -137,4 +150,5 @@ export default class Utils {
   static combineObjects = combineObjects;
   static comparePassword = comparePassword;
   static isArrayOfObjects = isArrayOfObjects;
+  static findChangedProperties = findChangedProperties;
 }
