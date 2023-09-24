@@ -1033,7 +1033,7 @@ export default class Inibase {
           );
         if (greatestColumnTotalItems)
           this.pageInfo = {
-            ...(({ columns, ...restOFOptions }) => restOFOptions)(options),
+            ...(({ columns, ...restOfOptions }) => restOfOptions)(options),
             ...this.pageInfoArray[greatestColumnTotalItems],
             total_pages: Math.ceil(
               this.pageInfoArray[greatestColumnTotalItems].total_items /
@@ -1128,8 +1128,12 @@ export default class Inibase {
   public async put(
     tableName: string,
     data: Data | Data[],
-    where?: number | string | (number | string)[] | Criteria
-  ) {
+    where?: number | string | (number | string)[] | Criteria,
+    options: Options = {
+      page: 1,
+      per_page: 15,
+    }
+  ): Promise<Data | Data[] | null> {
     const schema = this.getTableSchema(tableName);
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
     this.validateData(data, schema, true);
@@ -1142,7 +1146,7 @@ export default class Inibase {
           )
         )
           throw this.throwError("INVALID_ID");
-        await this.put(
+        return this.put(
           tableName,
           data,
           (data as Data[]).map((item) => item.id)
@@ -1150,7 +1154,7 @@ export default class Inibase {
       } else if (data.hasOwnProperty("id")) {
         if (!Utils.isValidID((data as Data).id))
           throw this.throwError("INVALID_ID", (data as Data).id);
-        await this.put(
+        return this.put(
           tableName,
           data,
           Utils.decodeID((data as Data).id as string, this.databasePath)
@@ -1170,6 +1174,7 @@ export default class Inibase {
         );
         for (const [path, content] of Object.entries(pathesContents))
           await File.replace(path, content);
+        return this.get(tableName, where, options);
       }
     } else if (Utils.isValidID(where)) {
       let Ids = where as string | string[];
@@ -1186,7 +1191,7 @@ export default class Inibase {
       );
       if (!lineNumbers || !Object.keys(lineNumbers).length)
         throw this.throwError("INVALID_ID");
-      await this.put(tableName, data, Object.keys(lineNumbers).map(Number));
+      return this.put(tableName, data, Object.keys(lineNumbers).map(Number));
     } else if (Utils.isNumber(where)) {
       // "where" in this case, is the line(s) number(s) and not id(s)
       const pathesContents = Object.fromEntries(
@@ -1213,11 +1218,12 @@ export default class Inibase {
       );
       for (const [path, content] of Object.entries(pathesContents))
         await File.replace(path, content);
+      return this.get(tableName, where, options);
     } else if (typeof where === "object" && !Array.isArray(where)) {
       const lineNumbers = this.get(tableName, where, undefined, true);
       if (!lineNumbers || !Array.isArray(lineNumbers) || !lineNumbers.length)
         throw this.throwError("NO_ITEMS", tableName);
-      await this.put(tableName, data, lineNumbers);
+      return this.put(tableName, data, lineNumbers);
     } else throw this.throwError("PARAMETERS", tableName);
   }
 
