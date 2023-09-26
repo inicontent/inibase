@@ -610,6 +610,7 @@ export default class Inibase {
       schema
         .map((field) => {
           if (columns.includes(field.key)) return field;
+          if (columns.includes("!" + field.key)) return null;
           if (
             (field.type === "array" || field.type === "object") &&
             Utils.isArrayOfObjects(field.children) &&
@@ -622,10 +623,14 @@ export default class Inibase {
             field.children = filterSchemaByColumns(
               field.children as Schema,
               columns
-                .filter((column) =>
-                  column.startsWith(
-                    field.key + (field.type === "array" ? ".*." : ".")
-                  )
+                .filter(
+                  (column) =>
+                    column.startsWith(
+                      field.key + (field.type === "array" ? ".*." : ".")
+                    ) ||
+                    column.startsWith(
+                      "!" + field.key + (field.type === "array" ? ".*." : ".")
+                    )
                 )
                 .map((column) =>
                   column.replace(
