@@ -330,7 +330,7 @@ export default class Inibase {
       // update columns files names based on field id
       const schemaToIdsPath = (schema: any, prefix = "") => {
           let RETURN: any = {};
-          for (const field of schema) {
+          for (const field of schema)
             if (field.children && Utils.isArrayOfObjects(field.children)) {
               Utils.deepMerge(
                 RETURN,
@@ -344,18 +344,17 @@ export default class Inibase {
             } else if (Utils.isValidID(field.id))
               RETURN[Utils.decodeID(field.id, this.databasePath)] =
                 File.encodeFileName((prefix ?? "") + field.key, "inib");
-          }
+
           return RETURN;
         },
         replaceOldPathes = Utils.findChangedProperties(
           schemaToIdsPath(this.getTableSchema(tableName)),
           schemaToIdsPath(schema)
         );
-      if (replaceOldPathes) {
+      if (replaceOldPathes)
         for (const [oldPath, newPath] of Object.entries(replaceOldPathes))
           if (existsSync(join(TablePath, oldPath)))
             renameSync(join(TablePath, oldPath), join(TablePath, newPath));
-      }
     }
 
     writeFileSync(
@@ -733,7 +732,7 @@ export default class Inibase {
           existsSync(
             join(path, File.encodeFileName((prefix ?? "") + field.key, "inib"))
           )
-        ) {
+        )
           Object.entries(
             (await File.get(
               join(
@@ -747,7 +746,6 @@ export default class Inibase {
             if (!RETURN[index]) RETURN[index] = {};
             RETURN[index][field.key] = item ?? this.getDefaultValue(field);
           });
-        }
       }
       return RETURN;
     };
