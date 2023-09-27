@@ -28,6 +28,46 @@ export const decodeFileName = (fileName: string) => {
   return fileName.replaceAll("%", "*").replaceAll("*25", "%");
 };
 
+export const encode = (
+  input: string | number | boolean | null | (string | number | boolean | null)[]
+) => {
+  const secureString = (input: string | number | boolean | null) => {
+    if (["true", "false"].includes((input ?? "").toString()))
+      return input ? 1 : 0;
+    return typeof input === "string"
+      ? decodeURIComponent(input)
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll(",", "%2C")
+          .replaceAll("\n", "\\n")
+          .replaceAll("\r", "\\r")
+      : input;
+  };
+  return Array.isArray(input)
+    ? input.map(secureString).join(",")
+    : secureString(input);
+};
+
+export const decode = (
+  input: string | null | number,
+  fieldType?: FieldType
+): string | number | boolean | null | (string | number | null | boolean)[] => {
+  const unSecureString = (input: string) =>
+    decodeURIComponent(input)
+      .replaceAll("&lt;", "<")
+      .replaceAll("&gt;", ">")
+      .replaceAll("%2C", ",")
+      .replaceAll("\\n", "\n")
+      .replaceAll("\\r", "\r") || null;
+
+  if (input === null || input === "") return null;
+  if (!isNaN(Number(input)) && isFinite(Number(input)))
+    return fieldType === "boolean" ? Boolean(Number(input)) : Number(input);
+  return (input as string).includes(",")
+    ? (input as string).split(",").map(unSecureString)
+    : unSecureString(input as string);
+};
+
 export const get = async (
   filePath: string,
   fieldType?: FieldType,
@@ -52,11 +92,11 @@ export const get = async (
 
   if (!lineNumbers) {
     for await (const line of rl)
-      lineCount++, (lines[lineCount] = Utils.decode(line, fieldType));
+      lineCount++, (lines[lineCount] = decode(line, fieldType));
   } else if (lineNumbers === -1) {
     let lastLine;
     for await (const line of rl) lineCount++, (lastLine = line);
-    if (lastLine) lines = { [lineCount]: Utils.decode(lastLine, fieldType) };
+    if (lastLine) lines = { [lineCount]: decode(lastLine, fieldType) };
   } else {
     let lineNumbersArray = [
       ...(Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers]),
@@ -65,7 +105,7 @@ export const get = async (
       lineCount++;
       if (!lineNumbersArray.includes(lineCount)) continue;
       const indexOfLineCount = lineNumbersArray.indexOf(lineCount);
-      lines[lineCount] = Utils.decode(line, fieldType);
+      lines[lineCount] = decode(line, fieldType);
       lineNumbersArray[indexOfLineCount] = 0;
       if (!lineNumbersArray.filter((lineN) => lineN !== 0).length) break;
     }
@@ -105,14 +145,13 @@ export const replace = async (
       for await (const line of rl) {
         lineCount++;
         writeStream.write(
-          (lineCount in replacements
-            ? Utils.encode(replacements[lineCount])
-            : line) + "\n"
+          (lineCount in replacements ? encode(replacements[lineCount]) : line) +
+            "\n"
         );
       }
     } else
       for await (const _line of rl)
-        writeStream.write(Utils.encode(replacements) + "\n");
+        writeStream.write(encode(replacements) + "\n");
 
     writeStream.end();
   } else if (typeof replacements === "object" && !Array.isArray(replacements)) {
@@ -124,9 +163,8 @@ export const replace = async (
       Math.max(...Object.keys(replacements).map(Number)) + 1;
     for (let lineCount = 1; lineCount < largestLinesNumbers; lineCount++) {
       writeStream.write(
-        (lineCount in replacements
-          ? Utils.encode(replacements[lineCount])
-          : "") + "\n"
+        (lineCount in replacements ? encode(replacements[lineCount]) : "") +
+          "\n"
       );
     }
     writeStream.end();
@@ -324,7 +362,7 @@ export const search = async (
 
   for await (const line of rl) {
     lineCount++;
-    const decodedLine = Utils.decode(line, fieldType);
+    const decodedLine = decode(line, fieldType);
     if (
       (Array.isArray(operator) &&
         Array.isArray(comparedAtValue) &&
@@ -370,10 +408,12 @@ export const search = async (
 
 export default class File {
   static get = get;
-  static count = count;
   static remove = remove;
   static search = search;
   static replace = replace;
+  static count = count;
+  static encode = encode;
+  static decode = decode;
   static encodeFileName = encodeFileName;
   static decodeFileName = decodeFileName;
 }

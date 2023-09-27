@@ -560,13 +560,13 @@ export default class Inibase {
                 )
               );
             else
-              RETURN[(prefix ?? "") + key] = Utils.encode(value) as
+              RETURN[(prefix ?? "") + key] = File.encode(value) as
                 | boolean
                 | number
                 | string
                 | null;
           } else
-            RETURN[(prefix ?? "") + key] = Utils.encode(value) as
+            RETURN[(prefix ?? "") + key] = File.encode(value) as
               | boolean
               | number
               | string

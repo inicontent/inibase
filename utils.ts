@@ -1,4 +1,3 @@
-import { FieldType } from ".";
 import {
   scryptSync,
   randomBytes,
@@ -6,46 +5,6 @@ import {
   createDecipheriv,
   createCipheriv,
 } from "crypto";
-
-export const encode = (
-  input: string | number | boolean | null | (string | number | boolean | null)[]
-) => {
-  const secureString = (input: string | number | boolean | null) => {
-    if (["true", "false"].includes((input ?? "").toString()))
-      return input ? 1 : 0;
-    return typeof input === "string"
-      ? decodeURIComponent(input)
-          .replaceAll("<", "&lt;")
-          .replaceAll(">", "&gt;")
-          .replaceAll(",", "%2C")
-          .replaceAll("\n", "\\n")
-          .replaceAll("\r", "\\r")
-      : input;
-  };
-  return Array.isArray(input)
-    ? input.map(secureString).join(",")
-    : secureString(input);
-};
-
-export const decode = (
-  input: string | null | number,
-  fieldType?: FieldType
-): string | number | boolean | null | (string | number | null | boolean)[] => {
-  const unSecureString = (input: string) =>
-    decodeURIComponent(input)
-      .replaceAll("&lt;", "<")
-      .replaceAll("&gt;", ">")
-      .replaceAll("%2C", ",")
-      .replaceAll("\\n", "\n")
-      .replaceAll("\\r", "\r") || null;
-
-  if (input === null || input === "") return null;
-  if (!isNaN(Number(input)) && isFinite(Number(input)))
-    return fieldType === "boolean" ? Boolean(Number(input)) : Number(input);
-  return (input as string).includes(",")
-    ? (input as string).split(",").map(unSecureString)
-    : unSecureString(input as string);
-};
 
 export const isArrayOfObjects = (arr: any) => {
   return Array.isArray(arr) && (arr.length === 0 || arr.every(isObject));
@@ -138,8 +97,6 @@ export const findChangedProperties = (
 };
 
 export default class Utils {
-  static encode = encode;
-  static decode = decode;
   static encodeID = encodeID;
   static decodeID = decodeID;
   static isNumber = isNumber;
