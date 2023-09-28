@@ -30,12 +30,12 @@ const users = await db.get("user");
 const users = await db.get("user", undefined, { page: 2, per_page: 15 });
 
 // Get only required columns to improve speed
-const users = await InibaseDB.get("user", undefined, {
+const users = await db.get("user", undefined, {
   columns: ["username", "address.street", "hobbies.*.name"],
 });
 
 // Get items from "user" table where "favoriteFoods" does not includes "Pizza"
-const users = await InibaseDB.get("user", { favoriteFoods: "![]Pizza" });
+const users = await db.get("user", { favoriteFoods: "![]Pizza" });
 ```
 
 If you like Inibase, please sponsor: [GitHub Sponsors](https://github.com/sponsors/inicontent) || [Paypal](https://paypal.me/KarimAmahtil).
@@ -342,6 +342,11 @@ const users = await db.get("user", { favoriteFoods: "[]Pizza" });
 //   },
 //   ...
 // ]
+
+// Get all "user" columns except "username" & "address.street"
+const users = await db.get("user", undefined, {
+  columns: ["!username", "!address.street"],
+});
 ```
 
 </details>
@@ -445,7 +450,7 @@ type Data = {
     - [x] Pagination
     - [x] Criteria
     - [x] Columns
-    - [ ] Order
+    - [ ] Order By
   - [x] POST
   - [x] PUT
   - [x] DELETE
@@ -461,6 +466,8 @@ type Data = {
   - [x] Array
   - [x] Password
   - [ ] IP
+  - [ ] HTML
+  - [ ] Markdown
 - [ ] Features:
   - [ ] Encryption
   - [ ] Compress data
