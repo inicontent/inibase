@@ -468,6 +468,9 @@ type Data = {
   - [ ] IP
   - [ ] HTML
   - [ ] Markdown
+- [ ] TO-DO:
+  - [ ] Improve caching
+  - [ ] Commenting the code
 - [ ] Features:
   - [ ] Encryption
   - [ ] Compress data
