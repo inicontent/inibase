@@ -41,6 +41,20 @@ export const isNumber = (input: any): boolean =>
     ? input.every(isNumber)
     : !isNaN(parseFloat(input)) && !isNaN(input - 0);
 
+export const isEmail = (input: any) =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(input));
+
+export const isURL = (input: any) =>
+  input[0] === "#" ||
+  /^((https?|www):\/\/)?[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]+(\/[^\s]*)?$/.test(
+    input
+  );
+
+export const isPassword = (input: any) => input.length === 161;
+
+export const isDate = (input: any) =>
+  !isNaN(Date.parse(String(input))) && Date.parse(String(input)) >= 0;
+
 export const hashPassword = (password: string) => {
   const salt = randomBytes(16).toString("hex");
   const buf = scryptSync(password, salt, 64);
@@ -101,9 +115,13 @@ export default class Utils {
   static decodeID = decodeID;
   static isNumber = isNumber;
   static isObject = isObject;
+  static isEmail = isEmail;
+  static isDate = isDate;
+  static isURL = isURL;
   static isValidID = isValidID;
-  static deepMerge = deepMerge;
+  static isPassword = isPassword;
   static hashPassword = hashPassword;
+  static deepMerge = deepMerge;
   static combineObjects = combineObjects;
   static comparePassword = comparePassword;
   static isArrayOfObjects = isArrayOfObjects;
