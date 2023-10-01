@@ -21,7 +21,7 @@
 
 ```js
 import Inibase from "inibase";
-const db = new Inibase("/database_name");
+const db = new Inibase("database_name");
 
 // Get all items from "user" table
 const users = await db.get("user");
