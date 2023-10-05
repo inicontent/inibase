@@ -5,9 +5,13 @@ import {
   createDecipheriv,
   createCipheriv,
 } from "crypto";
+import { FieldType } from ".";
 
 export const isArrayOfObjects = (arr: any) => {
   return Array.isArray(arr) && (arr.length === 0 || arr.every(isObject));
+};
+export const isArrayOfArrays = (arr: any) => {
+  return Array.isArray(arr) && (arr.length === 0 || arr.every(Array.isArray));
 };
 
 export const isObject = (obj: any) =>
@@ -110,6 +114,36 @@ export const findChangedProperties = (
   return Object.keys(result).length ? result : null;
 };
 
+export const detectFieldType = (
+  input: any,
+  availableTypes: FieldType[]
+): FieldType | undefined => {
+  if (
+    (input === "0" || input === "1" || input === "true" || input === "false") &&
+    availableTypes.includes("boolean")
+  )
+    return "boolean";
+  else if (Utils.isNumber(input)) {
+    if (availableTypes.includes("table")) return "table";
+    else if (availableTypes.includes("number")) return "number";
+    else if (availableTypes.includes("date")) return "date";
+  } else if (
+    (Array.isArray(input) || input.includes(",")) &&
+    availableTypes.includes("array")
+  )
+    return "array";
+  else if (Utils.isEmail(input) && availableTypes.includes("email"))
+    return "email";
+  else if (Utils.isURL(input) && availableTypes.includes("url")) return "url";
+  else if (Utils.isPassword(input) && availableTypes.includes("password"))
+    return "password";
+  else if (Utils.isDate(input) && availableTypes.includes("date"))
+    return "date";
+  else if (!Utils.isNumber(input) && availableTypes.includes("string"))
+    return "string";
+  else return undefined;
+};
+
 export default class Utils {
   static encodeID = encodeID;
   static decodeID = decodeID;
@@ -126,4 +160,6 @@ export default class Utils {
   static comparePassword = comparePassword;
   static isArrayOfObjects = isArrayOfObjects;
   static findChangedProperties = findChangedProperties;
+  static detectFieldType = detectFieldType;
+  static isArrayOfArrays = isArrayOfArrays;
 }

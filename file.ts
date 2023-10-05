@@ -32,46 +32,87 @@ export const encode = (
   input: string | number | boolean | null | (string | number | boolean | null)[]
 ) => {
   const secureString = (input: string | number | boolean | null) => {
-    if (["true", "false"].includes((input ?? "").toString()))
-      return input ? 1 : 0;
+    if (["true", "false"].includes(String(input))) return input ? 1 : 0;
     return typeof input === "string"
       ? decodeURIComponent(input)
           .replaceAll("<", "&lt;")
           .replaceAll(">", "&gt;")
           .replaceAll(",", "%2C")
+          .replaceAll("|", "%7C")
           .replaceAll("\n", "\\n")
           .replaceAll("\r", "\\r")
       : input;
   };
   return Array.isArray(input)
-    ? input.map(secureString).join(",")
+    ? Utils.isArrayOfArrays(input)
+      ? (input as any[])
+          .map((_input) => _input.map(secureString).join(","))
+          .join("|")
+      : input.map(secureString).join(",")
     : secureString(input);
 };
 
 export const decode = (
   input: string | null | number,
-  fieldType?: FieldType
+  fieldType?: FieldType | FieldType[],
+  fieldChildrenType?: FieldType | FieldType[]
 ): string | number | boolean | null | (string | number | null | boolean)[] => {
+  if (!fieldType) return null;
   const unSecureString = (input: string) =>
     decodeURIComponent(input)
       .replaceAll("&lt;", "<")
       .replaceAll("&gt;", ">")
       .replaceAll("%2C", ",")
+      .replaceAll("%7C", "|")
       .replaceAll("\\n", "\n")
       .replaceAll("\\r", "\r") || null;
-
   if (input === null || input === "") return null;
-  if (!isNaN(Number(input)) && isFinite(Number(input)))
-    return fieldType === "boolean" ? Boolean(Number(input)) : Number(input);
-  return (input as string).includes(",")
-    ? (input as string).split(",").map(unSecureString)
-    : unSecureString(input as string);
+  if (Array.isArray(fieldType))
+    fieldType = Utils.detectFieldType(String(input), fieldType);
+  const decodeHelper = (value: string | number | any[]) => {
+    if (Array.isArray(value) && fieldType !== "array")
+      return value.map(decodeHelper);
+    switch (fieldType as FieldType) {
+      case "table":
+      case "number":
+        return isNaN(Number(value)) ? null : Number(value);
+      case "boolean":
+        return typeof value === "string" ? value === "true" : Boolean(value);
+      case "array":
+        if (!Array.isArray(value)) return null;
+        if (fieldChildrenType)
+          return value.map(
+            (v) =>
+              decode(
+                v,
+                Array.isArray(fieldChildrenType)
+                  ? Utils.detectFieldType(v, fieldChildrenType)
+                  : fieldChildrenType
+              ) as string | number | boolean | null
+          );
+        else return value;
+      default:
+        return value;
+    }
+  };
+  return decodeHelper(
+    typeof input === "string"
+      ? input.includes(",")
+        ? input.includes("|")
+          ? input
+              .split("|")
+              .map((_input) => _input.split(",").map(unSecureString))
+          : input.split(",").map(unSecureString)
+        : unSecureString(input)
+      : input
+  );
 };
 
 export const get = async (
   filePath: string,
-  fieldType?: FieldType,
-  lineNumbers?: number | number[]
+  lineNumbers?: number | number[],
+  fieldType?: FieldType | FieldType[],
+  fieldChildrenType?: FieldType | FieldType[]
 ) => {
   let rl: Interface;
   if (doesSupportReadLines()) rl = (await open(filePath)).readLines();
@@ -92,11 +133,13 @@ export const get = async (
 
   if (!lineNumbers) {
     for await (const line of rl)
-      lineCount++, (lines[lineCount] = decode(line, fieldType));
+      lineCount++,
+        (lines[lineCount] = decode(line, fieldType, fieldChildrenType));
   } else if (lineNumbers === -1) {
-    let lastLine;
+    let lastLine: string;
     for await (const line of rl) lineCount++, (lastLine = line);
-    if (lastLine) lines = { [lineCount]: decode(lastLine, fieldType) };
+    if (lastLine)
+      lines = { [lineCount]: decode(lastLine, fieldType, fieldChildrenType) };
   } else {
     let lineNumbersArray = [
       ...(Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers]),
@@ -105,7 +148,7 @@ export const get = async (
       lineCount++;
       if (!lineNumbersArray.includes(lineCount)) continue;
       const indexOfLineCount = lineNumbersArray.indexOf(lineCount);
-      lines[lineCount] = decode(line, fieldType);
+      lines[lineCount] = decode(line, fieldType, fieldChildrenType);
       lineNumbersArray[indexOfLineCount] = 0;
       if (!lineNumbersArray.filter((lineN) => lineN !== 0).length) break;
     }
@@ -224,7 +267,6 @@ export const count = async (filePath: string): Promise<number> => {
 
 export const search = async (
   filePath: string,
-  fieldType: FieldType,
   operator: ComparisonOperator | ComparisonOperator[],
   comparedAtValue:
     | string
@@ -233,6 +275,8 @@ export const search = async (
     | null
     | (string | number | boolean | null)[],
   logicalOperator?: "and" | "or",
+  fieldType?: FieldType | FieldType[],
+  fieldChildrenType?: FieldType | FieldType[],
   limit?: number,
   offset?: number,
   readWholeFile?: boolean
@@ -250,7 +294,7 @@ export const search = async (
 > => {
   const handleComparisonOperator = (
     operator: ComparisonOperator,
-    value:
+    originalValue:
       | string
       | number
       | boolean
@@ -262,77 +306,91 @@ export const search = async (
       | boolean
       | null
       | (string | number | boolean | null)[],
-    fieldType: FieldType
+    fieldType?: FieldType | FieldType[],
+    fieldChildrenType?: FieldType | FieldType[]
   ): boolean => {
-    // check if not array or object
+    if (Array.isArray(fieldType))
+      fieldType = Utils.detectFieldType(String(originalValue), fieldType);
+    // check if not array or object // it can't be array or object!
     switch (operator) {
       case "=":
         switch (fieldType) {
           case "password":
-            return typeof value === "string" &&
+            return typeof originalValue === "string" &&
               typeof comparedAtValue === "string"
-              ? Utils.comparePassword(value, comparedAtValue)
+              ? Utils.comparePassword(originalValue, comparedAtValue)
               : false;
           case "boolean":
-            return Number(value) - Number(comparedAtValue) === 0;
+            return Number(originalValue) - Number(comparedAtValue) === 0;
           default:
-            return value === comparedAtValue;
+            return Array.isArray(comparedAtValue)
+              ? comparedAtValue.some((value) => originalValue === value)
+              : originalValue === comparedAtValue;
         }
       case "!=":
         return !handleComparisonOperator(
           "=",
-          value,
+          originalValue,
           comparedAtValue,
           fieldType
         );
       case ">":
-        return (
-          value !== null && comparedAtValue !== null && value > comparedAtValue
-        );
+        return Array.isArray(comparedAtValue)
+          ? comparedAtValue.some((value) => originalValue > value)
+          : originalValue > comparedAtValue;
       case "<":
-        return (
-          value !== null && comparedAtValue !== null && value < comparedAtValue
-        );
+        return Array.isArray(comparedAtValue)
+          ? comparedAtValue.some((value) => originalValue < value)
+          : originalValue < comparedAtValue;
       case ">=":
-        return (
-          value !== null && comparedAtValue !== null && value >= comparedAtValue
-        );
+        return Array.isArray(comparedAtValue)
+          ? comparedAtValue.some((value) => originalValue >= value)
+          : originalValue >= comparedAtValue;
       case "<=":
-        return (
-          value !== null && comparedAtValue !== null && value <= comparedAtValue
-        );
+        return Array.isArray(comparedAtValue)
+          ? comparedAtValue.some((value) => originalValue <= value)
+          : originalValue <= comparedAtValue;
       case "[]":
         return (
-          (Array.isArray(value) &&
+          (Array.isArray(originalValue) &&
             Array.isArray(comparedAtValue) &&
-            value.some(comparedAtValue.includes)) ||
-          (Array.isArray(value) &&
+            originalValue.some(comparedAtValue.includes)) ||
+          (Array.isArray(originalValue) &&
             !Array.isArray(comparedAtValue) &&
-            value.includes(comparedAtValue)) ||
-          (!Array.isArray(value) &&
+            originalValue.includes(comparedAtValue)) ||
+          (!Array.isArray(originalValue) &&
             Array.isArray(comparedAtValue) &&
-            comparedAtValue.includes(value))
+            comparedAtValue.includes(originalValue))
         );
       case "![]":
         return !handleComparisonOperator(
           "[]",
-          value,
+          originalValue,
           comparedAtValue,
           fieldType
         );
       case "*":
-        return (
-          value !== null &&
-          comparedAtValue !== null &&
-          new RegExp(
-            `^${comparedAtValue.toString().replace(/%/g, ".*")}$`,
-            "i"
-          ).test(value.toString())
-        );
+        return Array.isArray(comparedAtValue)
+          ? comparedAtValue.some((value) =>
+              new RegExp(
+                `^${(String(value).includes("%")
+                  ? String(value)
+                  : "%" + String(value) + "%"
+                ).replace(/%/g, ".*")}$`,
+                "i"
+              ).test(String(originalValue))
+            )
+          : new RegExp(
+              `^${(String(comparedAtValue).includes("%")
+                ? String(comparedAtValue)
+                : "%" + String(comparedAtValue) + "%"
+              ).replace(/%/g, ".*")}$`,
+              "i"
+            ).test(String(originalValue));
       case "!*":
         return !handleComparisonOperator(
           "*",
-          value,
+          originalValue,
           comparedAtValue,
           fieldType
         );
@@ -362,7 +420,7 @@ export const search = async (
 
   for await (const line of rl) {
     lineCount++;
-    const decodedLine = decode(line, fieldType);
+    const decodedLine = decode(line, fieldType, fieldChildrenType);
     if (
       (Array.isArray(operator) &&
         Array.isArray(comparedAtValue) &&

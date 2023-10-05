@@ -30,31 +30,45 @@ export type FieldType =
   | "object"
   | "array"
   | "password";
-type Field = {
+type FieldDefault = {
   id?: string | number | null | undefined;
   key: string;
   required?: boolean;
-} & (
-  | {
-      type: Exclude<FieldType, "array" | "object">;
-      required?: boolean;
-    }
-  | {
-      type: "array";
-      children: FieldType | FieldType[] | Schema;
-    }
-  | {
-      type: "object";
-      children: Schema;
-    }
-);
+};
+type FieldStringType = {
+  type: Exclude<FieldType, "array" | "object">;
+};
+type FieldStringArrayType = {
+  type: Exclude<FieldType, "array" | "object">[];
+};
+type FieldArrayType = {
+  type: "array";
+  children: FieldType | FieldType[] | Schema;
+};
+type FieldArrayArrayType = {
+  type: ["array", ...FieldType[]];
+  children: FieldType | FieldType[];
+};
+type FieldObjectType = {
+  type: "object";
+  children: Schema;
+};
+// if "type" is array, make "array" at first place, and "number" & "string" at last place of the array
+type Field = FieldDefault &
+  (
+    | FieldStringType
+    | FieldStringArrayType
+    | FieldObjectType
+    | FieldArrayType
+    | FieldArrayArrayType
+  );
 
 export type Schema = Field[];
 
 export interface Options {
   page?: number;
   per_page?: number;
-  columns?: string[];
+  columns?: string[] | string;
 }
 
 export type ComparisonOperator =
@@ -154,108 +168,6 @@ export default class Inibase {
     return new Error(errorMessage);
   }
 
-  public validateData(
-    data: Data | Data[],
-    schema: Schema,
-    skipRequiredField: boolean = false
-  ): void {
-    if (Utils.isArrayOfObjects(data))
-      for (const single_data of data as Data[])
-        this.validateData(single_data, schema, skipRequiredField);
-    else if (!Array.isArray(data)) {
-      const validateFieldType = (
-        value: any,
-        field: Field | FieldType | FieldType[]
-      ): boolean => {
-        if (Array.isArray(field))
-          return field.some((item) => validateFieldType(value, item));
-        switch (typeof field === "string" ? field : field.type) {
-          case "string":
-            return value === null || typeof value === "string";
-          case "number":
-            return value === null || typeof value === "number";
-          case "boolean":
-            return (
-              value === null ||
-              typeof value === "boolean" ||
-              value === "true" ||
-              value === "false"
-            );
-          case "date":
-            return value === null || value instanceof Date;
-          case "object":
-            return (
-              value === null ||
-              (typeof value === "object" &&
-                !Array.isArray(value) &&
-                value !== null)
-            );
-          case "array":
-            return (
-              value === null ||
-              (Array.isArray(value) &&
-                value.every((item) => validateFieldType(item, field)))
-            );
-          case "email":
-            return (
-              value === null ||
-              (typeof value === "string" &&
-                /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))
-            );
-          case "url":
-            return (
-              value === null ||
-              (typeof value === "string" &&
-                (value[0] === "#" ||
-                  /^((https?|www):\/\/)?[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]+(\/[^\s]*)?$/.test(
-                    value
-                  )))
-            );
-          case "table":
-            // feat: check if id exists
-            if (Array.isArray(value))
-              return (
-                typeof field !== "string" &&
-                field.type === "table" &&
-                ((Utils.isArrayOfObjects(value) &&
-                  value.every(
-                    (element) =>
-                      element.hasOwnProperty("id") &&
-                      Utils.isValidID((element as Data).id)
-                  )) ||
-                  value.every(Utils.isNumber) ||
-                  Utils.isValidID(value))
-              );
-            else if (Utils.isObject(value))
-              return (
-                value.hasOwnProperty("id") &&
-                Utils.isValidID((value as Data).id)
-              );
-            else return Utils.isNumber(value) || Utils.isValidID(value);
-          default:
-            return true;
-        }
-      };
-      for (const field of schema) {
-        if (data.hasOwnProperty(field.key)) {
-          if (!validateFieldType(data[field.key], field))
-            throw this.throwError("INVALID_TYPE", field.key);
-          if (
-            (field.type === "array" || field.type === "object") &&
-            field.children &&
-            Utils.isArrayOfObjects(field.children)
-          )
-            this.validateData(
-              data[field.key],
-              field.children as Schema,
-              skipRequiredField
-            );
-        } else if (field.required && !skipRequiredField)
-          throw this.throwError("FIELD_REQUIRED", field.key);
-      }
-    }
-  }
-
   public setTableSchema(tableName: string, schema: Schema): void {
     const encodeSchema = (schema: Schema) => {
         let RETURN: any[][] = [],
@@ -316,8 +228,10 @@ export default class Inibase {
             Utils.isArrayOfObjects(lastField.children)
           )
             return findLastIdNumber(lastField.children as Schema);
-          else return Utils.decodeID(lastField.id as string, this.databasePath);
-        } else return 0;
+          else if (lastField.id && Utils.isValidID(lastField.id))
+            return Utils.decodeID(lastField.id as string, this.databasePath);
+        }
+        return 0;
       };
 
     // remove id from schema
@@ -405,19 +319,146 @@ export default class Inibase {
     ];
   }
 
-  public getField(keyPath: string, schema: Schema | Field): Field | null {
-    for (const key of keyPath.split(".")) {
+  public getField<Property extends keyof Field | "children">(
+    keyPath: string,
+    schema: Schema | Field,
+    property?: Property
+  ) {
+    const keyPathSplited = keyPath.split(".");
+    for (const [index, key] of keyPathSplited.entries()) {
       if (key === "*") continue;
       const foundItem = (schema as Schema).find((item) => item.key === key);
       if (!foundItem) return null;
-      schema =
+      if (index === keyPathSplited.length - 1) schema = foundItem;
+      if (
         (foundItem.type === "array" || foundItem.type === "object") &&
         foundItem.children &&
         Utils.isArrayOfObjects(foundItem.children)
-          ? (foundItem.children as Schema)
-          : foundItem;
+      )
+        schema = foundItem.children as Schema;
     }
-    return schema as Field;
+    if (property) {
+      switch (property) {
+        case "type":
+          return (schema as Field).type;
+        case "children":
+          return (
+            schema as
+              | (Field & FieldObjectType)
+              | FieldArrayType
+              | FieldArrayArrayType
+          ).children;
+
+        default:
+          return (schema as Field)[property as keyof Field];
+      }
+    } else return schema as Field;
+  }
+
+  public validateData(
+    data: Data | Data[],
+    schema: Schema,
+    skipRequiredField: boolean = false
+  ): void {
+    const validateFieldType = (
+      value: any,
+      fieldType: FieldType | FieldType[],
+      fieldChildrenType?: FieldType | FieldType[]
+    ): boolean => {
+      if (value === null) return true;
+      if (Array.isArray(fieldType))
+        return Utils.detectFieldType(value, fieldType) !== undefined;
+      if (fieldType === "array" && fieldChildrenType && Array.isArray(value))
+        return value.some(
+          (v) =>
+            Utils.detectFieldType(
+              v,
+              Array.isArray(fieldChildrenType)
+                ? fieldChildrenType
+                : [fieldChildrenType]
+            ) !== undefined
+        );
+
+      switch (fieldType) {
+        case "string":
+          // TO-DO: and not email, url, password ...
+          return !Utils.isNumber(value);
+        case "password":
+          return !Utils.isNumber(value) && Utils.isPassword(value);
+        case "number":
+          return Utils.isNumber(value);
+        case "boolean":
+          return (
+            typeof value === "boolean" || value === "true" || value === "false"
+          );
+        case "date":
+          return Utils.isDate(value);
+        case "object":
+          return Utils.isObject(value);
+        case "array":
+          return Array.isArray(value);
+        case "email":
+          return Utils.isEmail(value);
+        case "url":
+          return Utils.isURL(value);
+        case "table":
+          // feat: check if id exists
+          if (Array.isArray(value))
+            return (
+              (Utils.isArrayOfObjects(value) &&
+                value.every(
+                  (element: Data) =>
+                    element.hasOwnProperty("id") &&
+                    (Utils.isValidID(element.id) || Utils.isNumber(element.id))
+                )) ||
+              value.every(Utils.isNumber) ||
+              Utils.isValidID(value)
+            );
+          else if (Utils.isObject(value))
+            return (
+              value.hasOwnProperty("id") &&
+              (Utils.isValidID((value as Data).id) ||
+                Utils.isNumber((value as Data).id))
+            );
+          else return Utils.isNumber(value) || Utils.isValidID(value);
+        default:
+          return false;
+      }
+    };
+    if (Utils.isArrayOfObjects(data))
+      for (const single_data of data as Data[])
+        this.validateData(single_data, schema, skipRequiredField);
+    else if (Utils.isObject(data)) {
+      for (const field of schema) {
+        if (
+          !data.hasOwnProperty(field.key) &&
+          field.required &&
+          !skipRequiredField
+        )
+          throw this.throwError("FIELD_REQUIRED", field.key);
+        if (
+          !validateFieldType(
+            data[field.key],
+            field.type,
+            (field as any)?.children &&
+              !Utils.isArrayOfObjects((field as any)?.children)
+              ? (field as any)?.children
+              : undefined
+          )
+        )
+          throw this.throwError("INVALID_TYPE", field.key);
+        if (
+          (field.type === "array" || field.type === "object") &&
+          field.children &&
+          Utils.isArrayOfObjects(field.children)
+        )
+          this.validateData(
+            data[field.key],
+            field.children as Schema,
+            skipRequiredField
+          );
+      }
+    }
   }
 
   public formatData(
@@ -425,91 +466,111 @@ export default class Inibase {
     schema: Schema,
     formatOnlyAvailiableKeys?: boolean
   ): Data | Data[] {
-    if (Utils.isArrayOfObjects(data)) {
+    const formatField = (
+      value: any,
+      field: Field
+    ): Data | Data[] | number | string => {
+      if (Array.isArray(field.type))
+        field.type = Utils.detectFieldType(value, field.type);
+
+      switch (field.type) {
+        case "array":
+          if (typeof field.children === "string") {
+            if (field.type === "array" && field.children === "table") {
+              if (Array.isArray(data[field.key])) {
+                if (Utils.isArrayOfObjects(data[field.key])) {
+                  if (
+                    value.every(
+                      (item: any) =>
+                        item.hasOwnProperty("id") &&
+                        (Utils.isValidID(item.id) || Utils.isNumber(item.id))
+                    )
+                  )
+                    value.map((item: any) =>
+                      Utils.isNumber(item.id)
+                        ? Number(item.id)
+                        : Utils.decodeID(item.id, this.databasePath)
+                    );
+                } else if (Utils.isValidID(value) || Utils.isNumber(value))
+                  return value.map((item: number | string) =>
+                    Utils.isNumber(item)
+                      ? Number(item as string)
+                      : Utils.decodeID(item as string, this.databasePath)
+                  );
+              } else if (Utils.isValidID(value))
+                return [Utils.decodeID(value, this.databasePath)];
+              else if (Utils.isNumber(value)) return [Number(value)];
+            } else if (data.hasOwnProperty(field.key)) return value;
+          } else if (Utils.isArrayOfObjects(field.children))
+            return this.formatData(
+              value,
+              field.children as Schema,
+              formatOnlyAvailiableKeys
+            );
+          else if (Array.isArray(field.children))
+            return Array.isArray(value) ? value : [value];
+          break;
+        case "object":
+          if (Utils.isArrayOfObjects(field.children))
+            return this.formatData(
+              value,
+              field.children,
+              formatOnlyAvailiableKeys
+            );
+          break;
+        case "table":
+          if (Utils.isObject(value)) {
+            if (
+              value.hasOwnProperty("id") &&
+              (Utils.isValidID(value.id) || Utils.isNumber(value))
+            )
+              return Utils.isNumber(value.id)
+                ? Number(value.id)
+                : Utils.decodeID(value.id, this.databasePath);
+          } else if (Utils.isValidID(value) || Utils.isNumber(value))
+            return Utils.isNumber(value)
+              ? Number(value)
+              : Utils.decodeID(value, this.databasePath);
+          break;
+        case "password":
+          return value.length === 161 ? value : Utils.hashPassword(value);
+        case "number":
+          return Utils.isNumber(value) ? Number(value) : null;
+        default:
+          return value;
+      }
+      return null;
+    };
+    if (Utils.isArrayOfObjects(data))
       return data.map((single_data: Data) =>
-        this.formatData(single_data, schema)
+        this.formatData(single_data, schema, formatOnlyAvailiableKeys)
       );
-    } else if (!Array.isArray(data)) {
+    else if (Utils.isObject(data)) {
       let RETURN: Data = {};
       for (const field of schema) {
         if (!data.hasOwnProperty(field.key)) {
+          if (formatOnlyAvailiableKeys) continue;
           RETURN[field.key] = this.getDefaultValue(field);
           continue;
         }
-        if (formatOnlyAvailiableKeys && !data.hasOwnProperty(field.key))
-          continue;
-
-        if (field.type === "array" || field.type === "object") {
-          if (field.children)
-            if (typeof field.children === "string") {
-              if (field.type === "array" && field.children === "table") {
-                if (Array.isArray(data[field.key])) {
-                  if (Utils.isArrayOfObjects(data[field.key])) {
-                    if (
-                      data[field.key].every(
-                        (item: any) =>
-                          item.hasOwnProperty("id") &&
-                          (Utils.isValidID(item.id) || Utils.isNumber(item.id))
-                      )
-                    )
-                      data[field.key].map((item: any) =>
-                        Utils.isNumber(item.id)
-                          ? parseFloat(item.id)
-                          : Utils.decodeID(item.id, this.databasePath)
-                      );
-                  } else if (
-                    Utils.isValidID(data[field.key]) ||
-                    Utils.isNumber(data[field.key])
-                  )
-                    RETURN[field.key] = data[field.key].map(
-                      (item: number | string) =>
-                        Utils.isNumber(item)
-                          ? parseFloat(item as string)
-                          : Utils.decodeID(item as string, this.databasePath)
-                    );
-                } else if (Utils.isValidID(data[field.key]))
-                  RETURN[field.key] = [
-                    Utils.decodeID(data[field.key], this.databasePath),
-                  ];
-                else if (Utils.isNumber(data[field.key]))
-                  RETURN[field.key] = [parseFloat(data[field.key])];
-              } else if (data.hasOwnProperty(field.key))
-                RETURN[field.key] = data[field.key];
-            } else if (Utils.isArrayOfObjects(field.children))
-              RETURN[field.key] = this.formatData(
-                data[field.key],
-                field.children as Schema,
-                formatOnlyAvailiableKeys
-              );
-        } else if (field.type === "table") {
-          if (Utils.isObject(data[field.key])) {
-            if (
-              data[field.key].hasOwnProperty("id") &&
-              (Utils.isValidID(data[field.key].id) ||
-                Utils.isNumber(data[field.key]))
-            )
-              RETURN[field.key] = Utils.isNumber(data[field.key].id)
-                ? parseFloat(data[field.key].id)
-                : Utils.decodeID(data[field.key].id, this.databasePath);
-          } else if (
-            Utils.isValidID(data[field.key]) ||
-            Utils.isNumber(data[field.key])
-          )
-            RETURN[field.key] = Utils.isNumber(data[field.key])
-              ? parseFloat(data[field.key])
-              : Utils.decodeID(data[field.key], this.databasePath);
-        } else if (field.type === "password")
-          RETURN[field.key] =
-            data[field.key].length === 161
-              ? data[field.key]
-              : Utils.hashPassword(data[field.key]);
-        else RETURN[field.key] = data[field.key];
+        RETURN[field.key] = formatField(data[field.key], field);
       }
       return RETURN;
     } else return [];
   }
 
   private getDefaultValue(field: Field): any {
+    if (Array.isArray(field.type))
+      return this.getDefaultValue({
+        ...field,
+        type: field.type.sort(
+          (a: FieldType, b: FieldType) =>
+            Number(b === "array") - Number(a === "array") ||
+            Number(a === "string") - Number(b === "string") ||
+            Number(a === "number") - Number(b === "number")
+        )[0],
+      } as Field);
+
     switch (field.type) {
       case "array":
         return Utils.isArrayOfObjects(field.children)
@@ -536,26 +597,43 @@ export default class Inibase {
     mainPath: string,
     data: Data | Data[]
   ): { [key: string]: string[] } {
-    const CombineData = (data: Data | Data[], prefix?: string) => {
+    const CombineData = (_data: Data | Data[], prefix?: string) => {
       let RETURN: Record<
         string,
         string | boolean | number | null | (string | boolean | number | null)[]
       > = {};
-
-      if (Utils.isArrayOfObjects(data))
-        RETURN = Utils.combineObjects(
-          (data as Data[]).map((single_data) => CombineData(single_data))
+      const combineObjectsToArray = (input: any[]) =>
+        input.reduce(
+          (r, c) => (
+            Object.keys(c).map((k) => (r[k] = [...(r[k] || []), c[k]])), r
+          ),
+          {}
+        );
+      if (Utils.isArrayOfObjects(_data))
+        RETURN = combineObjectsToArray(
+          (_data as Data[]).map((single_data) => CombineData(single_data))
         );
       else {
-        for (const [key, value] of Object.entries(data as Data)) {
+        for (const [key, value] of Object.entries(_data as Data)) {
           if (Utils.isObject(value))
             Object.assign(RETURN, CombineData(value, `${key}.`));
           else if (Array.isArray(value)) {
-            if (Utils.isArrayOfObjects(value))
+            if (Utils.isArrayOfObjects(value)) {
               Object.assign(
                 RETURN,
                 CombineData(
-                  Utils.combineObjects(value),
+                  combineObjectsToArray(value),
+                  (prefix ?? "") + key + ".*."
+                )
+              );
+            } else if (
+              Utils.isArrayOfArrays(value) &&
+              value.every(Utils.isArrayOfObjects)
+            )
+              Object.assign(
+                RETURN,
+                CombineData(
+                  combineObjectsToArray(value.map(combineObjectsToArray)),
                   (prefix ?? "") + key + ".*."
                 )
               );
@@ -596,6 +674,8 @@ export default class Inibase {
     onlyLinesNumbers?: boolean
   ): Promise<Data | Data[] | number[] | null> {
     if (!options.columns) options.columns = [];
+    else if (!Array.isArray(options.columns))
+      options.columns = [options.columns];
     else if (
       options.columns.length &&
       !(options.columns as string[]).includes("id")
@@ -609,15 +689,22 @@ export default class Inibase {
     const filterSchemaByColumns = (schema: Schema, columns: string[]): Schema =>
       schema
         .map((field) => {
-          if (columns.includes(field.key)) return field;
-          if (columns.includes("!" + field.key)) return null;
+          if (columns.some((column) => column.startsWith("!")))
+            return columns.includes("!" + field.key) ? null : field;
+          if (columns.includes(field.key) || columns.includes("*"))
+            return field;
+
           if (
             (field.type === "array" || field.type === "object") &&
             Utils.isArrayOfObjects(field.children) &&
-            columns.filter((column) =>
-              column.startsWith(
-                field.key + (field.type === "array" ? ".*." : ".")
-              )
+            columns.filter(
+              (column) =>
+                column.startsWith(
+                  field.key + (field.type === "array" ? ".*." : ".")
+                ) ||
+                column.startsWith(
+                  "!" + field.key + (field.type === "array" ? ".*." : ".")
+                )
             ).length
           ) {
             field.children = filterSchemaByColumns(
@@ -656,10 +743,144 @@ export default class Inibase {
       let RETURN: Record<number, Data> = {};
       for (const field of schema) {
         if (
-          (field.type === "array" || field.type === "object") &&
-          field.children
+          (field.type === "array" ||
+            (Array.isArray(field.type) &&
+              (field.type as any).includes("array"))) &&
+          (field as FieldDefault & (FieldArrayType | FieldArrayArrayType))
+            .children
         ) {
-          if (field.children === "table") {
+          if (
+            Utils.isArrayOfObjects(
+              (field as FieldDefault & (FieldArrayType | FieldArrayArrayType))
+                .children
+            )
+          ) {
+            if (
+              (
+                (field as FieldDefault & (FieldArrayType | FieldArrayArrayType))
+                  .children as Schema
+              ).filter(
+                (children) =>
+                  children.type === "array" &&
+                  Utils.isArrayOfObjects(children.children)
+              ).length
+            ) {
+              // one of children has array field type and has children array of object = Schema
+              Object.entries(
+                (await getItemsFromSchema(
+                  path,
+                  (
+                    (
+                      field as FieldDefault &
+                        (FieldArrayType | FieldArrayArrayType)
+                    ).children as Schema
+                  ).filter(
+                    (children) =>
+                      children.type === "array" &&
+                      Utils.isArrayOfObjects(children.children)
+                  ),
+                  linesNumber,
+                  (prefix ?? "") + field.key + ".*."
+                )) ?? {}
+              ).forEach(([index, item]) => {
+                if (Utils.isObject(item)) {
+                  if (!RETURN[index]) RETURN[index] = {};
+                  if (!RETURN[index][field.key]) RETURN[index][field.key] = [];
+                  for (const child_field of (
+                    (
+                      field as FieldDefault &
+                        (FieldArrayType | FieldArrayArrayType)
+                    ).children as Schema
+                  ).filter(
+                    (children) =>
+                      children.type === "array" &&
+                      Utils.isArrayOfObjects(children.children)
+                  )) {
+                    if (Utils.isObject(item[child_field.key])) {
+                      Object.entries(item[child_field.key]).forEach(
+                        ([key, value]) => {
+                          for (let _i = 0; _i < value.length; _i++) {
+                            if (!RETURN[index][field.key][_i])
+                              RETURN[index][field.key][_i] = {};
+                            if (!RETURN[index][field.key][_i][child_field.key])
+                              RETURN[index][field.key][_i][child_field.key] =
+                                [];
+                            value[_i].forEach((_element, _index) => {
+                              if (
+                                !RETURN[index][field.key][_i][child_field.key][
+                                  _index
+                                ]
+                              )
+                                RETURN[index][field.key][_i][child_field.key][
+                                  _index
+                                ] = {};
+                              RETURN[index][field.key][_i][child_field.key][
+                                _index
+                              ][key] = _element;
+                            });
+                          }
+                        }
+                      );
+                    }
+                  }
+                }
+              });
+              (
+                field as FieldDefault & (FieldArrayType | FieldArrayArrayType)
+              ).children = (
+                (field as FieldDefault & (FieldArrayType | FieldArrayArrayType))
+                  .children as Schema
+              ).filter(
+                (children) =>
+                  children.type !== "array" ||
+                  !Utils.isArrayOfObjects(children.children)
+              );
+            }
+            Object.entries(
+              (await getItemsFromSchema(
+                path,
+                (field as FieldDefault & (FieldArrayType | FieldArrayArrayType))
+                  .children as Schema,
+                linesNumber,
+                (prefix ?? "") + field.key + ".*."
+              )) ?? {}
+            ).forEach(([index, item]) => {
+              if (!RETURN[index]) RETURN[index] = {};
+              if (Utils.isObject(item)) {
+                if (!Object.values(item).every((i) => i === null)) {
+                  if (RETURN[index][field.key])
+                    Object.entries(item).forEach(([key, value], _index) => {
+                      RETURN[index][field.key] = RETURN[index][field.key].map(
+                        (_obj, _i) => ({ ..._obj, [key]: value[_index] })
+                      );
+                    });
+                  else if (Object.values(item).every(Utils.isArrayOfArrays))
+                    RETURN[index][field.key] = item;
+                  else {
+                    RETURN[index][field.key] = [];
+                    Object.entries(item).forEach(([key, value]) => {
+                      for (let _i = 0; _i < value.length; _i++) {
+                        if (!RETURN[index][field.key][_i])
+                          RETURN[index][field.key][_i] = {};
+                        RETURN[index][field.key][_i][key] = value[_i];
+                      }
+                    });
+                  }
+                } else RETURN[index][field.key] = null;
+              } else RETURN[index][field.key] = item;
+            });
+          } else if (
+            (field as FieldDefault & (FieldArrayType | FieldArrayArrayType))
+              .children === "table" ||
+            (Array.isArray(
+              (field as FieldDefault & (FieldArrayType | FieldArrayArrayType))
+                .children
+            ) &&
+              (
+                (field as FieldDefault & (FieldArrayType | FieldArrayArrayType))
+                  .children as FieldType[]
+              ).includes("table"))
+          ) {
             if (options.columns)
               options.columns = (options.columns as string[])
                 .filter((column) => column.includes(`${field.key}.*.`))
@@ -670,8 +891,10 @@ export default class Inibase {
                   path,
                   File.encodeFileName((prefix ?? "") + field.key, "inib")
                 ),
+                linesNumber,
                 field.type,
-                linesNumber
+                (field as FieldDefault & (FieldArrayType | FieldArrayArrayType))
+                  .children as FieldType | FieldType[]
               )) ?? {}
             )) {
               if (!RETURN[index]) RETURN[index] = {};
@@ -679,26 +902,44 @@ export default class Inibase {
                 ? await this.get(field.key, value as number, options)
                 : this.getDefaultValue(field);
             }
-          } else if (Utils.isArrayOfObjects(field.children)) {
-            Object.entries(
-              (await getItemsFromSchema(
+          } else if (
+            existsSync(
+              join(
                 path,
-                field.children as Schema,
+                File.encodeFileName((prefix ?? "") + field.key, "inib")
+              )
+            )
+          )
+            Object.entries(
+              (await File.get(
+                join(
+                  path,
+                  File.encodeFileName((prefix ?? "") + field.key, "inib")
+                ),
                 linesNumber,
-                (prefix ?? "") +
-                  field.key +
-                  (field.type === "array" ? ".*." : ".")
+                field.type,
+                (field as any)?.children
               )) ?? {}
             ).forEach(([index, item]) => {
               if (!RETURN[index]) RETURN[index] = {};
-              RETURN[index][field.key] =
-                field.type === "array" &&
-                Utils.isObject(item) &&
-                Object.values(item).every((i) => i === null)
-                  ? []
-                  : item;
+              RETURN[index][field.key] = item ?? this.getDefaultValue(field);
             });
-          }
+        } else if (field.type === "object") {
+          Object.entries(
+            (await getItemsFromSchema(
+              path,
+              field.children as Schema,
+              linesNumber,
+              (prefix ?? "") + field.key + "."
+            )) ?? {}
+          ).forEach(([index, item]) => {
+            if (!RETURN[index]) RETURN[index] = {};
+            if (Utils.isObject(item)) {
+              if (!Object.values(item).every((i) => i === null))
+                RETURN[index][field.key] = item;
+              else RETURN[index][field.key] = null;
+            } else RETURN[index][field.key] = null;
+          });
         } else if (field.type === "table") {
           if (
             existsSync(join(this.databasePath, field.key)) &&
@@ -723,8 +964,8 @@ export default class Inibase {
                   path,
                   File.encodeFileName((prefix ?? "") + field.key, "inib")
                 ),
-                "number",
-                linesNumber
+                linesNumber,
+                "number"
               )) ?? {}
             )) {
               if (!RETURN[index]) RETURN[index] = {};
@@ -744,8 +985,9 @@ export default class Inibase {
                 path,
                 File.encodeFileName((prefix ?? "") + field.key, "inib")
               ),
+              linesNumber,
               field.type,
-              linesNumber
+              (field as any)?.children
             )) ?? {}
           ).forEach(([index, item]) => {
             if (!RETURN[index]) RETURN[index] = {};
@@ -776,11 +1018,12 @@ export default class Inibase {
       if (!existsSync(idFilePath)) throw this.throwError("NO_ITEMS", tableName);
       const [lineNumbers, countItems] = await File.search(
         idFilePath,
-        "number",
         "[]",
         Utils.isNumber(Ids)
-          ? Ids.map((id) => parseFloat(id as string))
+          ? Ids.map((id) => Number(id as string))
           : Ids.map((id) => Utils.decodeID(id as string, this.databasePath)),
+        undefined,
+        "number",
         undefined,
         Ids.length
       );
@@ -800,7 +1043,8 @@ export default class Inibase {
     } else if (Utils.isObject(where)) {
       // Criteria
       const FormatObjectCriteriaValue = (
-        value: string
+        value: string,
+        isParentArray: boolean = false
       ): [ComparisonOperator, string | number | boolean | null] => {
         switch (value[0]) {
           case ">":
@@ -827,10 +1071,19 @@ export default class Inibase {
                   value.slice(3) as string | number,
                 ]
               : [
-                  value.slice(0, 1) as ComparisonOperator,
+                  (value.slice(0, 1) + "=") as ComparisonOperator,
                   value.slice(1) as string | number,
                 ];
           case "=":
+            return isParentArray
+              ? [
+                  value.slice(0, 1) as ComparisonOperator,
+                  value.slice(1) as string | number,
+                ]
+              : [
+                  value.slice(0, 1) as ComparisonOperator,
+                  (value.slice(1) + ",") as string,
+                ];
           case "*":
             return [
               value.slice(0, 1) as ComparisonOperator,
@@ -877,6 +1130,7 @@ export default class Inibase {
           allTrue = true;
           let index = -1;
           for (const [key, value] of Object.entries(criteria)) {
+            const field = this.getField(key, schema as Schema) as Field;
             index++;
             let searchOperator:
                 | ComparisonOperator
@@ -979,10 +1233,11 @@ export default class Inibase {
                 tableName,
                 File.encodeFileName(key, "inib")
               ),
-              this.getField(key, schema as Schema)?.type ?? "string",
               searchOperator,
               searchComparedAtValue,
               searchLogicalOperator,
+              field?.type,
+              (field as any)?.children,
               options.per_page,
               (options.page as number) - 1 * (options.per_page as number) + 1,
               true
@@ -1073,7 +1328,7 @@ export default class Inibase {
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
     const idFilePath = join(this.databasePath, tableName, "id.inib");
     let last_id = existsSync(idFilePath)
-      ? Number(Object.values(await File.get(idFilePath, "number", -1))[0])
+      ? Number(Object.values(await File.get(idFilePath, -1, "number"))[0])
       : 0;
     if (Utils.isArrayOfObjects(data))
       (data as Data[]).forEach((single_data, index) => {
@@ -1172,9 +1427,10 @@ export default class Inibase {
       if (!existsSync(idFilePath)) throw this.throwError("NO_ITEMS", tableName);
       const [lineNumbers, countItems] = await File.search(
         idFilePath,
-        "number",
         "[]",
         Ids.map((id) => Utils.decodeID(id, this.databasePath)),
+        undefined,
+        "number",
         undefined,
         Ids.length
       );
@@ -1239,9 +1495,10 @@ export default class Inibase {
       if (!existsSync(idFilePath)) throw this.throwError("NO_ITEMS", tableName);
       const [lineNumbers, countItems] = await File.search(
         idFilePath,
-        "number",
         "[]",
         Ids.map((id) => Utils.decodeID(id, this.databasePath)),
+        undefined,
+        "number",
         undefined,
         Ids.length
       );
@@ -1259,8 +1516,8 @@ export default class Inibase {
           _id = Object.values(
             await File.get(
               join(this.databasePath, tableName, "id.inib"),
-              "number",
-              where as number | number[]
+              where as number | number[],
+              "number"
             )
           )
             .map(Number)
