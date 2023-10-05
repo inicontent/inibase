@@ -220,7 +220,7 @@ export const remove = async (
 ): Promise<void> => {
   let lineCount = 0;
 
-  const tempFilePath = `${filePath}.tmp`,
+  const tempFilePath = `${filePath}-${Date.now()}.tmp`,
     linesToDeleteArray = [
       ...(Array.isArray(linesToDelete) ? linesToDelete : [linesToDelete]),
     ];

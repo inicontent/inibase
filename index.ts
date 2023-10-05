@@ -1476,7 +1476,7 @@ export default class Inibase {
     tableName: string,
     where?: number | string | (number | string)[] | Criteria,
     _id?: string | string[]
-  ): Promise<string | string[]> {
+  ): Promise<string | string[] | null> {
     const schema = this.getTableSchema(tableName);
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
     if (!where) {
@@ -1522,8 +1522,9 @@ export default class Inibase {
           )
             .map(Number)
             .map((id) => Utils.encodeID(id, this.databasePath));
-        for (const file in files.filter(
-          (fileName: string) => fileName !== "schema.inib"
+        for (const file of files.filter(
+          (fileName: string) =>
+            fileName.endsWith(".inib") && fileName !== "schema.inib"
         ))
           await File.remove(
             join(this.databasePath, tableName, file),
@@ -1537,5 +1538,6 @@ export default class Inibase {
         throw this.throwError("NO_ITEMS", tableName);
       return this.delete(tableName, lineNumbers);
     } else throw this.throwError("INVALID_PARAMETERS", tableName);
+    return null;
   }
 }
