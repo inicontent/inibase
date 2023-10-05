@@ -168,6 +168,20 @@ export default class Inibase {
     return new Error(errorMessage);
   }
 
+  private findLastIdNumber(schema: Schema): number {
+    const lastField = schema[schema.length - 1];
+    if (lastField) {
+      if (
+        (lastField.type === "array" || lastField.type === "object") &&
+        Utils.isArrayOfObjects(lastField.children)
+      )
+        return this.findLastIdNumber(lastField.children as Schema);
+      else if (lastField.id && Utils.isValidID(lastField.id))
+        return Utils.decodeID(lastField.id as string, this.databasePath);
+    }
+    return 0;
+  }
+
   public setTableSchema(tableName: string, schema: Schema): void {
     const encodeSchema = (schema: Schema) => {
         let RETURN: any[][] = [],
@@ -183,10 +197,10 @@ export default class Inibase {
           RETURN[index].push(field.required ?? null);
           RETURN[index].push(field.type ?? null);
           RETURN[index].push(
-            (field.type === "array" || field.type === "object") &&
-              field.children &&
-              Utils.isArrayOfObjects(field.children)
-              ? encodeSchema(field.children as Schema) ?? null
+            (field as any).children
+              ? Utils.isArrayOfObjects((field as any).children)
+                ? encodeSchema((field as any).children as Schema) ?? null
+                : (field as any).children
               : null
           );
           index++;
@@ -219,24 +233,13 @@ export default class Inibase {
             };
           }
           return field;
-        }),
-      findLastIdNumber = (schema: Schema): number => {
-        const lastField = schema[schema.length - 1];
-        if (lastField) {
-          if (
-            (lastField.type === "array" || lastField.type === "object") &&
-            Utils.isArrayOfObjects(lastField.children)
-          )
-            return findLastIdNumber(lastField.children as Schema);
-          else if (lastField.id && Utils.isValidID(lastField.id))
-            return Utils.decodeID(lastField.id as string, this.databasePath);
-        }
-        return 0;
-      };
+        });
 
     // remove id from schema
-    schema = schema.filter((field) => field.key !== "id");
-    schema = addIdToSchema(schema, findLastIdNumber(schema));
+    schema = schema.filter(
+      (field) => !["id", "created_at", "updated_at"].includes(field.key)
+    );
+    schema = addIdToSchema(schema, this.findLastIdNumber(schema));
     const TablePath = join(this.databasePath, tableName),
       TableSchemaPath = join(TablePath, "schema.inib");
     if (!existsSync(TablePath)) mkdirSync(TablePath, { recursive: true });
@@ -308,6 +311,8 @@ export default class Inibase {
           : ""
       );
     }
+    const schema = this.cache.get(TableSchemaPath) as unknown as Schema,
+      lastIdNumber = this.findLastIdNumber(schema);
     return [
       {
         id: Utils.encodeID(0, this.databasePath),
@@ -315,7 +320,19 @@ export default class Inibase {
         type: "number",
         required: true,
       },
-      ...(this.cache.get(TableSchemaPath) as unknown as Schema),
+      ...schema,
+      {
+        id: Utils.encodeID(lastIdNumber, this.databasePath),
+        key: "created_at",
+        type: "date",
+        required: true,
+      },
+      {
+        id: Utils.encodeID(lastIdNumber + 1, this.databasePath),
+        key: "updated_at",
+        type: "date",
+        required: false,
+      },
     ];
   }
 
@@ -437,6 +454,7 @@ export default class Inibase {
         )
           throw this.throwError("FIELD_REQUIRED", field.key);
         if (
+          data.hasOwnProperty(field.key) &&
           !validateFieldType(
             data[field.key],
             field.type,
@@ -472,7 +490,6 @@ export default class Inibase {
     ): Data | Data[] | number | string => {
       if (Array.isArray(field.type))
         field.type = Utils.detectFieldType(value, field.type);
-
       switch (field.type) {
         case "array":
           if (typeof field.children === "string") {
@@ -549,7 +566,7 @@ export default class Inibase {
       let RETURN: Data = {};
       for (const field of schema) {
         if (!data.hasOwnProperty(field.key)) {
-          if (formatOnlyAvailiableKeys) continue;
+          if (formatOnlyAvailiableKeys || !field.required) continue;
           RETURN[field.key] = this.getDefaultValue(field);
           continue;
         }

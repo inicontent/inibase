@@ -40,7 +40,7 @@ export const combineObjects = (objectArray: Record<string, any>[]) => {
   return combinedValues;
 };
 
-export const isNumber = (input: any): boolean =>
+export const isNumber = (input: any | any[]): boolean =>
   Array.isArray(input)
     ? input.every(isNumber)
     : !isNaN(parseFloat(input)) && !isNaN(input - 0);
@@ -118,30 +118,33 @@ export const detectFieldType = (
   input: any,
   availableTypes: FieldType[]
 ): FieldType | undefined => {
-  if (
-    (input === "0" || input === "1" || input === "true" || input === "false") &&
-    availableTypes.includes("boolean")
-  )
-    return "boolean";
-  else if (Utils.isNumber(input)) {
-    if (availableTypes.includes("table")) return "table";
-    else if (availableTypes.includes("number")) return "number";
-    else if (availableTypes.includes("date")) return "date";
-  } else if (
-    (Array.isArray(input) || input.includes(",")) &&
-    availableTypes.includes("array")
-  )
-    return "array";
-  else if (Utils.isEmail(input) && availableTypes.includes("email"))
-    return "email";
-  else if (Utils.isURL(input) && availableTypes.includes("url")) return "url";
-  else if (Utils.isPassword(input) && availableTypes.includes("password"))
-    return "password";
-  else if (Utils.isDate(input) && availableTypes.includes("date"))
-    return "date";
-  else if (!Utils.isNumber(input) && availableTypes.includes("string"))
-    return "string";
-  else return undefined;
+  if (!Array.isArray(input)) {
+    if (
+      (input === "0" ||
+        input === "1" ||
+        input === "true" ||
+        input === "false") &&
+      availableTypes.includes("boolean")
+    )
+      return "boolean";
+    else if (Utils.isNumber(input)) {
+      if (availableTypes.includes("table")) return "table";
+      else if (availableTypes.includes("number")) return "number";
+      else if (availableTypes.includes("date")) return "date";
+    } else if (input.includes(",") && availableTypes.includes("array"))
+      return "array";
+    else if (Utils.isEmail(input) && availableTypes.includes("email"))
+      return "email";
+    else if (Utils.isURL(input) && availableTypes.includes("url")) return "url";
+    else if (Utils.isPassword(input) && availableTypes.includes("password"))
+      return "password";
+    else if (Utils.isDate(input) && availableTypes.includes("date"))
+      return "date";
+    else if (!Utils.isNumber(input) && availableTypes.includes("string"))
+      return "string";
+  } else return "array";
+
+  return undefined;
 };
 
 export default class Utils {
