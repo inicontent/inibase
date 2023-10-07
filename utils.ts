@@ -64,7 +64,11 @@ export const isString = (input: any) =>
   !isEmail(input) &&
   !isDate(input) &&
   !isURL(input) &&
+  !isIP(input) &&
   !isHTML(input);
+
+export const isIP = (input: any) =>
+  /^(?:(?:^|\.)(?:2(?:5[0-5]|[0-4]\d)|1?\d?\d)){4}$/.test(input);
 
 export const isBoolean = (input: any) =>
   typeof input === "boolean" ||
@@ -148,19 +152,20 @@ export const detectFieldType = (
       return "boolean";
     else if (Utils.isNumber(input)) {
       if (availableTypes.includes("table")) return "table";
-      else if (availableTypes.includes("number")) return "number";
       else if (availableTypes.includes("date")) return "date";
+      else if (availableTypes.includes("number")) return "number";
     } else if (input.includes(",") && availableTypes.includes("array"))
       return "array";
-    else if (Utils.isEmail(input) && availableTypes.includes("email"))
+    else if (availableTypes.includes("email") && Utils.isEmail(input))
       return "email";
-    else if (Utils.isURL(input) && availableTypes.includes("url")) return "url";
-    else if (Utils.isPassword(input) && availableTypes.includes("password"))
+    else if (availableTypes.includes("url") && Utils.isURL(input)) return "url";
+    else if (availableTypes.includes("password") && Utils.isPassword(input))
       return "password";
-    else if (Utils.isDate(input) && availableTypes.includes("date"))
+    else if (availableTypes.includes("date") && Utils.isDate(input))
       return "date";
-    else if (!Utils.isNumber(input) && availableTypes.includes("string"))
+    else if (availableTypes.includes("string") && Utils.isString(input))
       return "string";
+    else if (availableTypes.includes("ip") && Utils.isIP(input)) return "ip";
   } else return "array";
 
   return undefined;
@@ -187,4 +192,5 @@ export default class Utils {
   static isBoolean = isBoolean;
   static isString = isString;
   static isHTML = isHTML;
+  static isIP = isIP;
 }

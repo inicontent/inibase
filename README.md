@@ -50,11 +50,7 @@ Become a sponsor and have your company logo here 👉 [GitHub Sponsors](https://
 ## Install
 
 ```js
-// npm
-npm install inibase
-
-// pnpm
-pnpm add inibase
+<npm|pnpm> install inibase
 ```
 
 ## How it works?
@@ -465,7 +461,7 @@ type Data = {
   - [x] Object
   - [x] Array
   - [x] Password
-  - [ ] IP
+  - [x] IP
   - [x] HTML
   - [ ] Upload
 - [ ] TO-DO:

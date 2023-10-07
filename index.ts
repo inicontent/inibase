@@ -30,7 +30,8 @@ export type FieldType =
   | "object"
   | "array"
   | "password"
-  | "html";
+  | "html"
+  | "ip";
 type FieldDefault = {
   id?: string | number | null | undefined;
   key: string;
@@ -410,6 +411,8 @@ export default class Inibase {
           return Utils.isNumber(value);
         case "html":
           return Utils.isHTML(value);
+        case "ip":
+          return Utils.isIP(value);
         case "boolean":
           return Utils.isBoolean(value);
         case "date":
