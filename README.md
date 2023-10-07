@@ -466,7 +466,8 @@ type Data = {
   - [x] Array
   - [x] Password
   - [ ] IP
-  - [ ] HTML
+  - [x] HTML
+  - [ ] Upload
   - [ ] Markdown
 - [ ] TO-DO:
   - [ ] Improve caching

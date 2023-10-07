@@ -54,6 +54,25 @@ export const isURL = (input: any) =>
     input
   );
 
+export const isHTML = (input: any) =>
+  /<\/?\s*[a-z-][^>]*\s*>|(\&(?:[\w\d]+|#\d+|#x[a-f\d]+);)/g.test(input);
+
+export const isString = (input: any) =>
+  Object.prototype.toString.call(input) === "[object String]" &&
+  !isNumber(input) &&
+  !isBoolean(input) &&
+  !isEmail(input) &&
+  !isDate(input) &&
+  !isURL(input) &&
+  !isHTML(input);
+
+export const isBoolean = (input: any) =>
+  typeof input === "boolean" ||
+  input === "true" ||
+  input === "false" ||
+  input === true ||
+  input === false;
+
 export const isPassword = (input: any) => input.length === 161;
 
 export const isDate = (input: any) =>
@@ -165,4 +184,7 @@ export default class Utils {
   static findChangedProperties = findChangedProperties;
   static detectFieldType = detectFieldType;
   static isArrayOfArrays = isArrayOfArrays;
+  static isBoolean = isBoolean;
+  static isString = isString;
+  static isHTML = isHTML;
 }

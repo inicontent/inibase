@@ -10,6 +10,7 @@ import { open } from "fs/promises";
 import { Interface, createInterface } from "readline";
 import { parse } from "path";
 import { ComparisonOperator, FieldType } from ".";
+import { sanitize } from "dompurify";
 import Utils from "./utils";
 
 const doesSupportReadLines = () => {
@@ -34,7 +35,7 @@ export const encode = (
   const secureString = (input: string | number | boolean | null) => {
     if (["true", "false"].includes(String(input))) return input ? 1 : 0;
     return typeof input === "string"
-      ? decodeURIComponent(input)
+      ? decodeURIComponent(Utils.isHTML(input) ? sanitize(input) : input)
           .replaceAll("<", "&lt;")
           .replaceAll(">", "&gt;")
           .replaceAll(",", "%2C")

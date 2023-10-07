@@ -29,7 +29,8 @@ export type FieldType =
   | "table"
   | "object"
   | "array"
-  | "password";
+  | "password"
+  | "html";
 type FieldDefault = {
   id?: string | number | null | undefined;
   key: string;
@@ -398,16 +399,19 @@ export default class Inibase {
 
       switch (fieldType) {
         case "string":
-          // TO-DO: and not email, url, password ...
-          return !Utils.isNumber(value);
+          return Utils.isString(value);
         case "password":
-          return !Utils.isNumber(value) && Utils.isPassword(value);
+          return (
+            Utils.isNumber(value) ||
+            Utils.isString(value) ||
+            Utils.isPassword(value)
+          );
         case "number":
           return Utils.isNumber(value);
+        case "html":
+          return Utils.isHTML(value);
         case "boolean":
-          return (
-            typeof value === "boolean" || value === "true" || value === "false"
-          );
+          return Utils.isBoolean(value);
         case "date":
           return Utils.isDate(value);
         case "object":
@@ -442,6 +446,7 @@ export default class Inibase {
           return false;
       }
     };
+
     if (Utils.isArrayOfObjects(data))
       for (const single_data of data as Data[])
         this.validateData(single_data, schema, skipRequiredField);
@@ -558,6 +563,9 @@ export default class Inibase {
       }
       return null;
     };
+
+    this.validateData(data, schema, formatOnlyAvailiableKeys);
+
     if (Utils.isArrayOfObjects(data))
       return data.map((single_data: Data) =>
         this.formatData(single_data, schema, formatOnlyAvailiableKeys)
@@ -1364,7 +1372,6 @@ export default class Inibase {
       RETURN.created_at = new Date();
     }
     if (!RETURN) throw this.throwError("NO_DATA");
-    this.validateData(RETURN, schema);
     RETURN = this.formatData(RETURN, schema);
     const pathesContents = this.joinPathesContents(
       join(this.databasePath, tableName),
@@ -1397,7 +1404,6 @@ export default class Inibase {
   ): Promise<Data | Data[] | null> {
     const schema = this.getTableSchema(tableName);
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
-    this.validateData(data, schema, true);
     data = this.formatData(data, schema, true);
     if (!where) {
       if (Utils.isArrayOfObjects(data)) {
