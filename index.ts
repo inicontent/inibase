@@ -57,7 +57,7 @@ type FieldObjectType = {
   children: Schema;
 };
 // if "type" is array, make "array" at first place, and "number" & "string" at last place of the array
-type Field = FieldDefault &
+export type Field = FieldDefault &
   (
     | FieldStringType
     | FieldStringArrayType
