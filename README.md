@@ -463,7 +463,6 @@ type Data = {
   - [x] Password
   - [x] IP
   - [x] HTML
-  - [ ] Upload
   - [x] Id
 - [ ] TO-DO:
   - [ ] Improve caching
