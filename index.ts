@@ -31,7 +31,8 @@ export type FieldType =
   | "array"
   | "password"
   | "html"
-  | "ip";
+  | "ip"
+  | "id";
 type FieldDefault = {
   id?: string | number | null | undefined;
   key: string;
@@ -445,6 +446,8 @@ export default class Inibase {
                 Utils.isNumber((value as Data).id))
             );
           else return Utils.isNumber(value) || Utils.isValidID(value);
+        case "id":
+          return Utils.isNumber(value) || Utils.isValidID(value);
         default:
           return false;
       }
@@ -561,6 +564,10 @@ export default class Inibase {
           return value.length === 161 ? value : Utils.hashPassword(value);
         case "number":
           return Utils.isNumber(value) ? Number(value) : null;
+        case "id":
+          return Utils.isNumber(value)
+            ? Utils.encodeID(value, this.databasePath)
+            : value;
         default:
           return value;
       }
@@ -1053,7 +1060,10 @@ export default class Inibase {
         undefined,
         "number",
         undefined,
-        Ids.length
+        Ids.length,
+        0,
+        false,
+        this.databasePath
       );
       if (!lineNumbers || !Object.keys(lineNumbers).length)
         throw this.throwError(
@@ -1268,7 +1278,8 @@ export default class Inibase {
               (field as any)?.children,
               options.per_page,
               (options.page as number) - 1 * (options.per_page as number) + 1,
-              true
+              true,
+              this.databasePath
             );
             if (searchResult) {
               RETURN = Utils.deepMerge(RETURN, searchResult);
@@ -1458,7 +1469,10 @@ export default class Inibase {
         undefined,
         "number",
         undefined,
-        Ids.length
+        Ids.length,
+        0,
+        false,
+        this.databasePath
       );
       if (!lineNumbers || !Object.keys(lineNumbers).length)
         throw this.throwError("INVALID_ID");
@@ -1526,7 +1540,10 @@ export default class Inibase {
         undefined,
         "number",
         undefined,
-        Ids.length
+        Ids.length,
+        0,
+        false,
+        this.databasePath
       );
       if (!lineNumbers || !Object.keys(lineNumbers).length)
         throw this.throwError("INVALID_ID");

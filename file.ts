@@ -280,7 +280,8 @@ export const search = async (
   fieldChildrenType?: FieldType | FieldType[],
   limit?: number,
   offset?: number,
-  readWholeFile?: boolean
+  readWholeFile?: boolean,
+  secretKey?: string
 ): Promise<
   [
     Record<
@@ -312,6 +313,15 @@ export const search = async (
   ): boolean => {
     if (Array.isArray(fieldType))
       fieldType = Utils.detectFieldType(String(originalValue), fieldType);
+    if (Array.isArray(comparedAtValue) && !["[]", "![]"].includes(operator))
+      return comparedAtValue.some((comparedAtValueSingle) =>
+        handleComparisonOperator(
+          operator,
+          originalValue,
+          comparedAtValueSingle,
+          fieldType
+        )
+      );
     // check if not array or object // it can't be array or object!
     switch (operator) {
       case "=":
@@ -323,10 +333,13 @@ export const search = async (
               : false;
           case "boolean":
             return Number(originalValue) - Number(comparedAtValue) === 0;
+          case "id":
+            return secretKey && typeof comparedAtValue === "string"
+              ? Utils.decodeID(comparedAtValue as string, secretKey) ===
+                  originalValue
+              : comparedAtValue === originalValue;
           default:
-            return Array.isArray(comparedAtValue)
-              ? comparedAtValue.some((value) => originalValue === value)
-              : originalValue === comparedAtValue;
+            return originalValue === comparedAtValue;
         }
       case "!=":
         return !handleComparisonOperator(
@@ -336,21 +349,13 @@ export const search = async (
           fieldType
         );
       case ">":
-        return Array.isArray(comparedAtValue)
-          ? comparedAtValue.some((value) => originalValue > value)
-          : originalValue > comparedAtValue;
+        return originalValue > comparedAtValue;
       case "<":
-        return Array.isArray(comparedAtValue)
-          ? comparedAtValue.some((value) => originalValue < value)
-          : originalValue < comparedAtValue;
+        return originalValue < comparedAtValue;
       case ">=":
-        return Array.isArray(comparedAtValue)
-          ? comparedAtValue.some((value) => originalValue >= value)
-          : originalValue >= comparedAtValue;
+        return originalValue >= comparedAtValue;
       case "<=":
-        return Array.isArray(comparedAtValue)
-          ? comparedAtValue.some((value) => originalValue <= value)
-          : originalValue <= comparedAtValue;
+        return originalValue <= comparedAtValue;
       case "[]":
         return (
           (Array.isArray(originalValue) &&
@@ -371,23 +376,13 @@ export const search = async (
           fieldType
         );
       case "*":
-        return Array.isArray(comparedAtValue)
-          ? comparedAtValue.some((value) =>
-              new RegExp(
-                `^${(String(value).includes("%")
-                  ? String(value)
-                  : "%" + String(value) + "%"
-                ).replace(/%/g, ".*")}$`,
-                "i"
-              ).test(String(originalValue))
-            )
-          : new RegExp(
-              `^${(String(comparedAtValue).includes("%")
-                ? String(comparedAtValue)
-                : "%" + String(comparedAtValue) + "%"
-              ).replace(/%/g, ".*")}$`,
-              "i"
-            ).test(String(originalValue));
+        return new RegExp(
+          `^${(String(comparedAtValue).includes("%")
+            ? String(comparedAtValue)
+            : "%" + String(comparedAtValue) + "%"
+          ).replace(/%/g, ".*")}$`,
+          "i"
+        ).test(String(originalValue));
       case "!*":
         return !handleComparisonOperator(
           "*",
