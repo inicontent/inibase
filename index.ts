@@ -37,6 +37,7 @@ type FieldDefault = {
   id?: string | number | null | undefined;
   key: string;
   required?: boolean;
+  children?: any;
 };
 type FieldStringType = {
   type: Exclude<FieldType, "array" | "object">;
