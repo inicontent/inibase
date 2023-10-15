@@ -720,7 +720,7 @@ export default class Inibase {
     let schema = this.getTableSchema(tableName);
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
     const idFilePath = join(this.databasePath, tableName, "id.inib");
-    if (!existsSync(idFilePath)) throw this.throwError("NO_ITEMS", tableName);
+    if (!existsSync(idFilePath)) return null;
     const filterSchemaByColumns = (schema: Schema, columns: string[]): Schema =>
       schema
         .map((field) => {
