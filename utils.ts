@@ -48,11 +48,7 @@ export const isNumber = (input: any | any[]): boolean =>
 export const isEmail = (input: any) =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(input));
 
-export const isURL = (input: any) =>
-  input[0] === "#" ||
-  /^((https?|www):\/\/)?[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]+(\/[^\s]*)?$/.test(
-    input
-  );
+export const isURL = (input: any) => input[0] === "#" || URL.canParse(input);
 
 export const isHTML = (input: any) =>
   /<\/?\s*[a-z-][^>]*\s*>|(\&(?:[\w\d]+|#\d+|#x[a-f\d]+);)/g.test(input);
