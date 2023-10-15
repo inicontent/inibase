@@ -887,7 +887,7 @@ export default class Inibase {
                   if (RETURN[index][field.key])
                     Object.entries(item).forEach(([key, value], _index) => {
                       RETURN[index][field.key] = RETURN[index][field.key].map(
-                        (_obj, _i) => ({ ..._obj, [key]: value[_index] })
+                        (_obj, _i) => ({ ..._obj, [key]: value[_i] })
                       );
                     });
                   else if (Object.values(item).every(Utils.isArrayOfArrays))

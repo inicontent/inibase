@@ -79,7 +79,7 @@ export const decode = (
       case "boolean":
         return typeof value === "string" ? value === "true" : Boolean(value);
       case "array":
-        if (!Array.isArray(value)) return null;
+        if (!Array.isArray(value)) return [value];
         if (fieldChildrenType)
           return value.map(
             (v) =>
