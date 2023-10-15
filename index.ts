@@ -712,16 +712,15 @@ export default class Inibase {
     if (!options.columns) options.columns = [];
     else if (!Array.isArray(options.columns))
       options.columns = [options.columns];
-    else if (
-      options.columns.length &&
-      !(options.columns as string[]).includes("id")
-    )
+    if (options.columns.length && !(options.columns as string[]).includes("id"))
       options.columns.push("id");
     if (!options.page) options.page = 1;
     if (!options.per_page) options.per_page = 15;
     let RETURN!: Data | Data[] | null;
     let schema = this.getTableSchema(tableName);
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
+    const idFilePath = join(this.databasePath, tableName, "id.inib");
+    if (!existsSync(idFilePath)) throw this.throwError("NO_ITEMS", tableName);
     const filterSchemaByColumns = (schema: Schema, columns: string[]): Schema =>
       schema
         .map((field) => {
@@ -735,12 +734,8 @@ export default class Inibase {
             Utils.isArrayOfObjects(field.children) &&
             columns.filter(
               (column) =>
-                column.startsWith(
-                  field.key + (field.type === "array" ? ".*." : ".")
-                ) ||
-                column.startsWith(
-                  "!" + field.key + (field.type === "array" ? ".*." : ".")
-                )
+                column.startsWith(field.key + ".") ||
+                column.startsWith("!" + field.key + ".")
             ).length
           ) {
             field.children = filterSchemaByColumns(
@@ -748,19 +743,10 @@ export default class Inibase {
               columns
                 .filter(
                   (column) =>
-                    column.startsWith(
-                      field.key + (field.type === "array" ? ".*." : ".")
-                    ) ||
-                    column.startsWith(
-                      "!" + field.key + (field.type === "array" ? ".*." : ".")
-                    )
+                    column.startsWith(field.key + ".") ||
+                    column.startsWith("!" + field.key + ".")
                 )
-                .map((column) =>
-                  column.replace(
-                    field.key + (field.type === "array" ? ".*." : "."),
-                    ""
-                  )
-                )
+                .map((column) => column.replace(field.key + ".", ""))
             );
             return field;
           }
@@ -1050,8 +1036,6 @@ export default class Inibase {
     } else if (Utils.isValidID(where) || Utils.isNumber(where)) {
       let Ids = where as string | number | (string | number)[];
       if (!Array.isArray(Ids)) Ids = [Ids];
-      const idFilePath = join(this.databasePath, tableName, "id.inib");
-      if (!existsSync(idFilePath)) throw this.throwError("NO_ITEMS", tableName);
       const [lineNumbers, countItems] = await File.search(
         idFilePath,
         "[]",
@@ -1419,6 +1403,8 @@ export default class Inibase {
   ): Promise<Data | Data[] | null> {
     const schema = this.getTableSchema(tableName);
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
+    const idFilePath = join(this.databasePath, tableName, "id.inib");
+    if (!existsSync(idFilePath)) throw this.throwError("NO_ITEMS", tableName);
     data = this.formatData(data, schema, true);
     if (!where) {
       if (Utils.isArrayOfObjects(data)) {
@@ -1461,8 +1447,6 @@ export default class Inibase {
     } else if (Utils.isValidID(where)) {
       let Ids = where as string | string[];
       if (!Array.isArray(Ids)) Ids = [Ids];
-      const idFilePath = join(this.databasePath, tableName, "id.inib");
-      if (!existsSync(idFilePath)) throw this.throwError("NO_ITEMS", tableName);
       const [lineNumbers, countItems] = await File.search(
         idFilePath,
         "[]",
@@ -1520,6 +1504,8 @@ export default class Inibase {
   ): Promise<string | string[] | null> {
     const schema = this.getTableSchema(tableName);
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
+    const idFilePath = join(this.databasePath, tableName, "id.inib");
+    if (!existsSync(idFilePath)) throw this.throwError("NO_ITEMS", tableName);
     if (!where) {
       const files = readdirSync(join(this.databasePath, tableName));
       if (files.length) {
@@ -1532,8 +1518,6 @@ export default class Inibase {
     } else if (Utils.isValidID(where)) {
       let Ids = where as string | string[];
       if (!Array.isArray(Ids)) Ids = [Ids];
-      const idFilePath = join(this.databasePath, tableName, "id.inib");
-      if (!existsSync(idFilePath)) throw this.throwError("NO_ITEMS", tableName);
       const [lineNumbers, countItems] = await File.search(
         idFilePath,
         "[]",
