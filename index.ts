@@ -1,13 +1,14 @@
 import {
-  readFileSync,
-  writeFileSync,
-  mkdirSync,
-  existsSync,
-  appendFileSync,
-  readdirSync,
-  unlinkSync,
-  renameSync,
-} from "fs";
+  open,
+  unlink,
+  rename,
+  stat,
+  readFile,
+  writeFile,
+  appendFile,
+  mkdir,
+  readdir,
+} from "fs/promises";
 import { join, parse } from "path";
 import Utils from "./utils";
 import File from "./file";
@@ -186,7 +187,10 @@ export default class Inibase {
     return 0;
   }
 
-  public setTableSchema(tableName: string, schema: Schema): void {
+  public async setTableSchema(
+    tableName: string,
+    schema: Schema
+  ): Promise<void> {
     const encodeSchema = (schema: Schema) => {
         let RETURN: any[][] = [],
           index = 0;
@@ -246,8 +250,9 @@ export default class Inibase {
     schema = addIdToSchema(schema, this.findLastIdNumber(schema));
     const TablePath = join(this.databasePath, tableName),
       TableSchemaPath = join(TablePath, "schema.inib");
-    if (!existsSync(TablePath)) mkdirSync(TablePath, { recursive: true });
-    if (existsSync(TableSchemaPath)) {
+    if (!(await stat(TablePath)).isFile())
+      await mkdir(TablePath, { recursive: true });
+    if ((await stat(TableSchemaPath)).isFile()) {
       // update columns files names based on field id
       const schemaToIdsPath = (schema: any, prefix = "") => {
           let RETURN: any = {};
@@ -269,22 +274,22 @@ export default class Inibase {
           return RETURN;
         },
         replaceOldPathes = Utils.findChangedProperties(
-          schemaToIdsPath(this.getTableSchema(tableName)),
+          schemaToIdsPath(await this.getTableSchema(tableName)),
           schemaToIdsPath(schema)
         );
       if (replaceOldPathes)
         for (const [oldPath, newPath] of Object.entries(replaceOldPathes))
-          if (existsSync(join(TablePath, oldPath)))
-            renameSync(join(TablePath, oldPath), join(TablePath, newPath));
+          if ((await stat(join(TablePath, oldPath))).isFile())
+            await rename(join(TablePath, oldPath), join(TablePath, newPath));
     }
 
-    writeFileSync(
+    await writeFile(
       join(TablePath, "schema.inib"),
       JSON.stringify(encodeSchema(schema))
     );
   }
 
-  public getTableSchema(tableName: string): Schema | undefined {
+  public async getTableSchema(tableName: string): Promise<Schema | undefined> {
     const decodeSchema = (encodedSchema: any) => {
         return encodedSchema.map((field: any) =>
           Array.isArray(field[0])
@@ -305,9 +310,11 @@ export default class Inibase {
         );
       },
       TableSchemaPath = join(this.databasePath, tableName, "schema.inib");
-    if (!existsSync(TableSchemaPath)) return undefined;
+    if (!(await stat(TableSchemaPath)).isFile()) return undefined;
     if (!this.cache.has(TableSchemaPath)) {
-      const TableSchemaPathContent = readFileSync(TableSchemaPath);
+      const TableSchemaPathContent = await readFile(TableSchemaPath, {
+        encoding: "utf8",
+      });
       this.cache.set(
         TableSchemaPath,
         TableSchemaPathContent
@@ -717,10 +724,10 @@ export default class Inibase {
     if (!options.page) options.page = 1;
     if (!options.per_page) options.per_page = 15;
     let RETURN!: Data | Data[] | null;
-    let schema = this.getTableSchema(tableName);
+    let schema = await this.getTableSchema(tableName);
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
     const idFilePath = join(this.databasePath, tableName, "id.inib");
-    if (!existsSync(idFilePath)) return null;
+    if (!(await stat(idFilePath)).isFile()) return null;
     const filterSchemaByColumns = (schema: Schema, columns: string[]): Schema =>
       schema
         .map((field) => {
@@ -925,12 +932,14 @@ export default class Inibase {
                 : this.getDefaultValue(field);
             }
           } else if (
-            existsSync(
-              join(
-                path,
-                File.encodeFileName((prefix ?? "") + field.key, "inib")
+            (
+              await stat(
+                join(
+                  path,
+                  File.encodeFileName((prefix ?? "") + field.key, "inib")
+                )
               )
-            )
+            ).isFile()
           )
             Object.entries(
               (await File.get(
@@ -964,13 +973,15 @@ export default class Inibase {
           });
         } else if (field.type === "table") {
           if (
-            existsSync(join(this.databasePath, field.key)) &&
-            existsSync(
-              join(
-                path,
-                File.encodeFileName((prefix ?? "") + field.key, "inib")
+            (await stat(join(this.databasePath, field.key))).isFile() &&
+            (
+              await stat(
+                join(
+                  path,
+                  File.encodeFileName((prefix ?? "") + field.key, "inib")
+                )
               )
-            )
+            ).isFile()
           ) {
             if (options.columns)
               options.columns = (options.columns as string[])
@@ -997,9 +1008,14 @@ export default class Inibase {
             }
           }
         } else if (
-          existsSync(
-            join(path, File.encodeFileName((prefix ?? "") + field.key, "inib"))
-          )
+          (
+            await stat(
+              join(
+                path,
+                File.encodeFileName((prefix ?? "") + field.key, "inib")
+              )
+            )
+          ).isFile()
         )
           Object.entries(
             (await File.get(
@@ -1347,11 +1363,11 @@ export default class Inibase {
       per_page: 15,
     }
   ): Promise<Data | Data[] | null> {
-    const schema = this.getTableSchema(tableName);
+    const schema = await this.getTableSchema(tableName);
     let RETURN: Data | Data[] | null | undefined;
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
     const idFilePath = join(this.databasePath, tableName, "id.inib");
-    let last_id = existsSync(idFilePath)
+    let last_id = (await stat(idFilePath)).isFile()
       ? Number(Object.values(await File.get(idFilePath, -1, "number"))[0])
       : 0;
     if (Utils.isArrayOfObjects(data))
@@ -1376,11 +1392,10 @@ export default class Inibase {
       join(this.databasePath, tableName),
       RETURN
     );
-    for (const [path, content] of Object.entries(pathesContents))
-      appendFileSync(
+    for await (const [path, content] of Object.entries(pathesContents))
+      await appendFile(
         path,
-        (Array.isArray(content) ? content.join("\n") : content ?? "") + "\n",
-        "utf8"
+        (Array.isArray(content) ? content.join("\n") : content ?? "") + "\n"
       );
 
     return this.get(
@@ -1401,10 +1416,11 @@ export default class Inibase {
       per_page: 15,
     }
   ): Promise<Data | Data[] | null> {
-    const schema = this.getTableSchema(tableName);
+    const schema = await this.getTableSchema(tableName);
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
     const idFilePath = join(this.databasePath, tableName, "id.inib");
-    if (!existsSync(idFilePath)) throw this.throwError("NO_ITEMS", tableName);
+    if (!(await stat(idFilePath)).isFile())
+      throw this.throwError("NO_ITEMS", tableName);
     data = this.formatData(data, schema, true);
     if (!where) {
       if (Utils.isArrayOfObjects(data)) {
@@ -1502,17 +1518,18 @@ export default class Inibase {
     where?: number | string | (number | string)[] | Criteria,
     _id?: string | string[]
   ): Promise<string | string[] | null> {
-    const schema = this.getTableSchema(tableName);
+    const schema = await this.getTableSchema(tableName);
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
     const idFilePath = join(this.databasePath, tableName, "id.inib");
-    if (!existsSync(idFilePath)) throw this.throwError("NO_ITEMS", tableName);
+    if (!(await stat(idFilePath)).isFile())
+      throw this.throwError("NO_ITEMS", tableName);
     if (!where) {
-      const files = readdirSync(join(this.databasePath, tableName));
+      const files = await readdir(join(this.databasePath, tableName));
       if (files.length) {
         for (const file in files.filter(
           (fileName: string) => fileName !== "schema.inib"
         ))
-          unlinkSync(join(this.databasePath, tableName, file));
+          await unlink(join(this.databasePath, tableName, file));
       }
       return "*";
     } else if (Utils.isValidID(where)) {
@@ -1538,7 +1555,7 @@ export default class Inibase {
         where as string | string[]
       );
     } else if (Utils.isNumber(where)) {
-      const files = readdirSync(join(this.databasePath, tableName));
+      const files = await readdir(join(this.databasePath, tableName));
       if (files.length) {
         if (!_id)
           _id = Object.values(

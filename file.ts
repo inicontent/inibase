@@ -1,12 +1,5 @@
-import {
-  createWriteStream,
-  unlinkSync,
-  renameSync,
-  existsSync,
-  createReadStream,
-  WriteStream,
-} from "fs";
-import { open } from "fs/promises";
+import { createWriteStream, createReadStream, WriteStream } from "fs";
+import { open, unlink, rename, stat } from "fs/promises";
 import { Interface, createInterface } from "readline";
 import { parse } from "path";
 import { ComparisonOperator, FieldType } from ".";
@@ -170,7 +163,7 @@ export const replace = async (
         string | boolean | number | null | (string | boolean | number | null)[]
       >
 ) => {
-  if (existsSync(filePath)) {
+  if ((await stat(filePath)).isFile()) {
     let rl: Interface, writeStream: WriteStream;
     if (doesSupportReadLines()) {
       const file = await open(filePath, "w+");
@@ -243,10 +236,9 @@ export const remove = async (
       writeStream.write(`${line}\n`);
     }
   }
-  writeStream.end();
-  writeStream.on("finish", () => {
-    unlinkSync(filePath); // Remove the original file
-    renameSync(tempFilePath, filePath); // Rename the temp file to the original file name
+  writeStream.end(async () => {
+    await unlink(filePath); // Remove the original file
+    await rename(tempFilePath, filePath); // Rename the temp file to the original file name
   });
 };
 
