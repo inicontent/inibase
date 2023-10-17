@@ -1,7 +1,7 @@
-import { createWriteStream, createReadStream, WriteStream } from "fs";
-import { open, unlink, rename, stat } from "fs/promises";
-import { Interface, createInterface } from "readline";
-import { parse } from "path";
+import { createWriteStream, createReadStream, WriteStream } from "node:fs";
+import { open, unlink, rename, stat } from "node:fs/promises";
+import { Interface, createInterface } from "node:readline";
+import { parse } from "node:path";
 import { ComparisonOperator, FieldType } from ".";
 import Utils from "./utils";
 

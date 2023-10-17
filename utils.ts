@@ -4,7 +4,9 @@ import {
   timingSafeEqual,
   createDecipheriv,
   createCipheriv,
-} from "crypto";
+  Cipher,
+  Decipher,
+} from "node:crypto";
 import { FieldType } from ".";
 
 export const isArrayOfObjects = (arr: any) => {
@@ -99,16 +101,43 @@ export const comparePassword = (
   return timingSafeEqual(hashedPasswordBuf, suppliedPasswordBuf);
 };
 
-export const encodeID = (id: number, secretKey: string | number): string => {
-  const salt = scryptSync(secretKey.toString(), "salt", 32),
+export const encodeID = (
+  id: number,
+  secretKey: string | number | Buffer
+): string => {
+  let cipher: Cipher, ret: string;
+
+  if (Buffer.isBuffer(secretKey))
+    cipher = createCipheriv(
+      "aes-256-cbc",
+      secretKey,
+      secretKey.subarray(0, 16)
+    );
+  else {
+    const salt = scryptSync(secretKey.toString(), "salt", 32);
     cipher = createCipheriv("aes-256-cbc", salt, salt.subarray(0, 16));
+  }
 
   return cipher.update(id.toString(), "utf8", "hex") + cipher.final("hex");
 };
 
-export const decodeID = (input: string, secretKey: string | number): number => {
-  const salt = scryptSync(secretKey.toString(), "salt", 32),
+export const decodeID = (
+  input: string,
+  secretKey: string | number | Buffer
+): number => {
+  let decipher: Decipher;
+
+  if (Buffer.isBuffer(secretKey))
+    decipher = createDecipheriv(
+      "aes-256-cbc",
+      secretKey,
+      secretKey.subarray(0, 16)
+    );
+  else {
+    const salt = scryptSync(secretKey.toString(), "salt", 32);
     decipher = createDecipheriv("aes-256-cbc", salt, salt.subarray(0, 16));
+  }
+
   return Number(
     decipher.update(input as string, "hex", "utf8") + decipher.final("utf8")
   );
