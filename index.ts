@@ -1,8 +1,6 @@
 import {
-  open,
   unlink,
   rename,
-  stat,
   readFile,
   writeFile,
   appendFile,
@@ -932,14 +930,12 @@ export default class Inibase {
                 : this.getDefaultValue(field);
             }
           } else if (
-            (
-              await stat(
-                join(
-                  path,
-                  File.encodeFileName((prefix ?? "") + field.key, "inib")
-                )
+            await File.isExists(
+              join(
+                path,
+                File.encodeFileName((prefix ?? "") + field.key, "inib")
               )
-            ).isFile()
+            )
           )
             Object.entries(
               (await File.get(
@@ -974,14 +970,12 @@ export default class Inibase {
         } else if (field.type === "table") {
           if (
             (await File.isExists(join(this.databasePath, field.key))) &&
-            (
-              await stat(
-                join(
-                  path,
-                  File.encodeFileName((prefix ?? "") + field.key, "inib")
-                )
+            (await File.isExists(
+              join(
+                path,
+                File.encodeFileName((prefix ?? "") + field.key, "inib")
               )
-            ).isFile()
+            ))
           ) {
             if (options.columns)
               options.columns = (options.columns as string[])
@@ -1008,14 +1002,9 @@ export default class Inibase {
             }
           }
         } else if (
-          (
-            await stat(
-              join(
-                path,
-                File.encodeFileName((prefix ?? "") + field.key, "inib")
-              )
-            )
-          ).isFile()
+          await File.isExists(
+            join(path, File.encodeFileName((prefix ?? "") + field.key, "inib"))
+          )
         )
           Object.entries(
             (await File.get(
