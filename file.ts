@@ -10,6 +10,14 @@ const doesSupportReadLines = () => {
   return major >= 18 && minor >= 11;
 };
 
+export const isExists = async (path: string) => {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+};
 export const encodeFileName = (fileName: string, extension?: string) => {
   return (
     fileName.replaceAll("%", "%25").replaceAll("*", "%") +
@@ -163,7 +171,7 @@ export const replace = async (
         string | boolean | number | null | (string | boolean | number | null)[]
       >
 ) => {
-  if ((await stat(filePath)).isFile()) {
+  if (await isExists(filePath)) {
     let rl: Interface, writeStream: WriteStream;
     if (doesSupportReadLines()) {
       const file = await open(filePath, "w+");
@@ -461,4 +469,5 @@ export default class File {
   static decode = decode;
   static encodeFileName = encodeFileName;
   static decodeFileName = decodeFileName;
+  static isExists = isExists;
 }

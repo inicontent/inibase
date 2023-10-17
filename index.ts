@@ -250,9 +250,9 @@ export default class Inibase {
     schema = addIdToSchema(schema, this.findLastIdNumber(schema));
     const TablePath = join(this.databasePath, tableName),
       TableSchemaPath = join(TablePath, "schema.inib");
-    if (!(await stat(TablePath)).isFile())
+    if (!(await File.isExists(TablePath)))
       await mkdir(TablePath, { recursive: true });
-    if ((await stat(TableSchemaPath)).isFile()) {
+    if (await File.isExists(TableSchemaPath)) {
       // update columns files names based on field id
       const schemaToIdsPath = (schema: any, prefix = "") => {
           let RETURN: any = {};
@@ -279,7 +279,7 @@ export default class Inibase {
         );
       if (replaceOldPathes)
         for (const [oldPath, newPath] of Object.entries(replaceOldPathes))
-          if ((await stat(join(TablePath, oldPath))).isFile())
+          if (await File.isExists(join(TablePath, oldPath)))
             await rename(join(TablePath, oldPath), join(TablePath, newPath));
     }
 
@@ -310,7 +310,7 @@ export default class Inibase {
         );
       },
       TableSchemaPath = join(this.databasePath, tableName, "schema.inib");
-    if (!(await stat(TableSchemaPath)).isFile()) return undefined;
+    if (!(await File.isExists(TableSchemaPath))) return undefined;
     if (!this.cache.has(TableSchemaPath)) {
       const TableSchemaPathContent = await readFile(TableSchemaPath, {
         encoding: "utf8",
@@ -727,7 +727,7 @@ export default class Inibase {
     let schema = await this.getTableSchema(tableName);
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
     const idFilePath = join(this.databasePath, tableName, "id.inib");
-    if (!(await stat(idFilePath)).isFile()) return null;
+    if (!(await File.isExists(idFilePath))) return null;
     const filterSchemaByColumns = (schema: Schema, columns: string[]): Schema =>
       schema
         .map((field) => {
@@ -973,7 +973,7 @@ export default class Inibase {
           });
         } else if (field.type === "table") {
           if (
-            (await stat(join(this.databasePath, field.key))).isFile() &&
+            (await File.isExists(join(this.databasePath, field.key))) &&
             (
               await stat(
                 join(
@@ -1367,25 +1367,24 @@ export default class Inibase {
     let RETURN: Data | Data[] | null | undefined;
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
     const idFilePath = join(this.databasePath, tableName, "id.inib");
-    let last_id = (await stat(idFilePath)).isFile()
+    let last_id = (await File.isExists(idFilePath))
       ? Number(Object.values(await File.get(idFilePath, -1, "number"))[0])
       : 0;
     if (Utils.isArrayOfObjects(data))
       (data as Data[]).forEach((single_data, index) => {
         if (!RETURN) RETURN = [];
-        RETURN[index] = (({ id, updated_at, created_at, ...rest }) => rest)(
-          single_data
-        );
-        RETURN[index].id = ++last_id;
-        RETURN[index].created_at = new Date();
+        RETURN[index] = (({ id, updated_at, created_at, ...rest }) => ({
+          id: ++last_id,
+          ...rest,
+          created_at: new Date(),
+        }))(single_data);
       });
-    else {
-      RETURN = (({ id, updated_at, created_at, ...rest }) => rest)(
-        data as Data
-      );
-      RETURN.id = ++last_id;
-      RETURN.created_at = new Date();
-    }
+    else
+      RETURN = (({ id, updated_at, created_at, ...rest }) => ({
+        id: ++last_id,
+        ...rest,
+        created_at: new Date(),
+      }))(data as Data);
     if (!RETURN) throw this.throwError("NO_DATA");
     RETURN = this.formatData(RETURN, schema);
     const pathesContents = this.joinPathesContents(
@@ -1419,7 +1418,7 @@ export default class Inibase {
     const schema = await this.getTableSchema(tableName);
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
     const idFilePath = join(this.databasePath, tableName, "id.inib");
-    if (!(await stat(idFilePath)).isFile())
+    if (!(await File.isExists(idFilePath)))
       throw this.throwError("NO_ITEMS", tableName);
     data = this.formatData(data, schema, true);
     if (!where) {
@@ -1521,7 +1520,7 @@ export default class Inibase {
     const schema = await this.getTableSchema(tableName);
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
     const idFilePath = join(this.databasePath, tableName, "id.inib");
-    if (!(await stat(idFilePath)).isFile())
+    if (!(await File.isExists(idFilePath)))
       throw this.throwError("NO_ITEMS", tableName);
     if (!where) {
       const files = await readdir(join(this.databasePath, tableName));
