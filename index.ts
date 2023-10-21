@@ -328,7 +328,7 @@ export default class Inibase {
       {
         id: Utils.encodeID(0, this.salt),
         key: "id",
-        type: "number",
+        type: "id",
         required: true,
       },
       ...schema,
