@@ -7,7 +7,7 @@ import {
   Cipher,
   Decipher,
 } from "node:crypto";
-import { FieldType } from ".";
+import { FieldType, Data } from ".";
 
 export const isArrayOfObjects = (arr: any) => {
   return Array.isArray(arr) && (arr.length === 0 || arr.every(isObject));
@@ -175,25 +175,91 @@ export const detectFieldType = (
       availableTypes.includes("boolean")
     )
       return "boolean";
-    else if (Utils.isNumber(input)) {
+    else if (isNumber(input)) {
       if (availableTypes.includes("table")) return "table";
       else if (availableTypes.includes("date")) return "date";
       else if (availableTypes.includes("number")) return "number";
     } else if (input.includes(",") && availableTypes.includes("array"))
       return "array";
-    else if (availableTypes.includes("email") && Utils.isEmail(input))
-      return "email";
-    else if (availableTypes.includes("url") && Utils.isURL(input)) return "url";
-    else if (availableTypes.includes("password") && Utils.isPassword(input))
+    else if (availableTypes.includes("email") && isEmail(input)) return "email";
+    else if (availableTypes.includes("url") && isURL(input)) return "url";
+    else if (availableTypes.includes("password") && isPassword(input))
       return "password";
-    else if (availableTypes.includes("date") && Utils.isDate(input))
-      return "date";
-    else if (availableTypes.includes("string") && Utils.isString(input))
+    else if (availableTypes.includes("date") && isDate(input)) return "date";
+    else if (availableTypes.includes("string") && isString(input))
       return "string";
-    else if (availableTypes.includes("ip") && Utils.isIP(input)) return "ip";
+    else if (availableTypes.includes("ip") && isIP(input)) return "ip";
   } else return "array";
 
   return undefined;
+};
+
+export const validateFieldType = (
+  value: any,
+  fieldType: FieldType | FieldType[],
+  fieldChildrenType?: FieldType | FieldType[]
+): boolean => {
+  if (value === null) return true;
+  if (Array.isArray(fieldType))
+    return detectFieldType(value, fieldType) !== undefined;
+  if (fieldType === "array" && fieldChildrenType && Array.isArray(value))
+    return value.some(
+      (v) =>
+        detectFieldType(
+          v,
+          Array.isArray(fieldChildrenType)
+            ? fieldChildrenType
+            : [fieldChildrenType]
+        ) !== undefined
+    );
+
+  switch (fieldType) {
+    case "string":
+      return isString(value);
+    case "password":
+      return isNumber(value) || isString(value) || isPassword(value);
+    case "number":
+      return isNumber(value);
+    case "html":
+      return isHTML(value);
+    case "ip":
+      return isIP(value);
+    case "boolean":
+      return isBoolean(value);
+    case "date":
+      return isDate(value);
+    case "object":
+      return isObject(value);
+    case "array":
+      return Array.isArray(value);
+    case "email":
+      return isEmail(value);
+    case "url":
+      return isURL(value);
+    case "table":
+      // feat: check if id exists
+      if (Array.isArray(value))
+        return (
+          (isArrayOfObjects(value) &&
+            value.every(
+              (element: Data) =>
+                element.hasOwnProperty("id") &&
+                (isValidID(element.id) || isNumber(element.id))
+            )) ||
+          value.every(isNumber) ||
+          isValidID(value)
+        );
+      else if (isObject(value))
+        return (
+          value.hasOwnProperty("id") &&
+          (isValidID((value as Data).id) || isNumber((value as Data).id))
+        );
+      else return isNumber(value) || isValidID(value);
+    case "id":
+      return isNumber(value) || isValidID(value);
+    default:
+      return false;
+  }
 };
 
 export default class Utils {
@@ -218,4 +284,5 @@ export default class Utils {
   static isString = isString;
   static isHTML = isHTML;
   static isIP = isIP;
+  static validateFieldType = validateFieldType;
 }

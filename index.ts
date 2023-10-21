@@ -388,79 +388,6 @@ export default class Inibase {
     schema: Schema,
     skipRequiredField: boolean = false
   ): void {
-    const validateFieldType = (
-      value: any,
-      fieldType: FieldType | FieldType[],
-      fieldChildrenType?: FieldType | FieldType[]
-    ): boolean => {
-      if (value === null) return true;
-      if (Array.isArray(fieldType))
-        return Utils.detectFieldType(value, fieldType) !== undefined;
-      if (fieldType === "array" && fieldChildrenType && Array.isArray(value))
-        return value.some(
-          (v) =>
-            Utils.detectFieldType(
-              v,
-              Array.isArray(fieldChildrenType)
-                ? fieldChildrenType
-                : [fieldChildrenType]
-            ) !== undefined
-        );
-
-      switch (fieldType) {
-        case "string":
-          return Utils.isString(value);
-        case "password":
-          return (
-            Utils.isNumber(value) ||
-            Utils.isString(value) ||
-            Utils.isPassword(value)
-          );
-        case "number":
-          return Utils.isNumber(value);
-        case "html":
-          return Utils.isHTML(value);
-        case "ip":
-          return Utils.isIP(value);
-        case "boolean":
-          return Utils.isBoolean(value);
-        case "date":
-          return Utils.isDate(value);
-        case "object":
-          return Utils.isObject(value);
-        case "array":
-          return Array.isArray(value);
-        case "email":
-          return Utils.isEmail(value);
-        case "url":
-          return Utils.isURL(value);
-        case "table":
-          // feat: check if id exists
-          if (Array.isArray(value))
-            return (
-              (Utils.isArrayOfObjects(value) &&
-                value.every(
-                  (element: Data) =>
-                    element.hasOwnProperty("id") &&
-                    (Utils.isValidID(element.id) || Utils.isNumber(element.id))
-                )) ||
-              value.every(Utils.isNumber) ||
-              Utils.isValidID(value)
-            );
-          else if (Utils.isObject(value))
-            return (
-              value.hasOwnProperty("id") &&
-              (Utils.isValidID((value as Data).id) ||
-                Utils.isNumber((value as Data).id))
-            );
-          else return Utils.isNumber(value) || Utils.isValidID(value);
-        case "id":
-          return Utils.isNumber(value) || Utils.isValidID(value);
-        default:
-          return false;
-      }
-    };
-
     if (Utils.isArrayOfObjects(data))
       for (const single_data of data as Data[])
         this.validateData(single_data, schema, skipRequiredField);
@@ -474,7 +401,7 @@ export default class Inibase {
           throw this.throwError("FIELD_REQUIRED", field.key);
         if (
           data.hasOwnProperty(field.key) &&
-          !validateFieldType(
+          !Utils.validateFieldType(
             data[field.key],
             field.type,
             (field as any)?.children &&
