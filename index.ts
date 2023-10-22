@@ -1282,7 +1282,7 @@ export default class Inibase {
       page: 1,
       per_page: 15,
     },
-    returnPostedData: boolean = false
+    returnPostedData: boolean = true
   ): Promise<Data | Data[] | null | void> {
     const schema = await this.getTableSchema(tableName);
     let RETURN: Data | Data[] | null | undefined;
