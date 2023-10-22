@@ -8,9 +8,10 @@ import {
   readdir,
 } from "node:fs/promises";
 import { join, parse } from "node:path";
-import Utils from "./utils";
-import File from "./file";
 import { scryptSync } from "node:crypto";
+import File from "./file";
+import Utils from "./utils";
+import UtilsServer from "./utils.server";
 
 export type Data = {
   id?: number | string;
@@ -183,7 +184,7 @@ export default class Inibase {
       )
         return this.findLastIdNumber(lastField.children as Schema);
       else if (lastField.id && Utils.isValidID(lastField.id))
-        return Utils.decodeID(lastField.id as string, this.salt);
+        return UtilsServer.decodeID(lastField.id as string, this.salt);
     }
     return 0;
   }
@@ -198,7 +199,9 @@ export default class Inibase {
         for (const field of schema) {
           if (!RETURN[index]) RETURN[index] = [];
           RETURN[index].push(
-            field.id ? Utils.decodeID(field.id as string, this.salt) : null
+            field.id
+              ? UtilsServer.decodeID(field.id as string, this.salt)
+              : null
           );
           RETURN[index].push(field.key ?? null);
           RETURN[index].push(field.required ?? null);
@@ -224,18 +227,19 @@ export default class Inibase {
               oldIndex++;
               field = {
                 ...field,
-                id: Utils.encodeID(oldIndex, this.salt),
+                id: UtilsServer.encodeID(oldIndex, this.salt),
               };
-            } else oldIndex = Utils.decodeID(field.id as string, this.salt);
+            } else
+              oldIndex = UtilsServer.decodeID(field.id as string, this.salt);
             field.children = addIdToSchema(field.children as Schema, oldIndex);
             oldIndex += field.children.length;
           } else if (field.id)
-            oldIndex = Utils.decodeID(field.id as string, this.salt);
+            oldIndex = UtilsServer.decodeID(field.id as string, this.salt);
           else {
             oldIndex++;
             field = {
               ...field,
-              id: Utils.encodeID(oldIndex, this.salt),
+              id: UtilsServer.encodeID(oldIndex, this.salt),
             };
           }
           return field;
@@ -266,10 +270,8 @@ export default class Inibase {
                 )
               );
             } else if (Utils.isValidID(field.id))
-              RETURN[Utils.decodeID(field.id, this.salt)] = File.encodeFileName(
-                (prefix ?? "") + field.key,
-                "inib"
-              );
+              RETURN[UtilsServer.decodeID(field.id, this.salt)] =
+                File.encodeFileName((prefix ?? "") + field.key, "inib");
 
           return RETURN;
         },
@@ -296,7 +298,7 @@ export default class Inibase {
             ? decodeSchema(field)
             : Object.fromEntries(
                 Object.entries({
-                  id: Utils.encodeID(field[0], this.salt),
+                  id: UtilsServer.encodeID(field[0], this.salt),
                   key: field[1],
                   required: field[2],
                   type: field[3],
@@ -326,20 +328,20 @@ export default class Inibase {
       lastIdNumber = this.findLastIdNumber(schema);
     return [
       {
-        id: Utils.encodeID(0, this.salt),
+        id: UtilsServer.encodeID(0, this.salt),
         key: "id",
         type: "id",
         required: true,
       },
       ...schema,
       {
-        id: Utils.encodeID(lastIdNumber, this.salt),
+        id: UtilsServer.encodeID(lastIdNumber, this.salt),
         key: "created_at",
         type: "date",
         required: true,
       },
       {
-        id: Utils.encodeID(lastIdNumber + 1, this.salt),
+        id: UtilsServer.encodeID(lastIdNumber + 1, this.salt),
         key: "updated_at",
         type: "date",
         required: false,
@@ -452,16 +454,16 @@ export default class Inibase {
                     value.map((item: any) =>
                       Utils.isNumber(item.id)
                         ? Number(item.id)
-                        : Utils.decodeID(item.id, this.salt)
+                        : UtilsServer.decodeID(item.id, this.salt)
                     );
                 } else if (Utils.isValidID(value) || Utils.isNumber(value))
                   return value.map((item: number | string) =>
                     Utils.isNumber(item)
                       ? Number(item as string)
-                      : Utils.decodeID(item as string, this.salt)
+                      : UtilsServer.decodeID(item as string, this.salt)
                   );
               } else if (Utils.isValidID(value))
-                return [Utils.decodeID(value, this.salt)];
+                return [UtilsServer.decodeID(value, this.salt)];
               else if (Utils.isNumber(value)) return [Number(value)];
             } else if (data.hasOwnProperty(field.key)) return value;
           } else if (Utils.isArrayOfObjects(field.children))
@@ -489,19 +491,19 @@ export default class Inibase {
             )
               return Utils.isNumber(value.id)
                 ? Number(value.id)
-                : Utils.decodeID(value.id, this.salt);
+                : UtilsServer.decodeID(value.id, this.salt);
           } else if (Utils.isValidID(value) || Utils.isNumber(value))
             return Utils.isNumber(value)
               ? Number(value)
-              : Utils.decodeID(value, this.salt);
+              : UtilsServer.decodeID(value, this.salt);
           break;
         case "password":
-          return value.length === 161 ? value : Utils.hashPassword(value);
+          return value.length === 161 ? value : UtilsServer.hashPassword(value);
         case "number":
           return Utils.isNumber(value) ? Number(value) : null;
         case "id":
           return Utils.isNumber(value)
-            ? Utils.encodeID(value, this.salt)
+            ? UtilsServer.encodeID(value, this.salt)
             : value;
         default:
           return value;
@@ -975,7 +977,7 @@ export default class Inibase {
         "[]",
         Utils.isNumber(Ids)
           ? Ids.map((id) => Number(id as string))
-          : Ids.map((id) => Utils.decodeID(id as string, this.salt)),
+          : Ids.map((id) => UtilsServer.decodeID(id as string, this.salt)),
         undefined,
         "number",
         undefined,
@@ -1264,12 +1266,12 @@ export default class Inibase {
       return null;
     return Utils.isArrayOfObjects(RETURN)
       ? (RETURN as Data[]).map((data: Data) => {
-          data.id = Utils.encodeID(data.id as number, this.salt);
+          data.id = UtilsServer.encodeID(data.id as number, this.salt);
           return data;
         })
       : {
           ...(RETURN as Data),
-          id: Utils.encodeID((RETURN as Data).id as number, this.salt),
+          id: UtilsServer.encodeID((RETURN as Data).id as number, this.salt),
         };
   }
 
@@ -1358,7 +1360,7 @@ export default class Inibase {
         return this.put(
           tableName,
           data,
-          Utils.decodeID((data as Data).id as string, this.salt)
+          UtilsServer.decodeID((data as Data).id as string, this.salt)
         );
       } else {
         const pathesContents = this.joinPathesContents(
@@ -1383,7 +1385,7 @@ export default class Inibase {
       const [lineNumbers, countItems] = await File.search(
         idFilePath,
         "[]",
-        Ids.map((id) => Utils.decodeID(id, this.salt)),
+        Ids.map((id) => UtilsServer.decodeID(id, this.salt)),
         undefined,
         "number",
         undefined,
@@ -1455,7 +1457,7 @@ export default class Inibase {
       const [lineNumbers, countItems] = await File.search(
         idFilePath,
         "[]",
-        Ids.map((id) => Utils.decodeID(id, this.salt)),
+        Ids.map((id) => UtilsServer.decodeID(id, this.salt)),
         undefined,
         "number",
         undefined,
@@ -1483,7 +1485,7 @@ export default class Inibase {
             )
           )
             .map(Number)
-            .map((id) => Utils.encodeID(id, this.salt));
+            .map((id) => UtilsServer.encodeID(id, this.salt));
         for (const file of files.filter(
           (fileName: string) =>
             fileName.endsWith(".inib") && fileName !== "schema.inib"

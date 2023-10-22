@@ -4,6 +4,7 @@ import { Interface, createInterface } from "node:readline";
 import { parse } from "node:path";
 import { ComparisonOperator, FieldType } from ".";
 import Utils from "./utils";
+import UtilsServer from "./utils.server";
 
 const doesSupportReadLines = () => {
   const [major, minor, patch] = process.versions.node.split(".").map(Number);
@@ -328,13 +329,13 @@ export const search = async (
           case "password":
             return typeof originalValue === "string" &&
               typeof comparedAtValue === "string"
-              ? Utils.comparePassword(originalValue, comparedAtValue)
+              ? UtilsServer.comparePassword(originalValue, comparedAtValue)
               : false;
           case "boolean":
             return Number(originalValue) - Number(comparedAtValue) === 0;
           case "id":
             return secretKey && typeof comparedAtValue === "string"
-              ? Utils.decodeID(comparedAtValue as string, secretKey) ===
+              ? UtilsServer.decodeID(comparedAtValue as string, secretKey) ===
                   originalValue
               : comparedAtValue === originalValue;
           default:
