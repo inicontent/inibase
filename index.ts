@@ -1281,8 +1281,9 @@ export default class Inibase {
     options: Options = {
       page: 1,
       per_page: 15,
-    }
-  ): Promise<Data | Data[] | null> {
+    },
+    returnPostedData: boolean = false
+  ): Promise<Data | Data[] | null | void> {
     const schema = await this.getTableSchema(tableName);
     let RETURN: Data | Data[] | null | undefined;
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
@@ -1317,13 +1318,14 @@ export default class Inibase {
         (Array.isArray(content) ? content.join("\n") : content ?? "") + "\n"
       );
 
-    return this.get(
-      tableName,
-      Utils.isArrayOfObjects(RETURN)
-        ? RETURN.map((data: Data) => data.id)
-        : ((RETURN as Data).id as number),
-      options
-    );
+    if (returnPostedData)
+      return this.get(
+        tableName,
+        Utils.isArrayOfObjects(RETURN)
+          ? RETURN.map((data: Data) => data.id)
+          : ((RETURN as Data).id as number),
+        options
+      );
   }
 
   public async put(
