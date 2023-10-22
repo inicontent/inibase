@@ -1335,8 +1335,9 @@ export default class Inibase {
     options: Options = {
       page: 1,
       per_page: 15,
-    }
-  ): Promise<Data | Data[] | null> {
+    },
+    returnPostedData: boolean = true
+  ): Promise<Data | Data[] | null | void> {
     const schema = await this.getTableSchema(tableName);
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
     const idFilePath = join(this.databasePath, tableName, "id.inib");
@@ -1379,7 +1380,7 @@ export default class Inibase {
         );
         for (const [path, content] of Object.entries(pathesContents))
           await File.replace(path, content);
-        return this.get(tableName, where, options);
+        if (returnPostedData) return this.get(tableName, where, options);
       }
     } else if (Utils.isValidID(where)) {
       let Ids = where as string | string[];
@@ -1425,7 +1426,7 @@ export default class Inibase {
       );
       for (const [path, content] of Object.entries(pathesContents))
         await File.replace(path, content);
-      return this.get(tableName, where, options);
+      if (returnPostedData) return this.get(tableName, where, options);
     } else if (typeof where === "object" && !Array.isArray(where)) {
       const lineNumbers = this.get(tableName, where, undefined, true);
       if (!lineNumbers || !Array.isArray(lineNumbers) || !lineNumbers.length)
