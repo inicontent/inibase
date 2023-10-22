@@ -1186,7 +1186,7 @@ export default class Inibase {
               searchOperator = "=";
               searchComparedAtValue = value as number | boolean;
             }
-            const [searchResult, totlaItems] = await File.search(
+            const [searchResult, totalItems] = await File.search(
               join(
                 this.databasePath,
                 tableName,
@@ -1205,7 +1205,7 @@ export default class Inibase {
             if (searchResult) {
               RETURN = Utils.deepMerge(RETURN, searchResult);
               if (!this.pageInfoArray[key]) this.pageInfoArray[key] = {};
-              this.pageInfoArray[key].total_items = totlaItems;
+              this.pageInfoArray[key].total_items = totalItems;
             }
             if (allTrue && index > 0) {
               if (!Object.keys(RETURN).length) RETURN = {};
