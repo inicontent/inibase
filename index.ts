@@ -503,8 +503,8 @@ export default class Inibase {
           return Utils.isNumber(value) ? Number(value) : null;
         case "id":
           return Utils.isNumber(value)
-            ? UtilsServer.encodeID(value, this.salt)
-            : value;
+            ? value
+            : UtilsServer.decodeID(value, this.salt);
         default:
           return value;
       }
