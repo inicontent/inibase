@@ -1009,16 +1009,6 @@ export default class Inibase {
           Object.keys(lineNumbers).map(Number)
         )) ?? {}
       );
-      const greatestTotalItems = Math.max(
-        ...Object.entries(this.totalItems)
-          .filter(([k]) => k.startsWith(tableName + "-"))
-          .map(([, v]) => v)
-      );
-      this.pageInfo = {
-        ...(({ columns, ...restOfOptions }) => restOfOptions)(options),
-        total: greatestTotalItems,
-        total_pages: Math.ceil(greatestTotalItems / options.per_page),
-      };
       if (RETURN.length && !Array.isArray(where)) RETURN = RETURN[0];
     } else if (Utils.isObject(where)) {
       // Criteria
@@ -1245,18 +1235,8 @@ export default class Inibase {
       if (RETURN) {
         if (onlyLinesNumbers) return Object.keys(RETURN).map(Number);
         const alreadyExistsColumns = Object.keys(Object.values(RETURN)[0]).map(
-            (key) => File.decodeFileName(parse(key).name)
-          ),
-          greatestTotalItems = Math.max(
-            ...Object.entries(this.totalItems)
-              .filter(([k]) => k.startsWith(tableName + "-"))
-              .map(([, v]) => v)
-          );
-        this.pageInfo = {
-          ...(({ columns, ...restOfOptions }) => restOfOptions)(options),
-          total: greatestTotalItems,
-          total_pages: Math.ceil(greatestTotalItems / options.per_page),
-        };
+          (key) => File.decodeFileName(parse(key).name)
+        );
         RETURN = Object.values(
           Utils.deepMerge(
             await getItemsFromSchema(
@@ -1277,6 +1257,17 @@ export default class Inibase {
       (Array.isArray(RETURN) && !RETURN.length)
     )
       return null;
+
+    const greatestTotalItems = Math.max(
+      ...Object.entries(this.totalItems)
+        .filter(([k]) => k.startsWith(tableName + "-"))
+        .map(([, v]) => v)
+    );
+    this.pageInfo = {
+      ...(({ columns, ...restOfOptions }) => restOfOptions)(options),
+      total_pages: Math.ceil(greatestTotalItems / options.per_page),
+      total: greatestTotalItems,
+    };
     return Utils.isArrayOfObjects(RETURN)
       ? (RETURN as Data[]).map((data: Data) => {
           data.id = UtilsServer.encodeID(data.id as number, this.salt);
