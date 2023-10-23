@@ -115,7 +115,18 @@ export const get = async (
   lineNumbers?: number | number[],
   fieldType?: FieldType | FieldType[],
   fieldChildrenType?: FieldType | FieldType[]
-) => {
+): Promise<
+  [
+    Record<
+      number,
+      | string
+      | number
+      | boolean
+      | (string | number | boolean | (string | number | boolean)[])[]
+    > | null,
+    number
+  ]
+> => {
   let rl: Interface;
   if (doesSupportReadLines()) rl = (await open(filePath)).readLines();
   else
@@ -156,7 +167,7 @@ export const get = async (
     }
   }
 
-  return lines ?? null;
+  return [lines ?? null, lineCount];
 };
 
 export const replace = async (
@@ -281,7 +292,7 @@ export const search = async (
   limit?: number,
   offset?: number,
   readWholeFile?: boolean,
-  secretKey?: string
+  secretKey?: string | Buffer
 ): Promise<
   [
     Record<
