@@ -84,11 +84,12 @@ export const decode = (
     switch (fieldType as FieldType) {
       case "table":
       case "number":
-        return isNaN(Number(value)) ? null : Number(value);
+        return isNumber(value) ? Number(value) : null;
       case "boolean":
         return typeof value === "string" ? value === "true" : Boolean(value);
       case "array":
         if (!Array.isArray(value)) return [value];
+
         if (fieldChildrenType)
           return value.map(
             (v) =>
@@ -119,7 +120,13 @@ export const decode = (
         : input.includes("|")
         ? input
             .split("|")
-            .map((_input) => [_input ? unSecureString(_input) : null])
+            .map((_input) => [
+              _input
+                ? fieldType === "array"
+                  ? [unSecureString(_input)]
+                  : unSecureString(_input)
+                : null,
+            ])
         : unSecureString(input)
       : input
   );
