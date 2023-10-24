@@ -3,8 +3,8 @@ import { open, unlink, rename, stat } from "node:fs/promises";
 import { Interface, createInterface } from "node:readline";
 import { parse } from "node:path";
 import { ComparisonOperator, FieldType } from ".";
-import Utils from "./utils";
-import UtilsServer from "./utils.server";
+import { detectFieldType, isArrayOfArrays, isNumber } from "./utils";
+import { encodeID, decodeID, comparePassword } from "./utils.server";
 
 const doesSupportReadLines = () => {
   const [major, minor, patch] = process.versions.node.split(".").map(Number);
@@ -31,7 +31,13 @@ export const decodeFileName = (fileName: string) => {
 };
 
 export const encode = (
-  input: string | number | boolean | null | (string | number | boolean | null)[]
+  input:
+    | string
+    | number
+    | boolean
+    | null
+    | (string | number | boolean | null)[],
+  secretKey?: string | Buffer
 ) => {
   const secureString = (input: string | number | boolean | null) => {
     if (["true", "false"].includes(String(input))) return input ? 1 : 0;
@@ -46,7 +52,7 @@ export const encode = (
       : input;
   };
   return Array.isArray(input)
-    ? Utils.isArrayOfArrays(input)
+    ? isArrayOfArrays(input)
       ? (input as any[])
           .map((_input) => _input.map(secureString).join(","))
           .join("|")
@@ -57,7 +63,8 @@ export const encode = (
 export const decode = (
   input: string | null | number,
   fieldType?: FieldType | FieldType[],
-  fieldChildrenType?: FieldType | FieldType[]
+  fieldChildrenType?: FieldType | FieldType[],
+  secretKey?: string | Buffer
 ): string | number | boolean | null | (string | number | null | boolean)[] => {
   if (!fieldType) return null;
   const unSecureString = (input: string) =>
@@ -70,7 +77,7 @@ export const decode = (
       .replaceAll("\\r", "\r") || null;
   if (input === null || input === "") return null;
   if (Array.isArray(fieldType))
-    fieldType = Utils.detectFieldType(String(input), fieldType);
+    fieldType = detectFieldType(String(input), fieldType);
   const decodeHelper = (value: string | number | any[]) => {
     if (Array.isArray(value) && fieldType !== "array")
       return value.map(decodeHelper);
@@ -88,11 +95,15 @@ export const decode = (
               decode(
                 v,
                 Array.isArray(fieldChildrenType)
-                  ? Utils.detectFieldType(v, fieldChildrenType)
-                  : fieldChildrenType
+                  ? detectFieldType(v, fieldChildrenType)
+                  : fieldChildrenType,
+                undefined,
+                secretKey
               ) as string | number | boolean | null
           );
         else return value;
+      case "id":
+        return isNumber(value) ? encodeID(value as number, secretKey) : value;
       default:
         return value;
     }
@@ -105,6 +116,10 @@ export const decode = (
               .split("|")
               .map((_input) => _input.split(",").map(unSecureString))
           : input.split(",").map(unSecureString)
+        : input.includes("|")
+        ? input
+            .split("|")
+            .map((_input) => [_input ? unSecureString(_input) : null])
         : unSecureString(input)
       : input
   );
@@ -114,7 +129,8 @@ export const get = async (
   filePath: string,
   lineNumbers?: number | number[],
   fieldType?: FieldType | FieldType[],
-  fieldChildrenType?: FieldType | FieldType[]
+  fieldChildrenType?: FieldType | FieldType[],
+  secretKey?: string | Buffer
 ): Promise<
   [
     Record<
@@ -147,12 +163,19 @@ export const get = async (
   if (!lineNumbers) {
     for await (const line of rl)
       lineCount++,
-        (lines[lineCount] = decode(line, fieldType, fieldChildrenType));
+        (lines[lineCount] = decode(
+          line,
+          fieldType,
+          fieldChildrenType,
+          secretKey
+        ));
   } else if (lineNumbers === -1) {
     let lastLine: string;
     for await (const line of rl) lineCount++, (lastLine = line);
     if (lastLine)
-      lines = { [lineCount]: decode(lastLine, fieldType, fieldChildrenType) };
+      lines = {
+        [lineCount]: decode(lastLine, fieldType, fieldChildrenType, secretKey),
+      };
   } else {
     let lineNumbersArray = [
       ...(Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers]),
@@ -161,7 +184,7 @@ export const get = async (
       lineCount++;
       if (!lineNumbersArray.includes(lineCount)) continue;
       const indexOfLineCount = lineNumbersArray.indexOf(lineCount);
-      lines[lineCount] = decode(line, fieldType, fieldChildrenType);
+      lines[lineCount] = decode(line, fieldType, fieldChildrenType, secretKey);
       lineNumbersArray[indexOfLineCount] = 0;
       if (!lineNumbersArray.filter((lineN) => lineN !== 0).length) break;
     }
@@ -181,7 +204,8 @@ export const replace = async (
     | Record<
         number,
         string | boolean | number | null | (string | boolean | number | null)[]
-      >
+      >,
+  secretKey?: string | Buffer
 ) => {
   if (await isExists(filePath)) {
     let rl: Interface, writeStream: WriteStream;
@@ -201,13 +225,14 @@ export const replace = async (
       for await (const line of rl) {
         lineCount++;
         writeStream.write(
-          (lineCount in replacements ? encode(replacements[lineCount]) : line) +
-            "\n"
+          (lineCount in replacements
+            ? encode(replacements[lineCount], secretKey)
+            : line) + "\n"
         );
       }
     } else
       for await (const _line of rl)
-        writeStream.write(encode(replacements) + "\n");
+        writeStream.write(encode(replacements, secretKey) + "\n");
 
     writeStream.end();
   } else if (typeof replacements === "object" && !Array.isArray(replacements)) {
@@ -219,8 +244,9 @@ export const replace = async (
       Math.max(...Object.keys(replacements).map(Number)) + 1;
     for (let lineCount = 1; lineCount < largestLinesNumbers; lineCount++) {
       writeStream.write(
-        (lineCount in replacements ? encode(replacements[lineCount]) : "") +
-          "\n"
+        (lineCount in replacements
+          ? encode(replacements[lineCount], secretKey)
+          : "") + "\n"
       );
     }
     writeStream.end();
@@ -323,7 +349,7 @@ export const search = async (
     fieldChildrenType?: FieldType | FieldType[]
   ): boolean => {
     if (Array.isArray(fieldType))
-      fieldType = Utils.detectFieldType(String(originalValue), fieldType);
+      fieldType = detectFieldType(String(originalValue), fieldType);
     if (Array.isArray(comparedAtValue) && !["[]", "![]"].includes(operator))
       return comparedAtValue.some((comparedAtValueSingle) =>
         handleComparisonOperator(
@@ -340,14 +366,13 @@ export const search = async (
           case "password":
             return typeof originalValue === "string" &&
               typeof comparedAtValue === "string"
-              ? UtilsServer.comparePassword(originalValue, comparedAtValue)
+              ? comparePassword(originalValue, comparedAtValue)
               : false;
           case "boolean":
             return Number(originalValue) - Number(comparedAtValue) === 0;
           case "id":
             return secretKey && typeof comparedAtValue === "string"
-              ? UtilsServer.decodeID(comparedAtValue as string, secretKey) ===
-                  originalValue
+              ? decodeID(comparedAtValue as string, secretKey) === originalValue
               : comparedAtValue === originalValue;
           default:
             return originalValue === comparedAtValue;
@@ -427,7 +452,7 @@ export const search = async (
 
   for await (const line of rl) {
     lineCount++;
-    const decodedLine = decode(line, fieldType, fieldChildrenType);
+    const decodedLine = decode(line, fieldType, fieldChildrenType, secretKey);
     if (
       (Array.isArray(operator) &&
         Array.isArray(comparedAtValue) &&

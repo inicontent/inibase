@@ -337,13 +337,13 @@ export default class Inibase {
       },
       ...schema,
       {
-        id: UtilsServer.encodeID(lastIdNumber, this.salt),
+        id: UtilsServer.encodeID(lastIdNumber + 1, this.salt),
         key: "created_at",
         type: "date",
         required: true,
       },
       {
-        id: UtilsServer.encodeID(lastIdNumber + 1, this.salt),
+        id: UtilsServer.encodeID(lastIdNumber + 2, this.salt),
         key: "updated_at",
         type: "date",
         required: false,
@@ -853,7 +853,8 @@ export default class Inibase {
               linesNumber,
               field.type,
               (field as FieldDefault & (FieldArrayType | FieldArrayArrayType))
-                .children as FieldType | FieldType[]
+                .children as FieldType | FieldType[],
+              this.salt
             );
 
             this.totalItems[tableName + "-" + field.key] = total_lines;
@@ -878,7 +879,8 @@ export default class Inibase {
               ),
               linesNumber,
               field.type,
-              (field as any)?.children
+              (field as any)?.children,
+              this.salt
             );
 
             this.totalItems[tableName + "-" + field.key] = total_lines;
@@ -929,7 +931,9 @@ export default class Inibase {
                 File.encodeFileName((prefix ?? "") + field.key, "inib")
               ),
               linesNumber,
-              "number"
+              "number",
+              undefined,
+              this.salt
             );
             this.totalItems[tableName + "-" + field.key] = total_lines;
             for (const [index, item] of Object.entries(items)) {
@@ -948,7 +952,8 @@ export default class Inibase {
             join(path, File.encodeFileName((prefix ?? "") + field.key, "inib")),
             linesNumber,
             field.type,
-            (field as any)?.children
+            (field as any)?.children,
+            this.salt
           );
 
           this.totalItems[tableName + "-" + field.key] = total_lines;
@@ -1288,7 +1293,11 @@ export default class Inibase {
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
     const idFilePath = join(this.folder, this.database, tableName, "id.inib");
     let last_id = (await File.isExists(idFilePath))
-      ? Number(Object.values(await File.get(idFilePath, -1, "number"))[0])
+      ? Number(
+          Object.values(
+            await File.get(idFilePath, -1, "number", undefined, this.salt)
+          )[0]
+        )
       : 0;
     if (Utils.isArrayOfObjects(data))
       (data as Data[]).forEach((single_data, index) => {
@@ -1483,7 +1492,9 @@ export default class Inibase {
             await File.get(
               join(this.folder, this.database, tableName, "id.inib"),
               where as number | number[],
-              "number"
+              "number",
+              undefined,
+              this.salt
             )
           )
             .map(Number)
