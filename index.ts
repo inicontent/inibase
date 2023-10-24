@@ -253,7 +253,7 @@ export default class Inibase {
     );
     schema = addIdToSchema(schema, this.findLastIdNumber(schema));
     const TablePath = join(this.folder, this.database, tableName),
-      TableSchemaPath = join(TablePath, "schema.inib");
+      TableSchemaPath = join(TablePath, "schema");
     if (!(await File.isExists(TablePath)))
       await mkdir(TablePath, { recursive: true });
     if (await File.isExists(TableSchemaPath)) {
@@ -288,7 +288,7 @@ export default class Inibase {
     }
 
     await writeFile(
-      join(TablePath, "schema.inib"),
+      join(TablePath, "schema"),
       JSON.stringify(encodeSchema(schema))
     );
   }
@@ -313,12 +313,7 @@ export default class Inibase {
               )
         );
       },
-      TableSchemaPath = join(
-        this.folder,
-        this.database,
-        tableName,
-        "schema.inib"
-      );
+      TableSchemaPath = join(this.folder, this.database, tableName, "schema");
     if (!(await File.isExists(TableSchemaPath))) return undefined;
     if (!this.cache.has(TableSchemaPath)) {
       const TableSchemaPathContent = await readFile(TableSchemaPath, {
@@ -1453,7 +1448,7 @@ export default class Inibase {
       const files = await readdir(join(this.folder, this.database, tableName));
       if (files.length) {
         for (const file in files.filter(
-          (fileName: string) => fileName !== "schema.inib"
+          (fileName: string) => fileName !== "schema"
         ))
           await unlink(join(this.folder, this.database, tableName, file));
       }
@@ -1495,7 +1490,7 @@ export default class Inibase {
             .map((id) => UtilsServer.encodeID(id, this.salt));
         for (const file of files.filter(
           (fileName: string) =>
-            fileName.endsWith(".inib") && fileName !== "schema.inib"
+            fileName.endsWith(".inib") && fileName !== "schema"
         ))
           await File.remove(
             join(this.folder, this.database, tableName, file),
