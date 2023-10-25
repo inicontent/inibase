@@ -8,7 +8,7 @@
 
 ## Features
 
-- **Lightweight** 🪶 (~60kb)
+- **Lightweight** 🪶 (~80kb)
 - **Minimalist** :white_circle:
 - **TypeScript** :large_blue_diamond:
 - **Super-Fast** :turtle:
