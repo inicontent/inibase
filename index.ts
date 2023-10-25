@@ -1268,15 +1268,7 @@ export default class Inibase {
       total_pages: Math.ceil(greatestTotalItems / options.per_page),
       total: greatestTotalItems,
     };
-    return Utils.isArrayOfObjects(RETURN)
-      ? (RETURN as Data[]).map((data: Data) => {
-          data.id = UtilsServer.encodeID(data.id as number, this.salt);
-          return data;
-        })
-      : {
-          ...(RETURN as Data),
-          id: UtilsServer.encodeID((RETURN as Data).id as number, this.salt),
-        };
+    return RETURN;
   }
 
   public async post(
