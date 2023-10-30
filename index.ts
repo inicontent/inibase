@@ -635,6 +635,21 @@ export default class Inibase {
     return addPathToKeys(CombineData(data), mainPath);
   }
 
+  public async getOne(
+    tableName: string,
+    where?: string | number | (string | number)[] | Criteria,
+    options: Options = {
+      page: 1,
+      per_page: 15,
+    },
+    onlyLinesNumbers?: boolean
+  ): Promise<Data | number | null> {
+    const _get = await this.get(tableName, where, options, onlyLinesNumbers);
+    if (!_get) return null;
+    else if (Array.isArray(_get)) return _get[0];
+    else return _get;
+  }
+
   public async get(
     tableName: string,
     where?: string | number | (string | number)[] | Criteria,
