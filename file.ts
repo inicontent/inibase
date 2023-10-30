@@ -4,7 +4,7 @@ import { Interface, createInterface } from "node:readline";
 import { parse } from "node:path";
 import { ComparisonOperator, FieldType } from ".";
 import { detectFieldType, isArrayOfArrays, isNumber } from "./utils";
-import { encodeID, decodeID, comparePassword } from "./utils.server";
+import { encodeID, comparePassword } from "./utils.server";
 
 const doesSupportReadLines = () => {
   const [major, minor, patch] = process.versions.node.split(".").map(Number);
