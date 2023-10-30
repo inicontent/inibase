@@ -1071,13 +1071,17 @@ export default class Inibase {
         }
 
         if (criteria.or && Utils.isObject(criteria.or)) {
-          const searchResult = await applyCriteria(criteria.or as Criteria);
+          const searchResult = await applyCriteria(
+            criteria.or as Criteria,
+            false
+          );
           delete criteria.or;
           if (searchResult) RETURN = Utils.deepMerge(RETURN, searchResult);
         }
 
         if (Object.keys(criteria).length > 0) {
-          allTrue = true;
+          if (allTrue === undefined) allTrue = true;
+
           let index = -1;
           for (const [key, value] of Object.entries(criteria)) {
             const field = this.getField(key, schema as Schema) as Field;
@@ -1193,6 +1197,7 @@ export default class Inibase {
               RETURN = Utils.deepMerge(RETURN, searchResult);
               this.totalItems[tableName + "-" + key] = total_lines;
             }
+
             if (allTrue && index > 0) {
               if (!Object.keys(RETURN).length) RETURN = {};
               RETURN = Object.fromEntries(
@@ -1204,6 +1209,7 @@ export default class Inibase {
             }
           }
         }
+
         return Object.keys(RETURN).length ? RETURN : null;
       };
 
