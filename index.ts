@@ -270,9 +270,8 @@ export default class Inibase {
                 )
               );
             } else if (Utils.isValidID(field.id))
-              (RETURN[UtilsServer.decodeID(field.id, this.salt)] =
-                (prefix ?? "") + field.key),
-                ".inib";
+              RETURN[UtilsServer.decodeID(field.id, this.salt)] =
+                (prefix ?? "") + field.key + ".inib";
 
           return RETURN;
         },
@@ -629,7 +628,7 @@ export default class Inibase {
     const addPathToKeys = (obj: Record<string, any>, path: string) => {
       const newObject: Record<string, any> = {};
 
-      for (const key in obj) newObject[join(path, key, ".inib")] = obj[key];
+      for (const key in obj) newObject[join(path, key + ".inib")] = obj[key];
 
       return newObject;
     };
@@ -844,7 +843,7 @@ export default class Inibase {
                 .filter((column) => column.includes(`${field.key}.`))
                 .map((column) => column.replace(`${field.key}.`, ""));
             const [items, total_lines] = await File.get(
-              join(path, (prefix ?? "") + field.key, ".inib"),
+              join(path, (prefix ?? "") + field.key + ".inib"),
               linesNumber,
               field.type,
               (field as FieldDefault & (FieldArrayType | FieldArrayArrayType))
@@ -860,10 +859,12 @@ export default class Inibase {
                 : this.getDefaultValue(field);
             }
           } else if (
-            await File.isExists(join(path, (prefix ?? "") + field.key, ".inib"))
+            await File.isExists(
+              join(path, (prefix ?? "") + field.key + ".inib")
+            )
           ) {
             const [items, total_lines] = await File.get(
-              join(path, (prefix ?? "") + field.key, ".inib"),
+              join(path, (prefix ?? "") + field.key + ".inib"),
               linesNumber,
               field.type,
               (field as any)?.children,
@@ -898,7 +899,7 @@ export default class Inibase {
               join(this.folder, this.database, field.key)
             )) &&
             (await File.isExists(
-              join(path, (prefix ?? "") + field.key, ".inib")
+              join(path, (prefix ?? "") + field.key + ".inib")
             ))
           ) {
             if (options.columns)
@@ -910,7 +911,7 @@ export default class Inibase {
                 )
                 .map((column) => column.replace(`${field.key}.`, ""));
             const [items, total_lines] = await File.get(
-              join(path, (prefix ?? "") + field.key, ".inib"),
+              join(path, (prefix ?? "") + field.key + ".inib"),
               linesNumber,
               "number",
               undefined,
@@ -925,10 +926,10 @@ export default class Inibase {
             }
           }
         } else if (
-          await File.isExists(join(path, (prefix ?? "") + field.key, ".inib"))
+          await File.isExists(join(path, (prefix ?? "") + field.key + ".inib"))
         ) {
           const [items, total_lines] = await File.get(
-            join(path, (prefix ?? "") + field.key, ".inib"),
+            join(path, (prefix ?? "") + field.key + ".inib"),
             linesNumber,
             field.type,
             (field as any)?.children,
@@ -1177,7 +1178,7 @@ export default class Inibase {
               searchComparedAtValue = value as number | boolean;
             }
             const [searchResult, total_lines] = await File.search(
-              join(this.folder, this.database, tableName, key, ".inib"),
+              join(this.folder, this.database, tableName, key + ".inib"),
               searchOperator,
               searchComparedAtValue,
               searchLogicalOperator,
