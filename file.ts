@@ -19,16 +19,6 @@ export const isExists = async (path: string) => {
     return false;
   }
 };
-export const encodeFileName = (fileName: string, extension?: string) => {
-  return (
-    fileName.replaceAll("%", "%25").replaceAll("*", "%") +
-    (extension ? `.${extension}` : "")
-  );
-};
-
-export const decodeFileName = (fileName: string) => {
-  return fileName.replaceAll("%", "*").replaceAll("*25", "%");
-};
 
 export const encode = (
   input:
@@ -455,7 +445,7 @@ export const search = async (
       crlfDelay: Infinity,
     });
 
-  const columnName = decodeFileName(parse(filePath).name);
+  const columnName = parse(filePath).name;
 
   for await (const line of rl) {
     lineCount++;
@@ -511,7 +501,5 @@ export default class File {
   static count = count;
   static encode = encode;
   static decode = decode;
-  static encodeFileName = encodeFileName;
-  static decodeFileName = decodeFileName;
   static isExists = isExists;
 }
