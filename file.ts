@@ -367,10 +367,6 @@ export const search = async (
               : false;
           case "boolean":
             return Number(originalValue) - Number(comparedAtValue) === 0;
-          case "id":
-            return secretKey && typeof comparedAtValue === "string"
-              ? decodeID(comparedAtValue as string, secretKey) === originalValue
-              : comparedAtValue === originalValue;
           default:
             return originalValue === comparedAtValue;
         }

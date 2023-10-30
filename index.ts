@@ -1206,6 +1206,7 @@ export default class Inibase {
         }
         return Object.keys(RETURN).length ? RETURN : null;
       };
+
       RETURN = await applyCriteria(where as Criteria);
       if (RETURN) {
         if (onlyLinesNumbers) return Object.keys(RETURN).map(Number);
