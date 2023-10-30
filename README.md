@@ -31,7 +31,7 @@ const users = await db.get("user", undefined, { page: 2, per_page: 15 });
 
 // Get only required columns to improve speed
 const users = await db.get("user", undefined, {
-  columns: ["username", "address.street", "hobbies.*.name"],
+  columns: ["username", "address.street", "hobbies.name"],
 });
 
 // Get items from "user" table where "favoriteFoods" does not includes "Pizza"

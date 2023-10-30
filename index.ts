@@ -266,14 +266,13 @@ export default class Inibase {
                 RETURN,
                 schemaToIdsPath(
                   field.children,
-                  (prefix ?? "") +
-                    field.key +
-                    (field.type === "array" ? ".*." : ".")
+                  (prefix ?? "") + field.key + "."
                 )
               );
             } else if (Utils.isValidID(field.id))
-              RETURN[UtilsServer.decodeID(field.id, this.salt)] =
-                File.encodeFileName((prefix ?? "") + field.key, "inib");
+              (RETURN[UtilsServer.decodeID(field.id, this.salt)] =
+                (prefix ?? "") + field.key),
+                ".inib";
 
           return RETURN;
         },
@@ -597,7 +596,7 @@ export default class Inibase {
                 RETURN,
                 CombineData(
                   combineObjectsToArray(value),
-                  (prefix ?? "") + key + ".*."
+                  (prefix ?? "") + key + "."
                 )
               );
             } else if (
@@ -608,7 +607,7 @@ export default class Inibase {
                 RETURN,
                 CombineData(
                   combineObjectsToArray(value.map(combineObjectsToArray)),
-                  (prefix ?? "") + key + ".*."
+                  (prefix ?? "") + key + "."
                 )
               );
             else
@@ -630,8 +629,7 @@ export default class Inibase {
     const addPathToKeys = (obj: Record<string, any>, path: string) => {
       const newObject: Record<string, any> = {};
 
-      for (const key in obj)
-        newObject[join(path, File.encodeFileName(key, "inib"))] = obj[key];
+      for (const key in obj) newObject[join(path, key, ".inib")] = obj[key];
 
       return newObject;
     };
@@ -740,7 +738,7 @@ export default class Inibase {
                       Utils.isArrayOfObjects(children.children)
                   ),
                   linesNumber,
-                  (prefix ?? "") + field.key + ".*."
+                  (prefix ?? "") + field.key + "."
                 )) ?? {}
               ).forEach(([index, item]) => {
                 if (Utils.isObject(item)) {
@@ -802,7 +800,7 @@ export default class Inibase {
                 (field as FieldDefault & (FieldArrayType | FieldArrayArrayType))
                   .children as Schema,
                 linesNumber,
-                (prefix ?? "") + field.key + ".*."
+                (prefix ?? "") + field.key + "."
               )) ?? {}
             ).forEach(([index, item]) => {
               if (!RETURN[index]) RETURN[index] = {};
@@ -843,13 +841,10 @@ export default class Inibase {
           ) {
             if (options.columns)
               options.columns = (options.columns as string[])
-                .filter((column) => column.includes(`${field.key}.*.`))
-                .map((column) => column.replace(`${field.key}.*.`, ""));
+                .filter((column) => column.includes(`${field.key}.`))
+                .map((column) => column.replace(`${field.key}.`, ""));
             const [items, total_lines] = await File.get(
-              join(
-                path,
-                File.encodeFileName((prefix ?? "") + field.key, "inib")
-              ),
+              join(path, (prefix ?? "") + field.key, ".inib"),
               linesNumber,
               field.type,
               (field as FieldDefault & (FieldArrayType | FieldArrayArrayType))
@@ -865,18 +860,10 @@ export default class Inibase {
                 : this.getDefaultValue(field);
             }
           } else if (
-            await File.isExists(
-              join(
-                path,
-                File.encodeFileName((prefix ?? "") + field.key, "inib")
-              )
-            )
+            await File.isExists(join(path, (prefix ?? "") + field.key, ".inib"))
           ) {
             const [items, total_lines] = await File.get(
-              join(
-                path,
-                File.encodeFileName((prefix ?? "") + field.key, "inib")
-              ),
+              join(path, (prefix ?? "") + field.key, ".inib"),
               linesNumber,
               field.type,
               (field as any)?.children,
@@ -911,10 +898,7 @@ export default class Inibase {
               join(this.folder, this.database, field.key)
             )) &&
             (await File.isExists(
-              join(
-                path,
-                File.encodeFileName((prefix ?? "") + field.key, "inib")
-              )
+              join(path, (prefix ?? "") + field.key, ".inib")
             ))
           ) {
             if (options.columns)
@@ -922,14 +906,11 @@ export default class Inibase {
                 .filter(
                   (column) =>
                     column.includes(`${field.key}.`) &&
-                    !column.includes(`${field.key}.*.`)
+                    !column.includes(`${field.key}.`)
                 )
                 .map((column) => column.replace(`${field.key}.`, ""));
             const [items, total_lines] = await File.get(
-              join(
-                path,
-                File.encodeFileName((prefix ?? "") + field.key, "inib")
-              ),
+              join(path, (prefix ?? "") + field.key, ".inib"),
               linesNumber,
               "number",
               undefined,
@@ -944,12 +925,10 @@ export default class Inibase {
             }
           }
         } else if (
-          await File.isExists(
-            join(path, File.encodeFileName((prefix ?? "") + field.key, "inib"))
-          )
+          await File.isExists(join(path, (prefix ?? "") + field.key, ".inib"))
         ) {
           const [items, total_lines] = await File.get(
-            join(path, File.encodeFileName((prefix ?? "") + field.key, "inib")),
+            join(path, (prefix ?? "") + field.key, ".inib"),
             linesNumber,
             field.type,
             (field as any)?.children,
@@ -1198,12 +1177,7 @@ export default class Inibase {
               searchComparedAtValue = value as number | boolean;
             }
             const [searchResult, total_lines] = await File.search(
-              join(
-                this.folder,
-                this.database,
-                tableName,
-                File.encodeFileName(key, "inib")
-              ),
+              join(this.folder, this.database, tableName, key, ".inib"),
               searchOperator,
               searchComparedAtValue,
               searchLogicalOperator,
@@ -1235,7 +1209,7 @@ export default class Inibase {
       if (RETURN) {
         if (onlyLinesNumbers) return Object.keys(RETURN).map(Number);
         const alreadyExistsColumns = Object.keys(Object.values(RETURN)[0]).map(
-          (key) => File.decodeFileName(parse(key).name)
+          (key) => parse(key).name
         );
         RETURN = Object.values(
           Utils.deepMerge(
