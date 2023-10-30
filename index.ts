@@ -641,12 +641,11 @@ export default class Inibase {
     options: Options = {
       page: 1,
       per_page: 15,
-    },
-    onlyLinesNumbers?: boolean
-  ): Promise<Data | number | null> {
-    const _get = await this.get(tableName, where, options, onlyLinesNumbers);
+    }
+  ): Promise<Data | null> {
+    const _get = await this.get(tableName, where, options);
     if (!_get) return null;
-    else if (Array.isArray(_get)) return _get[0];
+    else if (Array.isArray(_get)) return (_get as Data)[0];
     else return _get;
   }
 
