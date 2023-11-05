@@ -609,12 +609,13 @@ export default class Inibase {
                   (prefix ?? "") + key + "."
                 )
               );
-            else
+            else {
               RETURN[(prefix ?? "") + key] = File.encode(value) as
                 | boolean
                 | number
                 | string
                 | null;
+            }
           } else
             RETURN[(prefix ?? "") + key] = File.encode(value) as
               | boolean
@@ -1283,7 +1284,7 @@ export default class Inibase {
     let last_id = (await File.isExists(idFilePath))
       ? Number(
           Object.values(
-            await File.get(idFilePath, -1, "number", undefined, this.salt)
+            (await File.get(idFilePath, -1, "number", undefined, this.salt))[0]
           )[0]
         )
       : 0;
@@ -1303,6 +1304,7 @@ export default class Inibase {
         created_at: new Date(),
       }))(data as Data);
     if (!RETURN) throw this.throwError("NO_DATA");
+
     RETURN = this.formatData(RETURN, schema);
     const pathesContents = this.joinPathesContents(
       join(this.folder, this.database, tableName),
@@ -1477,16 +1479,16 @@ export default class Inibase {
       if (files.length) {
         if (!_id)
           _id = Object.values(
-            await File.get(
-              join(this.folder, this.database, tableName, "id.inib"),
-              where as number | number[],
-              "number",
-              undefined,
-              this.salt
-            )
-          )
-            .map(Number)
-            .map((id) => UtilsServer.encodeID(id, this.salt));
+            (
+              await File.get(
+                join(this.folder, this.database, tableName, "id.inib"),
+                where as number | number[],
+                "number",
+                undefined,
+                this.salt
+              )
+            )[0]
+          ).map((id) => UtilsServer.encodeID(Number(id), this.salt));
         for (const file of files.filter(
           (fileName: string) =>
             fileName.endsWith(".inib") && fileName !== "schema"

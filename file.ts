@@ -20,6 +20,8 @@ export const isExists = async (path: string) => {
   }
 };
 
+const delimiters = [",", "|", "&", "$", "#", "@", "^", "%", ":", "!", ";"];
+
 export const encode = (
   input:
     | string
@@ -30,23 +32,42 @@ export const encode = (
   secretKey?: string | Buffer
 ) => {
   const secureString = (input: string | number | boolean | null) => {
-    if (["true", "false"].includes(String(input))) return input ? 1 : 0;
-    return typeof input === "string"
-      ? decodeURIComponent(input)
-          .replaceAll("<", "&lt;")
-          .replaceAll(">", "&gt;")
-          .replaceAll(",", "%2C")
-          .replaceAll("|", "%7C")
-          .replaceAll("\n", "\\n")
-          .replaceAll("\r", "\\r")
-      : input;
-  };
+      if (["true", "false"].includes(String(input))) return input ? 1 : 0;
+      return typeof input === "string"
+        ? decodeURIComponent(input)
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll(",", "%2C")
+            .replaceAll("|", "%7C")
+            .replaceAll("&", "%26")
+            .replaceAll("$", "%24")
+            .replaceAll("#", "%23")
+            .replaceAll("@", "%40")
+            .replaceAll("^", "%5E")
+            .replaceAll("%", "%25")
+            .replaceAll(":", "%3A")
+            .replaceAll("!", "%21")
+            .replaceAll(";", "%3B")
+            .replaceAll("\n", "\\n")
+            .replaceAll("\r", "\\r")
+        : input;
+    },
+    secureArray = (arr_str: any[] | any): any[] | any =>
+      Array.isArray(arr_str) ? arr_str.map(secureArray) : secureString(arr_str),
+    joinMultidimensionalArray = (
+      arr: any[] | any[][],
+      delimiter_index = 0
+    ): string => {
+      delimiter_index++;
+      if (isArrayOfArrays(arr))
+        arr = arr.map((ar: any[]) =>
+          joinMultidimensionalArray(ar, delimiter_index)
+        );
+      delimiter_index--;
+      return arr.join(delimiters[delimiter_index]);
+    };
   return Array.isArray(input)
-    ? isArrayOfArrays(input)
-      ? (input as any[])
-          .map((_input) => _input.map(secureString).join(","))
-          .join("|")
-      : input.map(secureString).join(",")
+    ? joinMultidimensionalArray(secureArray(input))
     : secureString(input);
 };
 
@@ -58,65 +79,87 @@ export const decode = (
 ): string | number | boolean | null | (string | number | null | boolean)[] => {
   if (!fieldType) return null;
   const unSecureString = (input: string) =>
-    decodeURIComponent(input)
-      .replaceAll("&lt;", "<")
-      .replaceAll("&gt;", ">")
-      .replaceAll("%2C", ",")
-      .replaceAll("%7C", "|")
-      .replaceAll("\\n", "\n")
-      .replaceAll("\\r", "\r") || null;
+      decodeURIComponent(input)
+        .replaceAll("&lt;", "<")
+        .replaceAll("&gt;", ">")
+        .replaceAll("%2C", ",")
+        .replaceAll("%7C", "|")
+        .replaceAll("%26", "&")
+        .replaceAll("%24", "$")
+        .replaceAll("%23", "#")
+        .replaceAll("%40", "@")
+        .replaceAll("%5E", "^")
+        .replaceAll("%25", "%")
+        .replaceAll("%3A", ":")
+        .replaceAll("%21", "!")
+        .replaceAll("%3B", ";")
+        .replaceAll("\\n", "\n")
+        .replaceAll("\\r", "\r") || null,
+    unSecureArray = (arr_str: any[] | any): any[] | any =>
+      Array.isArray(arr_str)
+        ? arr_str.map(unSecureArray)
+        : unSecureString(arr_str),
+    reverseJoinMultidimensionalArray = (
+      joinedString: string | any[] | any[][]
+    ): any | any[] | any[][] => {
+      const reverseJoinMultidimensionalArrayHelper = (
+        arr: any | any[] | any[][],
+        delimiter: string
+      ) =>
+        Array.isArray(arr)
+          ? arr.map((ar: any) =>
+              reverseJoinMultidimensionalArrayHelper(ar, delimiter)
+            )
+          : arr.split(delimiter);
+
+      const availableDelimiters = delimiters.filter((delimiter) =>
+        joinedString.includes(delimiter)
+      );
+      for (const delimiter of availableDelimiters) {
+        joinedString = Array.isArray(joinedString)
+          ? reverseJoinMultidimensionalArrayHelper(joinedString, delimiter)
+          : joinedString.split(delimiter);
+      }
+      return joinedString;
+    },
+    decodeHelper = (value: string | number | any[]) => {
+      if (Array.isArray(value) && fieldType !== "array")
+        return value.map(decodeHelper);
+      switch (fieldType as FieldType) {
+        case "table":
+        case "number":
+          return isNumber(value) ? Number(value) : null;
+        case "boolean":
+          return typeof value === "string" ? value === "true" : Boolean(value);
+        case "array":
+          if (!Array.isArray(value)) return [value];
+
+          if (fieldChildrenType)
+            return value.map(
+              (v) =>
+                decode(
+                  v,
+                  Array.isArray(fieldChildrenType)
+                    ? detectFieldType(v, fieldChildrenType)
+                    : fieldChildrenType,
+                  undefined,
+                  secretKey
+                ) as string | number | boolean | null
+            );
+          else return value;
+        case "id":
+          return isNumber(value) ? encodeID(value as number, secretKey) : value;
+        default:
+          return value;
+      }
+    };
   if (input === null || input === "") return null;
   if (Array.isArray(fieldType))
     fieldType = detectFieldType(String(input), fieldType);
-  const decodeHelper = (value: string | number | any[]) => {
-    if (Array.isArray(value) && fieldType !== "array")
-      return value.map(decodeHelper);
-    switch (fieldType as FieldType) {
-      case "table":
-      case "number":
-        return isNumber(value) ? Number(value) : null;
-      case "boolean":
-        return typeof value === "string" ? value === "true" : Boolean(value);
-      case "array":
-        if (!Array.isArray(value)) return [value];
-
-        if (fieldChildrenType)
-          return value.map(
-            (v) =>
-              decode(
-                v,
-                Array.isArray(fieldChildrenType)
-                  ? detectFieldType(v, fieldChildrenType)
-                  : fieldChildrenType,
-                undefined,
-                secretKey
-              ) as string | number | boolean | null
-          );
-        else return value;
-      case "id":
-        return isNumber(value) ? encodeID(value as number, secretKey) : value;
-      default:
-        return value;
-    }
-  };
   return decodeHelper(
     typeof input === "string"
       ? input.includes(",")
-        ? input.includes("|")
-          ? input
-              .split("|")
-              .map((_input) => _input.split(",").map(unSecureString))
-          : input.split(",").map(unSecureString)
-        : input.includes("|")
-        ? input
-            .split("|")
-            .map((_input) => [
-              _input
-                ? fieldType === "array"
-                  ? [unSecureString(_input)]
-                  : unSecureString(_input)
-                : null,
-            ])
+        ? unSecureArray(reverseJoinMultidimensionalArray(input))
         : unSecureString(input)
       : input
   );
