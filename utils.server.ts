@@ -7,6 +7,8 @@ import {
   Cipher,
   Decipher,
 } from "node:crypto";
+import { Schema } from ".";
+import { isArrayOfObjects, isValidID } from "./utils";
 
 export const hashPassword = (password: string) => {
   const salt = randomBytes(16).toString("hex");
@@ -71,9 +73,62 @@ export const decodeID = (
   );
 };
 
+export const findLastIdNumber = (
+  schema: Schema,
+  secretKey: string | number | Buffer
+): number => {
+  const lastField = schema[schema.length - 1];
+  if (lastField) {
+    if (
+      (lastField.type === "array" || lastField.type === "object") &&
+      isArrayOfObjects(lastField.children)
+    )
+      return findLastIdNumber(lastField.children as Schema, secretKey);
+    else if (lastField.id && isValidID(lastField.id))
+      return decodeID(lastField.id as string, secretKey);
+  }
+  return 0;
+};
+
+export const addIdToSchema = (
+  schema: Schema,
+  oldIndex: number = 0,
+  secretKey: string | number | Buffer
+) =>
+  schema.map((field) => {
+    if (
+      (field.type === "array" || field.type === "object") &&
+      isArrayOfObjects(field.children)
+    ) {
+      if (!field.id) {
+        oldIndex++;
+        field = {
+          ...field,
+          id: encodeID(oldIndex, secretKey),
+        };
+      } else oldIndex = decodeID(field.id as string, secretKey);
+      field.children = addIdToSchema(
+        field.children as Schema,
+        oldIndex,
+        secretKey
+      );
+      oldIndex += field.children.length;
+    } else if (field.id) oldIndex = decodeID(field.id as string, secretKey);
+    else {
+      oldIndex++;
+      field = {
+        ...field,
+        id: encodeID(oldIndex, secretKey),
+      };
+    }
+    return field;
+  });
+
 export default class Utils {
   static encodeID = encodeID;
   static decodeID = decodeID;
   static hashPassword = hashPassword;
   static comparePassword = comparePassword;
+  static findLastIdNumber = findLastIdNumber;
+  static addIdToSchema = addIdToSchema;
 }

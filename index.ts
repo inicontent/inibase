@@ -177,81 +177,42 @@ export default class Inibase {
     return new Error(errorMessage);
   }
 
-  private findLastIdNumber(schema: Schema): number {
-    const lastField = schema[schema.length - 1];
-    if (lastField) {
-      if (
-        (lastField.type === "array" || lastField.type === "object") &&
-        Utils.isArrayOfObjects(lastField.children)
-      )
-        return this.findLastIdNumber(lastField.children as Schema);
-      else if (lastField.id && Utils.isValidID(lastField.id))
-        return UtilsServer.decodeID(lastField.id as string, this.salt);
-    }
-    return 0;
-  }
-
   public async setTableSchema(
     tableName: string,
     schema: Schema
   ): Promise<void> {
     const encodeSchema = (schema: Schema) => {
-        let RETURN: any[][] = [],
-          index = 0;
-        for (const field of schema) {
-          if (!RETURN[index]) RETURN[index] = [];
-          RETURN[index].push(
-            field.id
-              ? UtilsServer.decodeID(field.id as string, this.salt)
-              : null
-          );
-          RETURN[index].push(field.key ?? null);
-          RETURN[index].push(field.required ?? null);
-          RETURN[index].push(field.type ?? null);
-          RETURN[index].push(
-            (field as any).children
-              ? Utils.isArrayOfObjects((field as any).children)
-                ? encodeSchema((field as any).children as Schema) ?? null
-                : (field as any).children
-              : null
-          );
-          index++;
-        }
-        return RETURN;
-      },
-      addIdToSchema = (schema: Schema, oldIndex: number = 0) =>
-        schema.map((field) => {
-          if (
-            (field.type === "array" || field.type === "object") &&
-            Utils.isArrayOfObjects(field.children)
-          ) {
-            if (!field.id) {
-              oldIndex++;
-              field = {
-                ...field,
-                id: UtilsServer.encodeID(oldIndex, this.salt),
-              };
-            } else
-              oldIndex = UtilsServer.decodeID(field.id as string, this.salt);
-            field.children = addIdToSchema(field.children as Schema, oldIndex);
-            oldIndex += field.children.length;
-          } else if (field.id)
-            oldIndex = UtilsServer.decodeID(field.id as string, this.salt);
-          else {
-            oldIndex++;
-            field = {
-              ...field,
-              id: UtilsServer.encodeID(oldIndex, this.salt),
-            };
-          }
-          return field;
-        });
+      let RETURN: any[][] = [],
+        index = 0;
+      for (const field of schema) {
+        if (!RETURN[index]) RETURN[index] = [];
+        RETURN[index].push(
+          field.id ? UtilsServer.decodeID(field.id as string, this.salt) : null
+        );
+        RETURN[index].push(field.key ?? null);
+        RETURN[index].push(field.required ?? null);
+        RETURN[index].push(field.type ?? null);
+        RETURN[index].push(
+          (field as any).children
+            ? Utils.isArrayOfObjects((field as any).children)
+              ? encodeSchema((field as any).children as Schema) ?? null
+              : (field as any).children
+            : null
+        );
+        index++;
+      }
+      return RETURN;
+    };
 
     // remove id from schema
     schema = schema.filter(
       (field) => !["id", "created_at", "updated_at"].includes(field.key)
     );
-    schema = addIdToSchema(schema, this.findLastIdNumber(schema));
+    schema = UtilsServer.addIdToSchema(
+      schema,
+      UtilsServer.findLastIdNumber(schema, this.salt),
+      this.salt
+    );
     const TablePath = join(this.folder, this.database, tableName),
       TableSchemaPath = join(TablePath, "schema");
     if (!(await File.isExists(TablePath)))
@@ -325,7 +286,7 @@ export default class Inibase {
       );
     }
     const schema = this.cache.get(TableSchemaPath) as unknown as Schema,
-      lastIdNumber = this.findLastIdNumber(schema);
+      lastIdNumber = UtilsServer.findLastIdNumber(schema, this.salt);
     return [
       {
         id: UtilsServer.encodeID(0, this.salt),
