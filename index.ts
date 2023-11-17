@@ -540,25 +540,17 @@ export default class Inibase {
     return addPathToKeys(CombineData(data), mainPath);
   }
 
-  public async get<
-    onlyOneType extends boolean = false,
-    onlyLinesNumbersType extends boolean = false
-  >(
+  public async get<O extends boolean = false, N extends boolean = false>(
     tableName: string,
     where?: string | number | (string | number)[] | Criteria,
     options: Options = {
       page: 1,
       per_page: 15,
     },
-    onlyOne?: onlyOneType,
-    onlyLinesNumbers?: onlyLinesNumbersType
+    onlyOne?: O,
+    onlyLinesNumbers?: N
   ): Promise<
-    | (onlyLinesNumbersType extends true
-        ? number[]
-        : onlyOneType extends true
-        ? Data
-        : Data[])
-    | null
+    (N extends true ? number[] : O extends true ? Data : Data[]) | null
   > {
     if (!options.columns) options.columns = [];
     else if (!Array.isArray(options.columns))
