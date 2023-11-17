@@ -460,7 +460,9 @@ export default class Inibase {
           : [];
       case "object":
         return Utils.combineObjects(
-          field.children.map((f) => ({ [f.key]: this.getDefaultValue(f) }))
+          field.children.map((f: Field) => ({
+            [f.key]: this.getDefaultValue(f),
+          }))
         );
       case "boolean":
         return false;
@@ -670,19 +672,21 @@ export default class Inibase {
                             if (!RETURN[index][field.key][_i][child_field.key])
                               RETURN[index][field.key][_i][child_field.key] =
                                 [];
-                            value[_i].forEach((_element, _index) => {
-                              if (
-                                !RETURN[index][field.key][_i][child_field.key][
-                                  _index
-                                ]
-                              )
+                            value[_i].forEach(
+                              (_element: any, _index: string | number) => {
+                                if (
+                                  !RETURN[index][field.key][_i][
+                                    child_field.key
+                                  ][_index]
+                                )
+                                  RETURN[index][field.key][_i][child_field.key][
+                                    _index
+                                  ] = {};
                                 RETURN[index][field.key][_i][child_field.key][
                                   _index
-                                ] = {};
-                              RETURN[index][field.key][_i][child_field.key][
-                                _index
-                              ][key] = _element;
-                            });
+                                ][key] = _element;
+                              }
+                            );
                           }
                         }
                       );
@@ -717,7 +721,10 @@ export default class Inibase {
                   if (RETURN[index][field.key])
                     Object.entries(item).forEach(([key, value], _index) => {
                       RETURN[index][field.key] = RETURN[index][field.key].map(
-                        (_obj, _i) => ({ ..._obj, [key]: value[_i] })
+                        (_obj: any, _i: string | number) => ({
+                          ..._obj,
+                          [key]: value[_i],
+                        })
                       );
                     });
                   else if (Object.values(item).every(Utils.isArrayOfArrays))
