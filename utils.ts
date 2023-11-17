@@ -1,5 +1,4 @@
 import { FieldType, Data } from ".";
-
 export const isArrayOfObjects = (arr: any) => {
   return Array.isArray(arr) && (arr.length === 0 || arr.every(isObject));
 };
@@ -41,7 +40,28 @@ export const isNumber = (input: any | any[]): boolean =>
 export const isEmail = (input: any) =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(input));
 
-export const isURL = (input: any) => input[0] === "#" || URL.canParse(input);
+export const isURL = (input: any) => {
+  if (typeof input !== "string") return false;
+  if (
+    input[0] === "#" ||
+    input.startsWith("tel:") ||
+    input.startsWith("mailto:")
+  )
+    return true;
+  else if ("canParse" in URL) return URL.canParse(input);
+  else {
+    var pattern = new RegExp(
+      "^(https?:\\/\\/)?" + // protocol
+        "((([a-z\\d]([a-z\\d-]*[a-z\\d])*)\\.)+[a-z]{2,}|" + // domain name
+        "((\\d{1,3}\\.){3}\\d{1,3}))" + // OR ip (v4) address
+        "(\\:\\d+)?(\\/[-a-z\\d%_.~+]*)*" + // port and path
+        "(\\?[;&a-z\\d%_.~+=-]*)?" + // query string
+        "(\\#[-a-z\\d_]*)?$",
+      "i"
+    ); // fragment locator
+    return !!pattern.test(input);
+  }
+};
 
 export const isHTML = (input: any) =>
   /<\/?\s*[a-z-][^>]*\s*>|(\&(?:[\w\d]+|#\d+|#x[a-f\d]+);)/g.test(input);
@@ -107,7 +127,9 @@ export const detectFieldType = (
       if (availableTypes.includes("table")) return "table";
       else if (availableTypes.includes("date")) return "date";
       else if (availableTypes.includes("number")) return "number";
-    } else if (input.includes(",") && availableTypes.includes("array"))
+    } else if (availableTypes.includes("table") && isValidID(input))
+      return "table";
+    else if (input.includes(",") && availableTypes.includes("array"))
       return "array";
     else if (availableTypes.includes("email") && isEmail(input)) return "email";
     else if (availableTypes.includes("url") && isURL(input)) return "url";

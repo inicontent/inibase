@@ -74,6 +74,7 @@ export interface Options {
   page?: number;
   per_page?: number;
   columns?: string[] | string;
+  order?: Record<string, "asc" | "desc">;
 }
 
 export type ComparisonOperator =
@@ -94,12 +95,11 @@ type pageInfo = {
 } & Options;
 
 export type Criteria =
-  | {
+  | ({
       [logic in "and" | "or"]?: Criteria | (string | number | boolean | null)[];
-    }
-  | {
+    } & {
       [key: string]: string | number | boolean | Criteria;
-    }
+    })
   | null;
 
 declare global {
@@ -128,7 +128,7 @@ export default class Inibase {
     this.cache = new Map<string, any>();
     this.totalItems = {};
     this.pageInfo = { page: 1, per_page: 15 };
-    this.salt = scryptSync(database, "salt", 32);
+    this.salt = scryptSync(process.env.INIBASE_SECRET ?? "inibase", "salt", 32);
   }
 
   private throwError(
@@ -181,29 +181,6 @@ export default class Inibase {
     tableName: string,
     schema: Schema
   ): Promise<void> {
-    const encodeSchema = (schema: Schema) => {
-      let RETURN: any[][] = [],
-        index = 0;
-      for (const field of schema) {
-        if (!RETURN[index]) RETURN[index] = [];
-        RETURN[index].push(
-          field.id ? UtilsServer.decodeID(field.id as string, this.salt) : null
-        );
-        RETURN[index].push(field.key ?? null);
-        RETURN[index].push(field.required ?? null);
-        RETURN[index].push(field.type ?? null);
-        RETURN[index].push(
-          (field as any).children
-            ? Utils.isArrayOfObjects((field as any).children)
-              ? encodeSchema((field as any).children as Schema) ?? null
-              : (field as any).children
-            : null
-        );
-        index++;
-      }
-      return RETURN;
-    };
-
     // remove id from schema
     schema = schema.filter(
       (field) => !["id", "created_at", "updated_at"].includes(field.key)
@@ -214,7 +191,7 @@ export default class Inibase {
       this.salt
     );
     const TablePath = join(this.folder, this.database, tableName),
-      TableSchemaPath = join(TablePath, "schema");
+      TableSchemaPath = join(TablePath, "schema.json");
     if (!(await File.isExists(TablePath)))
       await mkdir(TablePath, { recursive: true });
     if (await File.isExists(TableSchemaPath)) {
@@ -246,46 +223,23 @@ export default class Inibase {
             await rename(join(TablePath, oldPath), join(TablePath, newPath));
     }
 
-    await writeFile(
-      join(TablePath, "schema"),
-      JSON.stringify(encodeSchema(schema))
-    );
+    await writeFile(join(TablePath, "schema.json"), JSON.stringify(schema));
   }
 
   public async getTableSchema(tableName: string): Promise<Schema | undefined> {
-    const decodeSchema = (encodedSchema: any) => {
-        return encodedSchema.map((field: any) =>
-          Array.isArray(field[0])
-            ? decodeSchema(field)
-            : Object.fromEntries(
-                Object.entries({
-                  id: UtilsServer.encodeID(field[0], this.salt),
-                  key: field[1],
-                  required: field[2],
-                  type: field[3],
-                  children: field[4]
-                    ? Array.isArray(field[4])
-                      ? decodeSchema(field[4])
-                      : field[4]
-                    : null,
-                }).filter(([_, v]) => v != null)
-              )
-        );
-      },
-      TableSchemaPath = join(this.folder, this.database, tableName, "schema");
+    const TableSchemaPath = join(
+      this.folder,
+      this.database,
+      tableName,
+      "schema.json"
+    );
     if (!(await File.isExists(TableSchemaPath))) return undefined;
-    if (!this.cache.has(TableSchemaPath)) {
-      const TableSchemaPathContent = await readFile(TableSchemaPath, {
-        encoding: "utf8",
-      });
-      this.cache.set(
-        TableSchemaPath,
-        TableSchemaPathContent
-          ? decodeSchema(JSON.parse(TableSchemaPathContent.toString()))
-          : ""
-      );
-    }
-    const schema = this.cache.get(TableSchemaPath) as unknown as Schema,
+
+    if (!this.cache.has(TableSchemaPath))
+      this.cache.set(TableSchemaPath, await readFile(TableSchemaPath, "utf8"));
+
+    if (!this.cache.get(TableSchemaPath)) return undefined;
+    const schema = JSON.parse(this.cache.get(TableSchemaPath)),
       lastIdNumber = UtilsServer.findLastIdNumber(schema, this.salt);
     return [
       {
@@ -355,35 +309,24 @@ export default class Inibase {
       for (const single_data of data as Data[])
         this.validateData(single_data, schema, skipRequiredField);
     else if (Utils.isObject(data)) {
-      for (const field of schema) {
+      for (const { key, type, required, children } of schema) {
+        if (!data.hasOwnProperty(key) && required && !skipRequiredField)
+          throw this.throwError("FIELD_REQUIRED", key);
         if (
-          !data.hasOwnProperty(field.key) &&
-          field.required &&
-          !skipRequiredField
-        )
-          throw this.throwError("FIELD_REQUIRED", field.key);
-        if (
-          data.hasOwnProperty(field.key) &&
+          data.hasOwnProperty(key) &&
           !Utils.validateFieldType(
-            data[field.key],
-            field.type,
-            (field as any)?.children &&
-              !Utils.isArrayOfObjects((field as any)?.children)
-              ? (field as any)?.children
-              : undefined
+            data[key],
+            type,
+            children && !Utils.isArrayOfObjects(children) ? children : undefined
           )
         )
-          throw this.throwError("INVALID_TYPE", field.key);
+          throw this.throwError("INVALID_TYPE", key);
         if (
-          (field.type === "array" || field.type === "object") &&
-          field.children &&
-          Utils.isArrayOfObjects(field.children)
+          (type === "array" || type === "object") &&
+          children &&
+          Utils.isArrayOfObjects(children)
         )
-          this.validateData(
-            data[field.key],
-            field.children as Schema,
-            skipRequiredField
-          );
+          this.validateData(data[key], children, skipRequiredField);
       }
     }
   }
@@ -393,6 +336,8 @@ export default class Inibase {
     schema: Schema,
     formatOnlyAvailiableKeys?: boolean
   ): Data | Data[] {
+    this.validateData(data, schema, formatOnlyAvailiableKeys);
+
     const formatField = (
       value: any,
       field: Field
@@ -471,8 +416,6 @@ export default class Inibase {
       }
       return null;
     };
-
-    this.validateData(data, schema, formatOnlyAvailiableKeys);
 
     if (Utils.isArrayOfObjects(data))
       return data.map((single_data: Data) =>
@@ -597,29 +540,26 @@ export default class Inibase {
     return addPathToKeys(CombineData(data), mainPath);
   }
 
-  public async getOne(
-    tableName: string,
-    where?: string | number | (string | number)[] | Criteria,
-    options: Options = {
-      page: 1,
-      per_page: 15,
-    }
-  ): Promise<Data | null> {
-    const _get = await this.get(tableName, where, options);
-    if (!_get) return null;
-    else if (Array.isArray(_get)) return (_get as Data)[0];
-    else return _get;
-  }
-
-  public async get(
+  public async get<
+    onlyOneType extends boolean = false,
+    onlyLinesNumbersType extends boolean = false
+  >(
     tableName: string,
     where?: string | number | (string | number)[] | Criteria,
     options: Options = {
       page: 1,
       per_page: 15,
     },
-    onlyLinesNumbers?: boolean
-  ): Promise<Data | Data[] | number[] | null> {
+    onlyOne?: onlyOneType,
+    onlyLinesNumbers?: onlyLinesNumbersType
+  ): Promise<
+    | (onlyLinesNumbersType extends true
+        ? number[]
+        : onlyOneType extends true
+        ? Data
+        : Data[])
+    | null
+  > {
     if (!options.columns) options.columns = [];
     else if (!Array.isArray(options.columns))
       options.columns = [options.columns];
@@ -769,6 +709,7 @@ export default class Inibase {
                   !Utils.isArrayOfObjects(children.children)
               );
             }
+
             Object.entries(
               (await getItemsFromSchema(
                 path,
@@ -1191,20 +1132,20 @@ export default class Inibase {
 
       RETURN = await applyCriteria(where as Criteria);
       if (RETURN) {
-        if (onlyLinesNumbers) return Object.keys(RETURN).map(Number);
+        if (onlyLinesNumbers) return Object.keys(RETURN).map(Number) as any;
         const alreadyExistsColumns = Object.keys(Object.values(RETURN)[0]).map(
           (key) => parse(key).name
         );
         RETURN = Object.values(
           Utils.deepMerge(
+            RETURN,
             await getItemsFromSchema(
               join(this.folder, this.database, tableName),
               schema.filter(
                 (field) => !alreadyExistsColumns.includes(field.key)
               ),
               Object.keys(RETURN).map(Number)
-            ),
-            RETURN
+            )
           )
         );
       }
@@ -1226,29 +1167,30 @@ export default class Inibase {
       total_pages: Math.ceil(greatestTotalItems / options.per_page),
       total: greatestTotalItems,
     };
-    return RETURN;
+    return onlyOne ? RETURN[0] : RETURN;
   }
 
-  public async post(
+  public async post<DataType extends Data | Data[]>(
     tableName: string,
-    data: Data | Data[],
+    data: DataType,
     options: Options = {
       page: 1,
       per_page: 15,
     },
     returnPostedData: boolean = true
-  ): Promise<Data | Data[] | null | void> {
+  ): Promise<
+    DataType extends Data ? Data | null | void : Data[] | null | void
+  > {
     const schema = await this.getTableSchema(tableName);
     let RETURN: Data | Data[] | null | undefined;
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
     const idFilePath = join(this.folder, this.database, tableName, "id.inib");
-    let last_id = (await File.isExists(idFilePath))
-      ? Number(
-          Object.values(
-            (await File.get(idFilePath, -1, "number", undefined, this.salt))[0]
-          )[0]
-        )
-      : 0;
+
+    let [last_line_number, last_id] = (await File.isExists(idFilePath))
+      ? (Object.entries(
+          (await File.get(idFilePath, -1, "number", undefined, this.salt))[0]
+        )[0] as [number, number] | undefined) ?? [1, 0]
+      : [1, 0];
     if (Utils.isArrayOfObjects(data))
       (data as Data[]).forEach((single_data, index) => {
         if (!RETURN) RETURN = [];
@@ -1272,10 +1214,7 @@ export default class Inibase {
       RETURN
     );
     for await (const [path, content] of Object.entries(pathesContents))
-      await appendFile(
-        path,
-        (Array.isArray(content) ? content.join("\n") : content ?? "") + "\n"
-      );
+      await File.replace(path, { [last_line_number]: content });
 
     if (returnPostedData)
       return this.get(
@@ -1283,7 +1222,8 @@ export default class Inibase {
         Utils.isArrayOfObjects(RETURN)
           ? RETURN.map((data: Data) => data.id)
           : ((RETURN as Data).id as number),
-        options
+        options,
+        !Utils.isArrayOfObjects(data) // return only one item if data is not array of objects
       );
   }
 
@@ -1337,8 +1277,9 @@ export default class Inibase {
                 updated_at: new Date(),
               }
         );
-        for (const [path, content] of Object.entries(pathesContents))
+        for await (const [path, content] of Object.entries(pathesContents))
           await File.replace(path, content);
+
         if (returnPostedData) return this.get(tableName, where, options);
       }
     } else if (Utils.isValidID(where)) {
@@ -1383,11 +1324,18 @@ export default class Inibase {
           ),
         ])
       );
-      for (const [path, content] of Object.entries(pathesContents))
+      for await (const [path, content] of Object.entries(pathesContents))
         await File.replace(path, content);
+
       if (returnPostedData) return this.get(tableName, where, options);
     } else if (typeof where === "object" && !Array.isArray(where)) {
-      const lineNumbers = this.get(tableName, where, undefined, true);
+      const lineNumbers = this.get(
+        tableName,
+        where,
+        undefined,
+        undefined,
+        true
+      );
       if (!lineNumbers || !Array.isArray(lineNumbers) || !lineNumbers.length)
         throw this.throwError("NO_ITEMS", tableName);
       return this.put(tableName, data, lineNumbers);
@@ -1408,7 +1356,7 @@ export default class Inibase {
       const files = await readdir(join(this.folder, this.database, tableName));
       if (files.length) {
         for (const file in files.filter(
-          (fileName: string) => fileName !== "schema"
+          (fileName: string) => fileName !== "schema.json"
         ))
           await unlink(join(this.folder, this.database, tableName, file));
       }
@@ -1450,9 +1398,8 @@ export default class Inibase {
               )
             )[0]
           ).map((id) => UtilsServer.encodeID(Number(id), this.salt));
-        for (const file of files.filter(
-          (fileName: string) =>
-            fileName.endsWith(".inib") && fileName !== "schema"
+        for (const file of files.filter((fileName: string) =>
+          fileName.endsWith(".inib")
         ))
           await File.remove(
             join(this.folder, this.database, tableName, file),
@@ -1461,7 +1408,13 @@ export default class Inibase {
         return Array.isArray(_id) && _id.length === 1 ? _id[0] : _id;
       }
     } else if (typeof where === "object" && !Array.isArray(where)) {
-      const lineNumbers = this.get(tableName, where, undefined, true);
+      const lineNumbers = this.get(
+        tableName,
+        where,
+        undefined,
+        undefined,
+        true
+      );
       if (!lineNumbers || !Array.isArray(lineNumbers) || !lineNumbers.length)
         throw this.throwError("NO_ITEMS", tableName);
       return this.delete(tableName, lineNumbers);
