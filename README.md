@@ -385,6 +385,56 @@ await db.put("user", { isActive: false });
 
 </details>
 
+<details>
+<summary>SUM</summary>
+
+```js
+import Inibase from "inibase";
+const db = new Inibase("/database_name");
+
+// get the sum of column "age" in "user" table
+await db.sum("user", "age");
+
+// get the sum of column "age" by criteria (where "isActive" is equal to "false") in "user" table
+await db.sum("user", ["age", ...], { isActive: false });
+```
+
+</details>
+
+<details>
+<summary>MAX</summary>
+
+```js
+import Inibase from "inibase";
+const db = new Inibase("/database_name");
+
+// get the biggest number of column "age" in "user" table
+await db.max("user", "age");
+
+// get the biggest number of column "age" by criteria (where "isActive" is equal to "false") in "user" table
+await db.max("user", ["age", ...], { isActive: false });
+```
+
+</details>
+
+<details>
+<summary>MIN</summary>
+
+```js
+import Inibase from "inibase";
+const db = new Inibase("/database_name");
+
+// get the smallest number of column "age" in "user" table
+await db.min("user", "age");
+
+// get the smallest number of column "age" by criteria (where "isActive" is equal to "false") in "user" table
+await db.min("user", ["age", ...], { isActive: false });
+```
+
+</details>
+
+
+
 ## Roadmap
 
 - [x] Actions:
