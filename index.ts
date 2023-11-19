@@ -3,7 +3,6 @@ import {
   rename,
   readFile,
   writeFile,
-  appendFile,
   mkdir,
   readdir,
 } from "node:fs/promises";
@@ -11,13 +10,12 @@ import { join, parse } from "node:path";
 import { scryptSync } from "node:crypto";
 import File from "./file";
 import Utils from "./utils";
-import UtilsServer from "./utils.server";
 
 export type Data = {
   id?: number | string;
   [key: string]: any;
-  created_at?: Date;
-  updated_at?: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
 };
 
 export type FieldType =
@@ -181,13 +179,21 @@ export default class Inibase {
     tableName: string,
     schema: Schema
   ): Promise<void> {
+    const decodeIdFromSchema = (schema: Schema) =>
+      schema.map((field) => {
+        if (field.children && Utils.isArrayOfObjects(field.children))
+          field.children = decodeIdFromSchema(field.children as Schema);
+        if (!Utils.isNumber(field.id))
+          field.id = Utils.decodeID(field.id, this.salt);
+        return field;
+      });
     // remove id from schema
     schema = schema.filter(
-      (field) => !["id", "created_at", "updated_at"].includes(field.key)
+      ({ key }) => !["id", "createdAt", "updatedAt"].includes(key)
     );
-    schema = UtilsServer.addIdToSchema(
+    schema = Utils.addIdToSchema(
       schema,
-      UtilsServer.findLastIdNumber(schema, this.salt),
+      Utils.findLastIdNumber(schema, this.salt),
       this.salt
     );
     const TablePath = join(this.folder, this.database, tableName),
@@ -196,19 +202,19 @@ export default class Inibase {
       await mkdir(TablePath, { recursive: true });
     if (await File.isExists(TableSchemaPath)) {
       // update columns files names based on field id
-      const schemaToIdsPath = (schema: any, prefix = "") => {
+      const schemaToIdsPath = (schema: Schema, prefix = "") => {
           let RETURN: any = {};
           for (const field of schema)
             if (field.children && Utils.isArrayOfObjects(field.children)) {
               Utils.deepMerge(
                 RETURN,
                 schemaToIdsPath(
-                  field.children,
+                  field.children as Schema,
                   (prefix ?? "") + field.key + "."
                 )
               );
             } else if (Utils.isValidID(field.id))
-              RETURN[UtilsServer.decodeID(field.id, this.salt)] =
+              RETURN[Utils.decodeID(field.id, this.salt)] =
                 (prefix ?? "") + field.key + ".inib";
 
           return RETURN;
@@ -223,7 +229,10 @@ export default class Inibase {
             await rename(join(TablePath, oldPath), join(TablePath, newPath));
     }
 
-    await writeFile(join(TablePath, "schema.json"), JSON.stringify(schema));
+    await writeFile(
+      join(TablePath, "schema.json"),
+      JSON.stringify(decodeIdFromSchema(schema))
+    );
   }
 
   public async getTableSchema(tableName: string): Promise<Schema | undefined> {
@@ -240,24 +249,25 @@ export default class Inibase {
 
     if (!this.cache.get(TableSchemaPath)) return undefined;
     const schema = JSON.parse(this.cache.get(TableSchemaPath)),
-      lastIdNumber = UtilsServer.findLastIdNumber(schema, this.salt);
+      lastIdNumber = Utils.findLastIdNumber(schema, this.salt);
+
     return [
       {
-        id: UtilsServer.encodeID(0, this.salt),
+        id: Utils.encodeID(0, this.salt),
         key: "id",
         type: "id",
         required: true,
       },
-      ...schema,
+      ...Utils.addIdToSchema(schema, lastIdNumber, this.salt),
       {
-        id: UtilsServer.encodeID(lastIdNumber + 1, this.salt),
-        key: "created_at",
+        id: Utils.encodeID(lastIdNumber + 1, this.salt),
+        key: "createdAt",
         type: "date",
         required: true,
       },
       {
-        id: UtilsServer.encodeID(lastIdNumber + 2, this.salt),
-        key: "updated_at",
+        id: Utils.encodeID(lastIdNumber + 2, this.salt),
+        key: "updatedAt",
         type: "date",
         required: false,
       },
@@ -326,7 +336,7 @@ export default class Inibase {
           children &&
           Utils.isArrayOfObjects(children)
         )
-          this.validateData(data[key], children, skipRequiredField);
+          this.validateData(data[key], children as Schema, skipRequiredField);
       }
     }
   }
@@ -346,10 +356,11 @@ export default class Inibase {
         field.type = Utils.detectFieldType(value, field.type);
       switch (field.type) {
         case "array":
+          if (!Array.isArray(value)) value = [value];
           if (typeof field.children === "string") {
             if (field.type === "array" && field.children === "table") {
-              if (Array.isArray(data[field.key])) {
-                if (Utils.isArrayOfObjects(data[field.key])) {
+              if (Array.isArray(value)) {
+                if (Utils.isArrayOfObjects(value)) {
                   if (
                     value.every(
                       (item: any) =>
@@ -360,16 +371,19 @@ export default class Inibase {
                     value.map((item: any) =>
                       Utils.isNumber(item.id)
                         ? Number(item.id)
-                        : UtilsServer.decodeID(item.id, this.salt)
+                        : Utils.decodeID(item.id, this.salt)
                     );
-                } else if (Utils.isValidID(value) || Utils.isNumber(value))
+                } else if (
+                  value.every(Utils.isValidID) ||
+                  value.every(Utils.isNumber)
+                )
                   return value.map((item: number | string) =>
                     Utils.isNumber(item)
-                      ? Number(item as string)
-                      : UtilsServer.decodeID(item as string, this.salt)
+                      ? Number(item)
+                      : Utils.decodeID(item as string, this.salt)
                   );
               } else if (Utils.isValidID(value))
-                return [UtilsServer.decodeID(value, this.salt)];
+                return [Utils.decodeID(value, this.salt)];
               else if (Utils.isNumber(value)) return [Number(value)];
             } else if (data.hasOwnProperty(field.key)) return value;
           } else if (Utils.isArrayOfObjects(field.children))
@@ -385,7 +399,7 @@ export default class Inibase {
           if (Utils.isArrayOfObjects(field.children))
             return this.formatData(
               value,
-              field.children,
+              field.children as Schema,
               formatOnlyAvailiableKeys
             );
           break;
@@ -397,20 +411,20 @@ export default class Inibase {
             )
               return Utils.isNumber(value.id)
                 ? Number(value.id)
-                : UtilsServer.decodeID(value.id, this.salt);
+                : Utils.decodeID(value.id, this.salt);
           } else if (Utils.isValidID(value) || Utils.isNumber(value))
             return Utils.isNumber(value)
               ? Number(value)
-              : UtilsServer.decodeID(value, this.salt);
+              : Utils.decodeID(value, this.salt);
           break;
         case "password":
-          return value.length === 161 ? value : UtilsServer.hashPassword(value);
+          return value.length === 161 ? value : Utils.hashPassword(value);
         case "number":
           return Utils.isNumber(value) ? Number(value) : null;
         case "id":
           return Utils.isNumber(value)
             ? value
-            : UtilsServer.decodeID(value, this.salt);
+            : Utils.decodeID(value, this.salt);
         default:
           return value;
       }
@@ -495,34 +509,26 @@ export default class Inibase {
         for (const [key, value] of Object.entries(_data as Data)) {
           if (Utils.isObject(value))
             Object.assign(RETURN, CombineData(value, `${key}.`));
-          else if (Array.isArray(value)) {
-            if (Utils.isArrayOfObjects(value)) {
-              Object.assign(
-                RETURN,
-                CombineData(
-                  combineObjectsToArray(value),
-                  (prefix ?? "") + key + "."
-                )
-              );
-            } else if (
-              Utils.isArrayOfArrays(value) &&
-              value.every(Utils.isArrayOfObjects)
-            )
-              Object.assign(
-                RETURN,
-                CombineData(
-                  combineObjectsToArray(value.map(combineObjectsToArray)),
-                  (prefix ?? "") + key + "."
-                )
-              );
-            else {
-              RETURN[(prefix ?? "") + key] = File.encode(value) as
-                | boolean
-                | number
-                | string
-                | null;
-            }
-          } else
+          else if (Utils.isArrayOfObjects(value)) {
+            Object.assign(
+              RETURN,
+              CombineData(
+                combineObjectsToArray(value),
+                (prefix ?? "") + key + "."
+              )
+            );
+          } else if (
+            Utils.isArrayOfArrays(value) &&
+            value.every(Utils.isArrayOfObjects)
+          )
+            Object.assign(
+              RETURN,
+              CombineData(
+                combineObjectsToArray(value.map(combineObjectsToArray)),
+                (prefix ?? "") + key + "."
+              )
+            );
+          else
             RETURN[(prefix ?? "") + key] = File.encode(value) as
               | boolean
               | number
@@ -884,7 +890,7 @@ export default class Inibase {
         "[]",
         Utils.isNumber(Ids)
           ? Ids.map((id) => Number(id as string))
-          : Ids.map((id) => UtilsServer.decodeID(id as string, this.salt)),
+          : Ids.map((id) => Utils.decodeID(id as string, this.salt)),
         undefined,
         "number",
         undefined,
@@ -1193,17 +1199,17 @@ export default class Inibase {
     if (Utils.isArrayOfObjects(data))
       (data as Data[]).forEach((single_data, index) => {
         if (!RETURN) RETURN = [];
-        RETURN[index] = (({ id, updated_at, created_at, ...rest }) => ({
+        RETURN[index] = (({ id, updatedAt, createdAt, ...rest }) => ({
           id: ++last_id,
           ...rest,
-          created_at: new Date(),
+          createdAt: new Date(),
         }))(single_data);
       });
     else
-      RETURN = (({ id, updated_at, created_at, ...rest }) => ({
+      RETURN = (({ id, updatedAt, createdAt, ...rest }) => ({
         id: ++last_id,
         ...rest,
-        created_at: new Date(),
+        createdAt: new Date(),
       }))(data as Data);
     if (!RETURN) throw this.throwError("NO_DATA");
 
@@ -1261,7 +1267,7 @@ export default class Inibase {
         return this.put(
           tableName,
           data,
-          UtilsServer.decodeID((data as Data).id as string, this.salt)
+          Utils.decodeID((data as Data).id as string, this.salt)
         );
       } else {
         const pathesContents = this.joinPathesContents(
@@ -1269,11 +1275,11 @@ export default class Inibase {
           Utils.isArrayOfObjects(data)
             ? (data as Data[]).map((item) => ({
                 ...(({ id, ...restOfData }) => restOfData)(item),
-                updated_at: new Date(),
+                updatedAt: new Date(),
               }))
             : {
                 ...(({ id, ...restOfData }) => restOfData)(data as Data),
-                updated_at: new Date(),
+                updatedAt: new Date(),
               }
         );
         for await (const [path, content] of Object.entries(pathesContents))
@@ -1287,7 +1293,7 @@ export default class Inibase {
       const [lineNumbers, countItems] = await File.search(
         idFilePath,
         "[]",
-        Ids.map((id) => UtilsServer.decodeID(id, this.salt)),
+        Ids.map((id) => Utils.decodeID(id, this.salt)),
         undefined,
         "number",
         undefined,
@@ -1308,9 +1314,9 @@ export default class Inibase {
             Utils.isArrayOfObjects(data)
               ? (data as Data[]).map((item) => ({
                   ...item,
-                  updated_at: new Date(),
+                  updatedAt: new Date(),
                 }))
-              : { ...data, updated_at: new Date() }
+              : { ...data, updatedAt: new Date() }
           )
         ).map(([key, value]) => [
           key,
@@ -1366,7 +1372,7 @@ export default class Inibase {
       const [lineNumbers, countItems] = await File.search(
         idFilePath,
         "[]",
-        Ids.map((id) => UtilsServer.decodeID(id, this.salt)),
+        Ids.map((id) => Utils.decodeID(id, this.salt)),
         undefined,
         "number",
         undefined,
@@ -1396,7 +1402,7 @@ export default class Inibase {
                 this.salt
               )
             )[0]
-          ).map((id) => UtilsServer.encodeID(Number(id), this.salt));
+          ).map((id) => Utils.encodeID(Number(id), this.salt));
         for (const file of files.filter((fileName: string) =>
           fileName.endsWith(".inib")
         ))
