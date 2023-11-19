@@ -9,10 +9,10 @@ import {
   type Decipher,
 } from "node:crypto";
 
-export const isArrayOfObjects = (input: any) =>
+export const isArrayOfObjects = (input: any): input is Record<any, any>[] =>
   Array.isArray(input) && (input.length === 0 || input.every(isObject));
 
-export const isArrayOfArrays = (input: any) =>
+export const isArrayOfArrays = (input: any): input is any[][] =>
   Array.isArray(input) && (input.length === 0 || input.every(Array.isArray));
 
 export const isObject = (obj: any) =>
