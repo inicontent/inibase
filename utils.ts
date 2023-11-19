@@ -9,12 +9,11 @@ import {
   type Decipher,
 } from "node:crypto";
 
-export const isArrayOfObjects = (arr: any): arr is object[] => {
-  return Array.isArray(arr) && (arr.length === 0 || arr.every(isObject));
-};
-export const isArrayOfArrays = (arr: any): arr is any[] => {
-  return Array.isArray(arr) && (arr.length === 0 || arr.every(Array.isArray));
-};
+export const isArrayOfObjects = (input: any) =>
+  Array.isArray(input) && (input.length === 0 || input.every(isObject));
+
+export const isArrayOfArrays = (input: any) =>
+  Array.isArray(input) && (input.length === 0 || input.every(Array.isArray));
 
 export const isObject = (obj: any) =>
   obj != null &&
@@ -252,7 +251,11 @@ export const encodeID = (
       secretKeyOrSalt.subarray(0, 16)
     );
   else {
-    const salt = scryptSync(secretKeyOrSalt.toString(), "salt", 32);
+    const salt = scryptSync(
+      secretKeyOrSalt.toString(),
+      (process.env.INIBASE_SECRET ?? "inibase") + "_salt",
+      32
+    );
     cipher = createCipheriv("aes-256-cbc", salt, salt.subarray(0, 16));
   }
 
@@ -272,7 +275,11 @@ export const decodeID = (
       secretKeyOrSalt.subarray(0, 16)
     );
   else {
-    const salt = scryptSync(secretKeyOrSalt.toString(), "salt", 32);
+    const salt = scryptSync(
+      secretKeyOrSalt.toString(),
+      (process.env.INIBASE_SECRET ?? "inibase") + "_salt",
+      32
+    );
     decipher = createDecipheriv("aes-256-cbc", salt, salt.subarray(0, 16));
   }
 

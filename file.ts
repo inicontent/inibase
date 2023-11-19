@@ -3,8 +3,13 @@ import { open, unlink, rename, stat } from "node:fs/promises";
 import { Interface, createInterface } from "node:readline";
 import { parse } from "node:path";
 import { ComparisonOperator, FieldType } from ".";
-import { detectFieldType, isArrayOfArrays, isNumber } from "./utils";
-import { encodeID, comparePassword } from "./utils.server";
+import {
+  detectFieldType,
+  isArrayOfArrays,
+  isNumber,
+  encodeID,
+  comparePassword,
+} from "./utils";
 
 const doesSupportReadLines = () => {
   const [major, minor, patch] = process.versions.node.split(".").map(Number);
@@ -223,9 +228,8 @@ export const get = async (
     for await (const line of rl) {
       lineCount++;
       if (!lineNumbersArray.includes(lineCount)) continue;
-      const indexOfLineCount = lineNumbersArray.indexOf(lineCount);
       lines[lineCount] = decode(line, fieldType, fieldChildrenType, secretKey);
-      lineNumbersArray[indexOfLineCount] = 0;
+      lineNumbersArray[lineNumbersArray.indexOf(lineCount)] = 0;
       if (!lineNumbersArray.filter((lineN) => lineN !== 0).length) break;
     }
   }
@@ -532,6 +536,109 @@ export const search = async (
   } else return [null, 0];
 };
 
+export const sum = async (
+  filePath: string,
+  lineNumbers?: number | number[]
+): Promise<number> => {
+  let rl: Interface;
+  if (doesSupportReadLines()) rl = (await open(filePath)).readLines();
+  else
+    rl = createInterface({
+      input: createReadStream(filePath),
+      crlfDelay: Infinity,
+    });
+  let sum = 0;
+
+  if (lineNumbers) {
+    let lineCount = 0;
+
+    let lineNumbersArray = [
+      ...(Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers]),
+    ];
+    for await (const line of rl) {
+      lineCount++;
+      if (!lineNumbersArray.includes(lineCount)) continue;
+      sum += +decode(line, "number");
+      lineNumbersArray[lineNumbersArray.indexOf(lineCount)] = 0;
+      if (!lineNumbersArray.filter((lineN) => lineN !== 0).length) break;
+    }
+  } else for await (const line of rl) sum += +decode(line, "number");
+
+  return sum;
+};
+
+export const max = async (
+  filePath: string,
+  lineNumbers?: number | number[]
+): Promise<number> => {
+  let rl: Interface;
+  if (doesSupportReadLines()) rl = (await open(filePath)).readLines();
+  else
+    rl = createInterface({
+      input: createReadStream(filePath),
+      crlfDelay: Infinity,
+    });
+  let max = 0;
+
+  if (lineNumbers) {
+    let lineCount = 0;
+
+    let lineNumbersArray = [
+      ...(Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers]),
+    ];
+    for await (const line of rl) {
+      lineCount++;
+      if (!lineNumbersArray.includes(lineCount)) continue;
+      const lineContentNum = +decode(line, "number");
+      if (lineContentNum > max) max = lineContentNum;
+      lineNumbersArray[lineNumbersArray.indexOf(lineCount)] = 0;
+      if (!lineNumbersArray.filter((lineN) => lineN !== 0).length) break;
+    }
+  } else
+    for await (const line of rl) {
+      const lineContentNum = +decode(line, "number");
+      if (lineContentNum > max) max = lineContentNum;
+    }
+
+  return max;
+};
+
+export const min = async (
+  filePath: string,
+  lineNumbers?: number | number[]
+): Promise<number> => {
+  let rl: Interface;
+  if (doesSupportReadLines()) rl = (await open(filePath)).readLines();
+  else
+    rl = createInterface({
+      input: createReadStream(filePath),
+      crlfDelay: Infinity,
+    });
+  let min = 0;
+
+  if (lineNumbers) {
+    let lineCount = 0;
+
+    let lineNumbersArray = [
+      ...(Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers]),
+    ];
+    for await (const line of rl) {
+      lineCount++;
+      if (!lineNumbersArray.includes(lineCount)) continue;
+      const lineContentNum = +decode(line, "number");
+      if (lineContentNum < min) min = lineContentNum;
+      lineNumbersArray[lineNumbersArray.indexOf(lineCount)] = 0;
+      if (!lineNumbersArray.filter((lineN) => lineN !== 0).length) break;
+    }
+  } else
+    for await (const line of rl) {
+      const lineContentNum = +decode(line, "number");
+      if (lineContentNum < min) min = lineContentNum;
+    }
+
+  return min;
+};
+
 export default class File {
   static get = get;
   static remove = remove;
@@ -541,4 +648,7 @@ export default class File {
   static encode = encode;
   static decode = decode;
   static isExists = isExists;
+  static sum = sum;
+  static min = min;
+  static max = max;
 }
