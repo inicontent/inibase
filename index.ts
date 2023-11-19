@@ -1216,7 +1216,7 @@ export default class Inibase {
         )[0] as [number, number] | undefined) ?? [1, 0]
       : [1, 0];
     if (Utils.isArrayOfObjects(data))
-      data.forEach((single_data, index) => {
+      data.forEach((single_data: any, index: string | number) => {
         if (!RETURN) RETURN = [];
         RETURN[index] = (({ id, updatedAt, createdAt, ...rest }) => ({
           id: ++last_id,
@@ -1251,7 +1251,7 @@ export default class Inibase {
       );
   }
 
-  public async put(
+  public async put<returnPostedDataType extends boolean = true>(
     tableName: string,
     data: Data | Data[],
     where?: number | string | (number | string)[] | Criteria,
@@ -1259,8 +1259,10 @@ export default class Inibase {
       page: 1,
       per_page: 15,
     },
-    returnPostedData: boolean = true
-  ): Promise<Data | Data[] | null | void> {
+    returnPostedData?: returnPostedDataType
+  ): Promise<
+    (returnPostedDataType extends true ? Data | Data[] : void) | null
+  > {
     const schema = await this.getTableSchema(tableName);
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
     const idFilePath = join(this.folder, this.database, tableName, "id.inib");
@@ -1271,14 +1273,14 @@ export default class Inibase {
       if (Utils.isArrayOfObjects(data)) {
         if (
           !data.every(
-            (item) => item.hasOwnProperty("id") && Utils.isValidID(item.id)
+            (item: any) => item.hasOwnProperty("id") && Utils.isValidID(item.id)
           )
         )
           throw this.throwError("INVALID_ID");
         return this.put(
           tableName,
           data,
-          data.map((item) => item.id)
+          data.map((item: { id: any }) => item.id)
         );
       } else if (data.hasOwnProperty("id")) {
         if (!Utils.isValidID((data as Data).id))
@@ -1292,7 +1294,7 @@ export default class Inibase {
         const pathesContents = this.joinPathesContents(
           join(this.folder, this.database, tableName),
           Utils.isArrayOfObjects(data)
-            ? data.map((item) => ({
+            ? data.map((item: any) => ({
                 ...(({ id, ...restOfData }) => restOfData)(item),
                 updatedAt: new Date(),
               }))
@@ -1304,46 +1306,65 @@ export default class Inibase {
         for await (const [path, content] of Object.entries(pathesContents))
           await File.replace(path, content);
 
-        if (returnPostedData) return this.get(tableName, where, options);
+        if (returnPostedData) return this.get(tableName, where, options) as any;
       }
-    } else if (Utils.isValidID(where)) {
-      const lineNumbers = await this.get(
-        tableName,
-        where,
-        undefined,
-        undefined,
-        true
-      );
-      return this.put(tableName, data, lineNumbers);
-    } else if (Utils.isNumber(where)) {
-      // "where" in this case, is the line(s) number(s) and not id(s)
-      const pathesContents = Object.fromEntries(
-        Object.entries(
-          this.joinPathesContents(
-            join(this.folder, this.database, tableName),
-            Utils.isArrayOfObjects(data)
-              ? data.map((item) => ({
-                  ...item,
-                  updatedAt: new Date(),
-                }))
-              : { ...data, updatedAt: new Date() }
-          )
-        ).map(([key, value]) => [
-          key,
-          ([...(Array.isArray(where) ? where : [where])] as number[]).reduce(
-            (obj, key, index) => ({
-              ...obj,
-              [key]: Array.isArray(value) ? value[index] : value,
-            }),
-            {}
-          ),
-        ])
-      );
-      for await (const [path, content] of Object.entries(pathesContents))
-        await File.replace(path, content);
+    } else if (
+      (Array.isArray(where) &&
+        (where.every(Utils.isValidID) || where.every(Utils.isNumber))) ||
+      Utils.isValidID(where) ||
+      Utils.isNumber(where)
+    ) {
+      if (
+        (Array.isArray(where) && where.every(Utils.isValidID)) ||
+        Utils.isValidID(where)
+      ) {
+        const lineNumbers = await this.get(
+          tableName,
+          where,
+          undefined,
+          undefined,
+          true
+        );
+        return this.put(tableName, data, lineNumbers);
+      } else if (
+        (Array.isArray(where) && where.every(Utils.isNumber)) ||
+        Utils.isNumber(where)
+      ) {
+        // "where" in this case, is the line(s) number(s) and not id(s)
+        const pathesContents = Object.fromEntries(
+          Object.entries(
+            this.joinPathesContents(
+              join(this.folder, this.database, tableName),
+              Utils.isArrayOfObjects(data)
+                ? data.map((item: any) => ({
+                    ...item,
+                    updatedAt: new Date(),
+                  }))
+                : { ...data, updatedAt: new Date() }
+            )
+          ).map(([key, value]) => [
+            key,
+            ([...(Array.isArray(where) ? where : [where])] as number[]).reduce(
+              (obj, key, index) => ({
+                ...obj,
+                [key]: Array.isArray(value) ? value[index] : value,
+              }),
+              {}
+            ),
+          ])
+        );
+        for await (const [path, content] of Object.entries(pathesContents))
+          await File.replace(path, content);
 
-      if (returnPostedData) return this.get(tableName, where, options);
-    } else if (typeof where === "object" && !Array.isArray(where)) {
+        if (returnPostedData)
+          return this.get(
+            tableName,
+            where,
+            options,
+            !Array.isArray(where)
+          ) as any;
+      }
+    } else if (typeof where === "object") {
       const lineNumbers = this.get(
         tableName,
         where,
@@ -1376,39 +1397,54 @@ export default class Inibase {
           await unlink(join(this.folder, this.database, tableName, file));
       }
       return "*";
-    } else if (Utils.isValidID(where)) {
-      const lineNumbers = await this.get(
-        tableName,
-        where,
-        undefined,
-        undefined,
-        true
-      );
-      return this.delete(tableName, lineNumbers, where as string | string[]);
-    } else if (Utils.isNumber(where)) {
-      // "where" in this case, is the line(s) number(s) and not id(s)
-      const files = await readdir(join(this.folder, this.database, tableName));
-      if (files.length) {
-        if (!_id)
-          _id = Object.values(
-            (
-              await File.get(
-                join(this.folder, this.database, tableName, "id.inib"),
-                where,
-                "number",
-                undefined,
-                this.salt
-              )
-            )[0]
-          ).map((id) => Utils.encodeID(Number(id), this.salt));
-        for (const file of files.filter((fileName: string) =>
-          fileName.endsWith(".inib")
-        ))
-          await File.remove(
-            join(this.folder, this.database, tableName, file),
-            where as number | number[]
-          );
-        return Array.isArray(_id) && _id.length === 1 ? _id[0] : _id;
+    } else if (
+      (Array.isArray(where) &&
+        (where.every(Utils.isValidID) || where.every(Utils.isNumber))) ||
+      Utils.isValidID(where) ||
+      Utils.isNumber(where)
+    ) {
+      if (
+        (Array.isArray(where) && where.every(Utils.isValidID)) ||
+        Utils.isValidID(where)
+      ) {
+        const lineNumbers = await this.get(
+          tableName,
+          where,
+          undefined,
+          undefined,
+          true
+        );
+        return this.delete(tableName, lineNumbers, where as string | string[]);
+      } else if (
+        (Array.isArray(where) && where.every(Utils.isNumber)) ||
+        Utils.isNumber(where)
+      ) {
+        // "where" in this case, is the line(s) number(s) and not id(s)
+        const files = await readdir(
+          join(this.folder, this.database, tableName)
+        );
+        if (files.length) {
+          if (!_id)
+            _id = Object.values(
+              (
+                await File.get(
+                  join(this.folder, this.database, tableName, "id.inib"),
+                  where,
+                  "number",
+                  undefined,
+                  this.salt
+                )
+              )[0]
+            ).map((id) => Utils.encodeID(Number(id), this.salt));
+          for (const file of files.filter((fileName: string) =>
+            fileName.endsWith(".inib")
+          ))
+            await File.remove(
+              join(this.folder, this.database, tableName, file),
+              where as number | number[]
+            );
+          return Array.isArray(_id) && _id.length === 1 ? _id[0] : _id;
+        }
       }
     } else if (typeof where === "object" && !Array.isArray(where)) {
       const lineNumbers = this.get(
@@ -1427,9 +1463,19 @@ export default class Inibase {
 
   public async sum(
     tableName: string,
+    columns: string,
+    where?: number | string | (number | string)[] | Criteria
+  ): Promise<number>;
+  public async sum(
+    tableName: string,
+    columns: string[],
+    where?: number | string | (number | string)[] | Criteria
+  ): Promise<Record<string, number>>;
+  public async sum(
+    tableName: string,
     columns: string | string[],
     where?: number | string | (number | string)[] | Criteria
-  ) {
+  ): Promise<number | Record<string, number>> {
     let RETURN: Record<string, number>;
     const schema = await this.getTableSchema(tableName);
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
@@ -1460,7 +1506,7 @@ export default class Inibase {
         } else RETURN[column] = await File.sum(columnPath);
       }
     }
-    return RETURN;
+    return Array.isArray(columns) ? RETURN : Object.values(RETURN)[0];
   }
 
   public async max(
