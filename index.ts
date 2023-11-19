@@ -117,7 +117,7 @@ export default class Inibase {
   public pageInfo: pageInfo;
   private cache: Map<string, string>;
   private totalItems: Record<string, number>;
-  private salt: Buffer;
+  public salt: Buffer;
 
   constructor(database: string, mainFolder: string = ".") {
     this.database = database;
