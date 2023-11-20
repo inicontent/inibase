@@ -1,5 +1,5 @@
-import { createWriteStream, createReadStream, WriteStream } from "node:fs";
-import { open, unlink, rename, stat } from "node:fs/promises";
+import { createWriteStream, createReadStream, type WriteStream } from "node:fs";
+import { open, unlink, rename, stat, writeFile } from "node:fs/promises";
 import { Interface, createInterface } from "node:readline";
 import { parse } from "node:path";
 import { ComparisonOperator, FieldType } from ".";
@@ -252,18 +252,22 @@ export const replace = async (
   secretKey?: string | Buffer
 ) => {
   if (await isExists(filePath)) {
+    const tempFilePath = `${filePath}-${Date.now()}.tmp`;
     let rl: Interface, writeStream: WriteStream;
     if (doesSupportReadLines()) {
-      const file = await open(filePath, "w+");
+      const file = await open(filePath, "w");
       rl = file.readLines();
-      writeStream = file.createWriteStream();
+      writeStream = (await open(tempFilePath, "w")).createWriteStream({
+        autoClose: false,
+      });
     } else {
       rl = createInterface({
         input: createReadStream(filePath),
         crlfDelay: Infinity,
       });
-      writeStream = createWriteStream(filePath);
+      writeStream = createWriteStream(tempFilePath, { autoClose: false });
     }
+
     if (typeof replacements === "object" && !Array.isArray(replacements)) {
       let lineCount = 0;
       for await (const line of rl) {
@@ -274,26 +278,35 @@ export const replace = async (
             : line) + "\n"
         );
       }
+      const newLinesNumber = Object.keys(replacements)
+        .map(Number)
+        .filter((num) => num > lineCount);
+
+      if (newLinesNumber.length) {
+        if (Math.min(...newLinesNumber) - lineCount - 1 > 1)
+          writeStream.write(
+            "\n".repeat(Math.min(...newLinesNumber) - lineCount - 1)
+          );
+        newLinesNumber.forEach((num) =>
+          writeStream.write(encode(replacements[num], secretKey) + "\n")
+        );
+      }
     } else
       for await (const _line of rl)
         writeStream.write(encode(replacements, secretKey) + "\n");
 
-    writeStream.end();
+    writeStream.end(async () => {
+      await rename(tempFilePath, filePath); // Rename the temp file to the original file name
+    });
   } else if (typeof replacements === "object" && !Array.isArray(replacements)) {
-    let writeStream: WriteStream;
-    if (doesSupportReadLines())
-      writeStream = (await open(filePath, "w")).createWriteStream();
-    else writeStream = createWriteStream(filePath);
-    const largestLinesNumbers =
-      Math.max(...Object.keys(replacements).map(Number)) + 1;
-    for (let lineCount = 1; lineCount < largestLinesNumbers; lineCount++) {
-      writeStream.write(
-        (lineCount in replacements
-          ? encode(replacements[lineCount], secretKey)
-          : "") + "\n"
-      );
-    }
-    writeStream.end();
+    await writeFile(
+      filePath,
+      Object.keys(replacements)
+        .map(Number)
+        .sort((a, b) => a - b)
+        .map((num) => replacements[num])
+        .join("\n") + "\n"
+    );
   }
 };
 
@@ -311,7 +324,7 @@ export const remove = async (
   let rl: Interface, writeStream: WriteStream;
   if (doesSupportReadLines()) {
     rl = (await open(filePath)).readLines();
-    writeStream = (await open(tempFilePath, "w+")).createWriteStream();
+    writeStream = (await open(tempFilePath, "w")).createWriteStream();
   } else {
     rl = createInterface({
       input: createReadStream(filePath),
@@ -637,6 +650,26 @@ export const min = async (
     }
 
   return min;
+};
+
+export const sort = async (
+  filePath: string,
+  sortDirection: 1 | -1 | "asc" | "desc",
+  lineNumbers?: number | number[],
+  _lineNumbersPerChunk: number = 100000
+): Promise<void> => {
+  let rl: Interface;
+  if (doesSupportReadLines()) rl = (await open(filePath)).readLines();
+  else
+    rl = createInterface({
+      input: createReadStream(filePath),
+      crlfDelay: Infinity,
+    });
+  let lineCount = 0;
+
+  for await (const line of rl) {
+    lineCount++;
+  }
 };
 
 export default class File {

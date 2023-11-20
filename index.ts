@@ -1213,8 +1213,8 @@ export default class Inibase {
     let [last_line_number, last_id] = (await File.isExists(idFilePath))
       ? (Object.entries(
           (await File.get(idFilePath, -1, "number", undefined, this.salt))[0]
-        )[0] as [number, number] | undefined) ?? [1, 0]
-      : [1, 0];
+        )[0] as [number, number] | undefined) ?? [0, 0]
+      : [0, 0];
     if (Utils.isArrayOfObjects(data))
       data.forEach((single_data: any, index: string | number) => {
         if (!RETURN) RETURN = [];
@@ -1237,8 +1237,9 @@ export default class Inibase {
       join(this.folder, this.database, tableName),
       RETURN
     );
+    last_line_number++;
     for await (const [path, content] of Object.entries(pathesContents))
-      await File.replace(path, { [last_line_number]: content });
+      await File.replace(path, { [last_line_number]: content }, this.salt);
 
     if (returnPostedData)
       return this.get(
@@ -1304,7 +1305,7 @@ export default class Inibase {
               }
         );
         for await (const [path, content] of Object.entries(pathesContents))
-          await File.replace(path, content);
+          await File.replace(path, content, this.salt);
 
         if (returnPostedData) return this.get(tableName, where, options) as any;
       }
@@ -1354,7 +1355,7 @@ export default class Inibase {
           ])
         );
         for await (const [path, content] of Object.entries(pathesContents))
-          await File.replace(path, content);
+          await File.replace(path, content, this.salt);
 
         if (returnPostedData)
           return this.get(
