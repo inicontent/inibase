@@ -7,6 +7,7 @@ import {
   timingSafeEqual,
   type Cipher,
   type Decipher,
+  createHash,
 } from "node:crypto";
 
 export const isArrayOfObjects = (input: any): input is Record<any, any>[] =>
@@ -31,14 +32,34 @@ export const deepMerge = (target: any, source: any): any => {
   return target;
 };
 
-export const combineObjects = (objectArray: Record<string, any>[]) => {
-  const combinedValues: Record<string, any> = {};
+export const combineObjects = (
+  arr: Record<string, any>[]
+): Record<string, any> => {
+  const result: Record<string, any> = {};
 
-  for (const obj of objectArray as any)
-    for (const key in obj)
-      if (!combinedValues.hasOwnProperty(key)) combinedValues[key] = obj[key];
+  for (const obj of arr) {
+    for (const key in obj) {
+      if (obj.hasOwnProperty(key)) {
+        const existingValue = result[key];
+        const newValue = obj[key];
 
-  return combinedValues;
+        if (
+          typeof existingValue === "object" &&
+          typeof newValue === "object" &&
+          existingValue !== null &&
+          newValue !== null
+        ) {
+          // If both values are objects, recursively combine them
+          result[key] = combineObjects([existingValue, newValue]);
+        } else {
+          // If one or both values are not objects, overwrite the existing value
+          result[key] = newValue;
+        }
+      }
+    }
+  }
+
+  return result;
 };
 
 export const isNumber = (input: any): input is number =>
@@ -219,23 +240,21 @@ export const validateFieldType = (
 
 export const hashPassword = (password: string) => {
   const salt = randomBytes(16).toString("hex");
-  const buf = scryptSync(password, salt, 64);
-  // return "161" length string
-  return `${buf.toString("hex")}.${salt}`;
+  const hash = createHash("sha256")
+    .update(password + salt)
+    .digest("hex");
+  return `${salt}:${hash}`;
 };
 
 export const comparePassword = (
-  storedPassword: string,
-  suppliedPassword: string
+  hashedPassword: string,
+  inputPassword: string
 ) => {
-  // split() returns array
-  const [hashedPassword, salt] = storedPassword.split(".");
-  // we need to pass buffer values to timingSafeEqual
-  const hashedPasswordBuf = Buffer.from(hashedPassword, "hex");
-  // we hash the new sign-in password
-  const suppliedPasswordBuf = scryptSync(suppliedPassword, salt, 64);
-  // compare the new supplied password with the stored hashed password
-  return timingSafeEqual(hashedPasswordBuf, suppliedPasswordBuf);
+  const [salt, originalHash] = hashedPassword.split(":");
+  const inputHash = createHash("sha256")
+    .update(inputPassword + salt)
+    .digest("hex");
+  return inputHash === originalHash;
 };
 
 export const encodeID = (
@@ -337,6 +356,43 @@ export const addIdToSchema = (
     return field;
   });
 
+export const objectToDotNotation = (input: Record<string, any>) => {
+  const result: Record<string, string | number | (string | number)[]> = {};
+  const stack: Array<{ obj: Record<string, any>; parentKey?: string }> = [
+    { obj: input },
+  ];
+
+  while (stack.length > 0) {
+    const { obj, parentKey } = stack.pop()!;
+
+    for (const key in obj) {
+      if (obj.hasOwnProperty(key)) {
+        const newKey = parentKey ? `${parentKey}.${key}` : key;
+
+        const value = obj[key];
+        const isArray = Array.isArray(value);
+        const isStringOrNumberArray =
+          isArray &&
+          value.every(
+            (item: any) => typeof item === "string" || typeof item === "number"
+          );
+
+        if (isStringOrNumberArray) {
+          // If the property is an array of strings or numbers, keep the array as is
+          result[newKey] = value as (string | number)[];
+        } else if (typeof value === "object" && value !== null) {
+          // If the property is an object, push it onto the stack for further processing
+          stack.push({ obj: value, parentKey: newKey });
+        } else {
+          // Otherwise, assign the value to the dot notation key
+          result[newKey] = value;
+        }
+      }
+    }
+  }
+  return result;
+};
+
 export default class Utils {
   static isNumber = isNumber;
   static isObject = isObject;
@@ -363,4 +419,6 @@ export default class Utils {
   static comparePassword = comparePassword;
   static findLastIdNumber = findLastIdNumber;
   static addIdToSchema = addIdToSchema;
+
+  static objectToDotNotation = objectToDotNotation;
 }

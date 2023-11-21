@@ -496,9 +496,35 @@ export default class Inibase {
     }
   }
 
+  private joinPathesContentsReplacement(
+    mainPath: string,
+    data: Data | Data[],
+    startingtAt: number = 1
+  ): Record<string, Record<number, any>> {
+    if (Utils.isArrayOfObjects(data)) {
+      return Utils.combineObjects(
+        data.map((single_data) =>
+          this.joinPathesContentsReplacement(
+            mainPath,
+            single_data,
+            startingtAt++
+          )
+        )
+      );
+    } else {
+      return Object.fromEntries(
+        Object.entries(Utils.objectToDotNotation(data)).map(([key, value]) => [
+          join(mainPath, key + ".inib"),
+          { [startingtAt]: value },
+        ])
+      );
+    }
+  }
+
   public joinPathesContents(
     mainPath: string,
-    data: Data | Data[]
+    data: Data | Data[],
+    startWith: number = 1
   ): { [key: string]: string[] } {
     const CombineData = (_data: Data | Data[], prefix?: string) => {
       let RETURN: Record<
@@ -1215,31 +1241,31 @@ export default class Inibase {
           (await File.get(idFilePath, -1, "number", undefined, this.salt))[0]
         )[0] as [number, number] | undefined) ?? [0, 0]
       : [0, 0];
+
     if (Utils.isArrayOfObjects(data))
-      data.forEach((single_data: any, index: string | number) => {
-        if (!RETURN) RETURN = [];
-        RETURN[index] = (({ id, updatedAt, createdAt, ...rest }) => ({
-          id: ++last_id,
-          ...rest,
-          createdAt: new Date(),
-        }))(single_data);
-      });
+      RETURN = data.map(({ id, updatedAt, createdAt, ...rest }) => ({
+        id: ++last_id,
+        ...rest,
+        createdAt: new Date(),
+      }));
     else
       RETURN = (({ id, updatedAt, createdAt, ...rest }) => ({
         id: ++last_id,
         ...rest,
         createdAt: new Date(),
-      }))(data as Data);
+      }))(data);
+
     if (!RETURN) throw this.throwError("NO_DATA");
 
     RETURN = this.formatData(RETURN, schema);
-    const pathesContents = this.joinPathesContents(
+
+    const pathesContents = this.joinPathesContentsReplacement(
       join(this.folder, this.database, tableName),
-      RETURN
+      RETURN,
+      ++last_line_number
     );
-    last_line_number++;
     for await (const [path, content] of Object.entries(pathesContents))
-      await File.replace(path, { [last_line_number]: content }, this.salt);
+      await File.replace(path, content, this.salt);
 
     if (returnPostedData)
       return this.get(
