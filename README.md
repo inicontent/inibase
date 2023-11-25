@@ -50,7 +50,7 @@ Become a sponsor and have your company logo here 👉 [GitHub Sponsors](https://
 ## Install
 
 ```js
-<npm|pnpm> install inibase
+<npm|pnpm|yarn> install inibase
 ```
 
 ## How it works?
