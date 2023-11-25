@@ -4,7 +4,6 @@ import {
   createDecipheriv,
   randomBytes,
   scryptSync,
-  timingSafeEqual,
   type Cipher,
   type Decipher,
   createHash,

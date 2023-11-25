@@ -2,16 +2,19 @@
   "name": "inibase",
   "version": "1.0.0-rc.12",
   "description": "File-based Relational Database for large data",
-  "main": "index.ts",
+  "files": [
+    "dist"
+  ],
+  "types": "./dist",
   "type": "module",
   "scripts": {
+    "build": "npx tsc",
     "test": "npx tsx watch ./index.test",
-    "b": "npx tsx watch ./benchmark"
+    "benchmark": "npx tsx watch ./benchmark.ts",
+    "prepublishOnly": "npm run build",
+    "postversion": "git push --follow-tags && npm publish"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/inicontent/inibase.git"
-  },
+  "repository": "inicontent/inibase",
   "keywords": [
     "db",
     "nosql",
@@ -28,13 +31,21 @@
     "pocketbase",
     "firebase"
   ],
-  "author": "Inicontent",
+  "author": {
+    "name": "Karim Amahtil",
+    "email": "karim.amahtil@gmail.com"
+  },
+  "funding": "https://github.com/sponsors/inicontent",
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/inicontent/inibase/issues"
   },
   "homepage": "https://github.com/inicontent/inibase#readme",
   "devDependencies": {
-    "@types/node": "^20.8.6"
+    "@types/node": "^20.8.6",
+    "typescript": "^5.3.2"
+  },
+  "engines": {
+    "node": ">=16"
   }
 }
