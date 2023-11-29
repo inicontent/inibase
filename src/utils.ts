@@ -114,7 +114,8 @@ export const isBoolean = (input: any): input is boolean =>
 export const isPassword = (input: any): input is string => input.length === 161;
 
 export const isDate = (input: any) =>
-  !isNaN(Date.parse(String(input))) && Date.parse(String(input)) >= 0;
+  (isNumber(input) && new Date(input).getTime() > 0) ||
+  (!isNaN(Date.parse(String(input))) && Date.parse(String(input)) >= 0);
 
 export const isValidID = (input: any): input is string => {
   return typeof input === "string" && input.length === 32;
@@ -259,7 +260,7 @@ export const objectToDotNotation = (input: Record<string, any>) => {
         if (isStringOrNumberArray) {
           // If the property is an array of strings or numbers, keep the array as is
           result[newKey] = value as (string | number)[];
-        } else if (typeof value === "object" && value !== null) {
+        } else if (isObject(value)) {
           // If the property is an object, push it onto the stack for further processing
           stack.push({ obj: value, parentKey: newKey });
         } else {

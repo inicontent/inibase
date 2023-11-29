@@ -15,8 +15,8 @@ import UtilsServer from "./utils.server.js";
 export interface Data {
   id?: number | string;
   [key: string]: any;
-  createdAt?: Date;
-  updatedAt?: Date;
+  createdAt?: number;
+  updatedAt?: number;
 }
 
 export type FieldType =
@@ -1167,19 +1167,19 @@ export default class Inibase {
   post(
     tableName: string,
     data: Data | Data[],
-    options: Options,
+    options: Options | undefined,
     returnPostedData?: false
   ): Promise<void | null>;
   post(
     tableName: string,
     data: Data,
-    options: Options,
+    options: Options | undefined,
     returnPostedData: true
   ): Promise<Data | null>;
   post(
     tableName: string,
     data: Data[],
-    options: Options,
+    options: Options | undefined,
     returnPostedData: true
   ): Promise<Data[] | null>;
   public async post(
@@ -1206,19 +1206,18 @@ export default class Inibase {
       RETURN = data.map(({ id, updatedAt, createdAt, ...rest }) => ({
         id: ++last_id,
         ...rest,
-        createdAt: new Date(),
+        createdAt: new Date().getTime(),
       }));
     else
       RETURN = (({ id, updatedAt, createdAt, ...rest }) => ({
         id: ++last_id,
         ...rest,
-        createdAt: new Date(),
+        createdAt: new Date().getTime(),
       }))(data);
 
     if (!RETURN) throw this.throwError("NO_DATA");
 
     RETURN = this.formatData(RETURN, schema);
-
     const pathesContents = this.joinPathesContents(
       join(this.folder, this.database, tableName),
       RETURN
@@ -1240,7 +1239,28 @@ export default class Inibase {
       );
   }
 
-  public async put<returnPostedDataType extends boolean = true>(
+  put(
+    tableName: string,
+    data: Data | Data[],
+    where?: number | string | (number | string)[] | Criteria | undefined,
+    options?: Options | undefined,
+    returnPostedData?: false
+  ): Promise<void | null>;
+  put(
+    tableName: string,
+    data: Data,
+    where: number | string | (number | string)[] | Criteria | undefined,
+    options: Options | undefined,
+    returnPostedData: true
+  ): Promise<Data | null>;
+  put(
+    tableName: string,
+    data: Data[],
+    where: number | string | (number | string)[] | Criteria | undefined,
+    options: Options | undefined,
+    returnPostedData: true
+  ): Promise<Data[] | null>;
+  public async put(
     tableName: string,
     data: Data | Data[],
     where?: number | string | (number | string)[] | Criteria,
@@ -1248,10 +1268,8 @@ export default class Inibase {
       page: 1,
       per_page: 15,
     },
-    returnPostedData?: returnPostedDataType
-  ): Promise<
-    (returnPostedDataType extends true ? Data | Data[] : void) | null
-  > {
+    returnPostedData?: boolean
+  ): Promise<Data | Data[] | void | null> {
     const schema = await this.getTableSchema(tableName);
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
     const idFilePath = join(this.folder, this.database, tableName, "id.inib");
@@ -1285,11 +1303,11 @@ export default class Inibase {
           Utils.isArrayOfObjects(data)
             ? data.map((item: any) => ({
                 ...(({ id, ...restOfData }) => restOfData)(item),
-                updatedAt: new Date(),
+                updatedAt: new Date().getTime(),
               }))
             : {
                 ...(({ id, ...restOfData }) => restOfData)(data as Data),
-                updatedAt: new Date(),
+                updatedAt: new Date().getTime(),
               }
         );
         for await (const [path, content] of Object.entries(pathesContents))
@@ -1327,9 +1345,9 @@ export default class Inibase {
               Utils.isArrayOfObjects(data)
                 ? data.map((item: any) => ({
                     ...item,
-                    updatedAt: new Date(),
+                    updatedAt: new Date().getTime(),
                   }))
-                : { ...data, updatedAt: new Date() }
+                : { ...data, updatedAt: new Date().getTime() }
             )
           ).map(([path, content]) => [
             path,
