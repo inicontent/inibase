@@ -516,14 +516,15 @@ export default class Inibase {
           )
         );
   }
-  async get(
+
+  get(
     tableName: string,
     where?: string | number | (string | number)[] | Criteria | undefined,
     options?: Options | undefined,
     onlyOne?: true,
     onlyLinesNumbers?: undefined
   ): Promise<Data | null>;
-  async get(
+  get(
     tableName: string,
     where?: string | number | (string | number)[] | Criteria | undefined,
     options?: Options | undefined,
@@ -1163,17 +1164,33 @@ export default class Inibase {
     return onlyOne && Array.isArray(RETURN) ? RETURN[0] : RETURN;
   }
 
-  public async post<DataType extends Data | Data[]>(
+  post(
     tableName: string,
-    data: DataType,
+    data: Data | Data[],
+    options: Options,
+    returnPostedData?: false
+  ): Promise<void | null>;
+  post(
+    tableName: string,
+    data: Data,
+    options: Options,
+    returnPostedData: true
+  ): Promise<Data | null>;
+  post(
+    tableName: string,
+    data: Data[],
+    options: Options,
+    returnPostedData: true
+  ): Promise<Data[] | null>;
+  public async post(
+    tableName: string,
+    data: Data | Data[],
     options: Options = {
       page: 1,
       per_page: 15,
     },
     returnPostedData: boolean = true
-  ): Promise<
-    DataType extends Data ? Data | null | void : Data[] | null | void
-  > {
+  ): Promise<Data | Data[] | null | void> {
     const schema = await this.getTableSchema(tableName);
     let RETURN: Data | Data[] | null | undefined;
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
