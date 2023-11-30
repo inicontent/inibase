@@ -1396,8 +1396,6 @@ export default class Inibase {
     const schema = await this.getTableSchema(tableName);
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
     const idFilePath = join(this.folder, this.database, tableName, "id.inib");
-    console.log(idFilePath);
-
     if (!(await File.isExists(idFilePath)))
       throw this.throwError("NO_ITEMS", tableName);
     if (!where) {
@@ -1426,7 +1424,8 @@ export default class Inibase {
           undefined,
           true
         );
-        return this.delete(tableName, lineNumbers, where as string | string[]);
+
+        return this.delete(tableName, lineNumbers, where);
       } else if (
         (Array.isArray(where) && where.every(Utils.isNumber)) ||
         Utils.isNumber(where)
@@ -1446,14 +1445,16 @@ export default class Inibase {
                   undefined,
                   this.salt
                 )
-              )[0]
+              )[0] ?? {}
             ).map((id) => UtilsServer.encodeID(Number(id), this.salt));
+          if (!_id.length) throw this.throwError("NO_ITEMS", tableName);
+
           for (const file of files.filter((fileName: string) =>
             fileName.endsWith(".inib")
           ))
             await File.remove(
               join(this.folder, this.database, tableName, file),
-              where as number | number[]
+              where
             );
           return Array.isArray(_id) && _id.length === 1 ? _id[0] : _id;
         }
