@@ -83,7 +83,7 @@ table[0][1000] = endTime - startTime + " ms";
 table[1] = {};
 table[1].METHOD = "GET";
 
-// BULK GET 100
+// BULK GET 10
 startTime = Date.now();
 await db.get(
   "user",
@@ -145,6 +145,37 @@ await db.put(
 );
 endTime = Date.now();
 table[2][1000] = endTime - startTime + " ms";
+
+// BULK DELETE
+table[3] = {};
+table[3].METHOD = "DELETE";
+
+// BULK DELETE 10
+startTime = Date.now();
+await db.delete(
+  "user",
+  [...Array(10)].map((_, i) => i + 1)
+);
+endTime = Date.now();
+table[3][10] = endTime - startTime + " ms";
+
+// BULK DELETE 100
+startTime = Date.now();
+await db.delete(
+  "user",
+  [...Array(100)].map((_, i) => i + 1)
+);
+endTime = Date.now();
+table[3][100] = endTime - startTime + " ms";
+
+// BULK DELETE 1000
+startTime = Date.now();
+await db.delete(
+  "user",
+  [...Array(1000)].map((_, i) => i + 1)
+);
+endTime = Date.now();
+table[3][1000] = endTime - startTime + " ms";
 
 logger.table(
   table.reduce((arr, { METHOD, ...x }) => {
