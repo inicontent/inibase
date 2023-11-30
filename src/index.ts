@@ -891,7 +891,10 @@ export default class Inibase {
           where as number | string | (number | string)[]
         );
 
-      if (onlyLinesNumbers) return Object.keys(lineNumbers).map(Number);
+      if (onlyLinesNumbers)
+        return Object.keys(lineNumbers).length
+          ? Object.keys(lineNumbers).map(Number)
+          : null;
 
       RETURN = Object.values(
         (await getItemsFromSchema(
@@ -1371,15 +1374,15 @@ export default class Inibase {
             !Array.isArray(where)
           ) as any;
       }
-    } else if (typeof where === "object") {
-      const lineNumbers = this.get(
+    } else if (Utils.isObject(where)) {
+      const lineNumbers = await this.get(
         tableName,
         where,
         undefined,
         undefined,
         true
       );
-      if (!lineNumbers || !Array.isArray(lineNumbers) || !lineNumbers.length)
+      if (!lineNumbers || !lineNumbers.length)
         throw this.throwError("NO_ITEMS", tableName);
       return this.put(tableName, data, lineNumbers);
     } else throw this.throwError("INVALID_PARAMETERS", tableName);
@@ -1393,6 +1396,8 @@ export default class Inibase {
     const schema = await this.getTableSchema(tableName);
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
     const idFilePath = join(this.folder, this.database, tableName, "id.inib");
+    console.log(idFilePath);
+
     if (!(await File.isExists(idFilePath)))
       throw this.throwError("NO_ITEMS", tableName);
     if (!where) {
@@ -1453,15 +1458,15 @@ export default class Inibase {
           return Array.isArray(_id) && _id.length === 1 ? _id[0] : _id;
         }
       }
-    } else if (typeof where === "object" && !Array.isArray(where)) {
-      const lineNumbers = this.get(
+    } else if (Utils.isObject(where)) {
+      const lineNumbers = await this.get(
         tableName,
         where,
         undefined,
         undefined,
         true
       );
-      if (!lineNumbers || !Array.isArray(lineNumbers) || !lineNumbers.length)
+      if (!lineNumbers || !lineNumbers.length)
         throw this.throwError("NO_ITEMS", tableName);
       return this.delete(tableName, lineNumbers);
     } else throw this.throwError("INVALID_PARAMETERS", tableName);
