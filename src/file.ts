@@ -72,7 +72,7 @@ export const encode = (
 };
 
 const unSecureString = (input: string) =>
-  decodeURIComponent(input)
+  input
     .replaceAll("&lt;", "<")
     .replaceAll("&gt;", ">")
     .replaceAll("%2C", ",")
@@ -133,18 +133,19 @@ const decodeHelper = (
       if (!Array.isArray(value)) return [value];
 
       if (fieldChildrenType)
-        return value.map(
-          (v) =>
-            decode(
-              v,
-              Array.isArray(fieldChildrenType)
-                ? detectFieldType(v, fieldChildrenType)
-                : fieldChildrenType,
-              undefined,
-              secretKey
-            ) as string | number | boolean | null
-        );
-      else return value;
+        return fieldChildrenType
+          ? value.map(
+              (v) =>
+                decode(
+                  v,
+                  Array.isArray(fieldChildrenType)
+                    ? detectFieldType(v, fieldChildrenType)
+                    : fieldChildrenType,
+                  undefined,
+                  secretKey
+                ) as string | number | boolean | null
+            )
+          : value;
     case "id":
       return isNumber(value) ? encodeID(value as number, secretKey) : value;
     default:
