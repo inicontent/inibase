@@ -517,6 +517,476 @@ export default class Inibase {
         );
   }
 
+  private async getItemsFromSchema(
+    tableName: string,
+    schema: Schema,
+    linesNumber: number[],
+    options: Options,
+    prefix?: string
+  ) {
+    const path = join(this.folder, this.database, tableName);
+    let RETURN: Record<number, Data> = {};
+    for (const field of schema) {
+      if (
+        (field.type === "array" ||
+          (Array.isArray(field.type) &&
+            (field.type as any).includes("array"))) &&
+        field.children
+      ) {
+        if (Utils.isArrayOfObjects(field.children)) {
+          if (
+            (field.children as Schema).filter(
+              (children) =>
+                children.type === "array" &&
+                Utils.isArrayOfObjects(children.children)
+            ).length
+          ) {
+            // one of children has array field type and has children array of object = Schema
+            Object.entries(
+              (await this.getItemsFromSchema(
+                tableName,
+                (field.children as Schema).filter(
+                  (children) =>
+                    children.type === "array" &&
+                    Utils.isArrayOfObjects(children.children)
+                ),
+                linesNumber,
+                options,
+                (prefix ?? "") + field.key + "."
+              )) ?? {}
+            ).forEach(([index, item]) => {
+              if (Utils.isObject(item)) {
+                if (!RETURN[index]) RETURN[index] = {};
+                if (!RETURN[index][field.key]) RETURN[index][field.key] = [];
+                for (const child_field of (field.children as Schema).filter(
+                  (children) =>
+                    children.type === "array" &&
+                    Utils.isArrayOfObjects(children.children)
+                )) {
+                  if (Utils.isObject(item[child_field.key])) {
+                    Object.entries(item[child_field.key]).forEach(
+                      ([key, value]) => {
+                        if (!Utils.isArrayOfArrays(value))
+                          value = value.map((_value: any) =>
+                            child_field.type === "array" ? [[_value]] : [_value]
+                          );
+
+                        for (let _i = 0; _i < value.length; _i++) {
+                          if (Utils.isArrayOfNulls(value[_i])) continue;
+
+                          if (!RETURN[index][field.key][_i])
+                            RETURN[index][field.key][_i] = {};
+                          if (!RETURN[index][field.key][_i][child_field.key])
+                            RETURN[index][field.key][_i][child_field.key] = [];
+                          value[_i].forEach(
+                            (_element: any, _index: string | number) => {
+                              if (
+                                !RETURN[index][field.key][_i][child_field.key][
+                                  _index
+                                ]
+                              )
+                                RETURN[index][field.key][_i][child_field.key][
+                                  _index
+                                ] = {};
+                              RETURN[index][field.key][_i][child_field.key][
+                                _index
+                              ][key] = _element;
+                            }
+                          );
+                        }
+                      }
+                    );
+                  }
+                }
+              }
+            });
+
+            field.children = field.children.filter(
+              (children) =>
+                children.type !== "array" ||
+                !Utils.isArrayOfObjects(children.children)
+            );
+          }
+
+          Object.entries(
+            (await this.getItemsFromSchema(
+              tableName,
+              field.children as Schema,
+              linesNumber,
+              options,
+              (prefix ?? "") + field.key + "."
+            )) ?? {}
+          ).forEach(([index, item]) => {
+            if (!RETURN[index]) RETURN[index] = {};
+            if (Utils.isObject(item)) {
+              if (!Object.values(item).every((i) => i === null)) {
+                if (RETURN[index][field.key]) {
+                  Object.entries(item).forEach(([key, value], _index) => {
+                    RETURN[index][field.key] = RETURN[index][field.key].map(
+                      (_obj: any, _i: string | number) => ({
+                        ..._obj,
+                        [key]: value[_i],
+                      })
+                    );
+                  });
+                } else if (
+                  Object.values(item).every(
+                    (_i) => Utils.isArrayOfArrays(_i) || Array.isArray(_i)
+                  )
+                )
+                  RETURN[index][field.key] = item;
+                else {
+                  RETURN[index][field.key] = [];
+                  Object.entries(item).forEach(([key, value]) => {
+                    for (let _i = 0; _i < value.length; _i++) {
+                      if (
+                        value[_i] === null ||
+                        (Array.isArray(value[_i]) &&
+                          value[_i].every((_item) => _item === null))
+                      )
+                        continue;
+                      if (!RETURN[index][field.key][_i])
+                        RETURN[index][field.key][_i] = {};
+                      RETURN[index][field.key][_i][key] = value[_i];
+                    }
+                  });
+                }
+              } else RETURN[index][field.key] = null;
+            } else RETURN[index][field.key] = item;
+          });
+        } else if (
+          field.children === "table" ||
+          (Array.isArray(field.children) && field.children.includes("table"))
+        ) {
+          if (options.columns)
+            options.columns = (options.columns as string[])
+              .filter((column) => column.includes(`${field.key}.`))
+              .map((column) => column.replace(`${field.key}.`, ""));
+          const [items, total_lines] = await File.get(
+            join(path, (prefix ?? "") + field.key + ".inib"),
+            linesNumber,
+            field.type,
+            field.children,
+            this.salt
+          );
+
+          this.totalItems[tableName + "-" + field.key] = total_lines;
+          for (const [index, item] of Object.entries(items)) {
+            if (!RETURN[index]) RETURN[index] = {};
+            RETURN[index][field.key] = item
+              ? await this.get(field.key, item as number, options)
+              : this.getDefaultValue(field);
+          }
+        } else if (
+          await File.isExists(join(path, (prefix ?? "") + field.key + ".inib"))
+        ) {
+          const [items, total_lines] = await File.get(
+            join(path, (prefix ?? "") + field.key + ".inib"),
+            linesNumber,
+            field.type,
+            (field as any)?.children,
+            this.salt
+          );
+
+          this.totalItems[tableName + "-" + field.key] = total_lines;
+          for (const [index, item] of Object.entries(items)) {
+            if (!RETURN[index]) RETURN[index] = {};
+            RETURN[index][field.key] = item ?? this.getDefaultValue(field);
+          }
+        }
+      } else if (field.type === "object") {
+        for (const [index, item] of Object.entries(
+          (await this.getItemsFromSchema(
+            tableName,
+            field.children as Schema,
+            linesNumber,
+            options,
+            (prefix ?? "") + field.key + "."
+          )) ?? {}
+        )) {
+          if (!RETURN[index]) RETURN[index] = {};
+          if (Utils.isObject(item)) {
+            if (!Object.values(item).every((i) => i === null))
+              RETURN[index][field.key] = item;
+            else RETURN[index][field.key] = null;
+          } else RETURN[index][field.key] = null;
+        }
+      } else if (field.type === "table") {
+        if (
+          (await File.isExists(join(this.folder, this.database, field.key))) &&
+          (await File.isExists(
+            join(path, (prefix ?? "") + field.key + ".inib")
+          ))
+        ) {
+          if (options.columns)
+            options.columns = (options.columns as string[])
+              .filter(
+                (column) =>
+                  column.includes(`${field.key}.`) &&
+                  !column.includes(`${field.key}.`)
+              )
+              .map((column) => column.replace(`${field.key}.`, ""));
+          const [items, total_lines] = await File.get(
+            join(path, (prefix ?? "") + field.key + ".inib"),
+            linesNumber,
+            "number",
+            undefined,
+            this.salt
+          );
+          this.totalItems[tableName + "-" + field.key] = total_lines;
+          for (const [index, item] of Object.entries(items)) {
+            if (!RETURN[index]) RETURN[index] = {};
+            RETURN[index][field.key] = item
+              ? await this.get(field.key, item as number, options)
+              : this.getDefaultValue(field);
+          }
+        }
+      } else if (
+        await File.isExists(join(path, (prefix ?? "") + field.key + ".inib"))
+      ) {
+        const [items, total_lines] = await File.get(
+          join(path, (prefix ?? "") + field.key + ".inib"),
+          linesNumber,
+          field.type,
+          (field as any)?.children,
+          this.salt
+        );
+
+        this.totalItems[tableName + "-" + field.key] = total_lines;
+        for (const [index, item] of Object.entries(items)) {
+          if (!RETURN[index]) RETURN[index] = {};
+          RETURN[index][field.key] = item ?? this.getDefaultValue(field);
+        }
+      }
+    }
+    return RETURN;
+  }
+
+  private FormatObjectCriteriaValue(
+    value: string,
+    isParentArray: boolean = false
+  ): [ComparisonOperator, string | number | boolean | null] {
+    switch (value[0]) {
+      case ">":
+      case "<":
+      case "[":
+        return ["=", "]", "*"].includes(value[1])
+          ? [
+              value.slice(0, 2) as ComparisonOperator,
+              value.slice(2) as string | number,
+            ]
+          : [
+              value.slice(0, 1) as ComparisonOperator,
+              value.slice(1) as string | number,
+            ];
+      case "!":
+        return ["=", "*"].includes(value[1])
+          ? [
+              value.slice(0, 2) as ComparisonOperator,
+              value.slice(2) as string | number,
+            ]
+          : value[1] === "["
+          ? [
+              value.slice(0, 3) as ComparisonOperator,
+              value.slice(3) as string | number,
+            ]
+          : [
+              (value.slice(0, 1) + "=") as ComparisonOperator,
+              value.slice(1) as string | number,
+            ];
+      case "=":
+        return isParentArray
+          ? [
+              value.slice(0, 1) as ComparisonOperator,
+              value.slice(1) as string | number,
+            ]
+          : [
+              value.slice(0, 1) as ComparisonOperator,
+              (value.slice(1) + ",") as string,
+            ];
+      case "*":
+        return [
+          value.slice(0, 1) as ComparisonOperator,
+          value.slice(1) as string | number,
+        ];
+      default:
+        return ["=", value];
+    }
+  }
+
+  private async applyCriteria(
+    tableName: string,
+    schema: Schema,
+    options: Options,
+    criteria?: Criteria,
+    allTrue?: boolean
+  ): Promise<Record<number, Data> | null> {
+    let RETURN: Record<number, Data> = {};
+    if (!criteria) return null;
+    if (criteria.and && Utils.isObject(criteria.and)) {
+      const searchResult = await this.applyCriteria(
+        tableName,
+        schema,
+        options,
+        criteria.and as Criteria,
+        true
+      );
+      if (searchResult) {
+        RETURN = Utils.deepMerge(
+          RETURN,
+          Object.fromEntries(
+            Object.entries(searchResult).filter(
+              ([_k, v], _i) =>
+                Object.keys(v).length === Object.keys(criteria.and ?? {}).length
+            )
+          )
+        );
+        delete criteria.and;
+      } else return null;
+    }
+
+    if (criteria.or && Utils.isObject(criteria.or)) {
+      const searchResult = await this.applyCriteria(
+        tableName,
+        schema,
+        options,
+        criteria.or as Criteria,
+        false
+      );
+      delete criteria.or;
+      if (searchResult) RETURN = Utils.deepMerge(RETURN, searchResult);
+    }
+
+    if (Object.keys(criteria).length > 0) {
+      if (allTrue === undefined) allTrue = true;
+
+      let index = -1;
+      for (const [key, value] of Object.entries(criteria)) {
+        const field = this.getField(key, schema as Schema) as Field;
+        index++;
+        let searchOperator:
+            | ComparisonOperator
+            | ComparisonOperator[]
+            | undefined = undefined,
+          searchComparedAtValue:
+            | string
+            | number
+            | boolean
+            | null
+            | (string | number | boolean | null)[]
+            | undefined = undefined,
+          searchLogicalOperator: "and" | "or" | undefined = undefined;
+        if (Utils.isObject(value)) {
+          if (
+            (value as Criteria)?.or &&
+            Array.isArray((value as Criteria).or)
+          ) {
+            const searchCriteria = (
+              (value as Criteria).or as (string | number | boolean)[]
+            )
+              .map(
+                (
+                  single_or
+                ): [ComparisonOperator, string | number | boolean | null] =>
+                  typeof single_or === "string"
+                    ? this.FormatObjectCriteriaValue(single_or)
+                    : ["=", single_or]
+              )
+              .filter((a) => a) as [ComparisonOperator, string | number][];
+            if (searchCriteria.length > 0) {
+              searchOperator = searchCriteria.map((single_or) => single_or[0]);
+              searchComparedAtValue = searchCriteria.map(
+                (single_or) => single_or[1]
+              );
+              searchLogicalOperator = "or";
+            }
+            delete (value as Criteria).or;
+          }
+          if (
+            (value as Criteria)?.and &&
+            Array.isArray((value as Criteria).and)
+          ) {
+            const searchCriteria = (
+              (value as Criteria).and as (string | number | boolean)[]
+            )
+              .map(
+                (
+                  single_and
+                ): [ComparisonOperator, string | number | boolean | null] =>
+                  typeof single_and === "string"
+                    ? this.FormatObjectCriteriaValue(single_and)
+                    : ["=", single_and]
+              )
+              .filter((a) => a) as [ComparisonOperator, string | number][];
+            if (searchCriteria.length > 0) {
+              searchOperator = searchCriteria.map(
+                (single_and) => single_and[0]
+              );
+              searchComparedAtValue = searchCriteria.map(
+                (single_and) => single_and[1]
+              );
+              searchLogicalOperator = "and";
+            }
+            delete (value as Criteria).and;
+          }
+        } else if (Array.isArray(value)) {
+          const searchCriteria = value
+            .map(
+              (
+                single
+              ): [ComparisonOperator, string | number | boolean | null] =>
+                typeof single === "string"
+                  ? this.FormatObjectCriteriaValue(single)
+                  : ["=", single]
+            )
+            .filter((a) => a) as [ComparisonOperator, string | number][];
+          if (searchCriteria.length > 0) {
+            searchOperator = searchCriteria.map((single) => single[0]);
+            searchComparedAtValue = searchCriteria.map((single) => single[1]);
+            searchLogicalOperator = "and";
+          }
+        } else if (typeof value === "string") {
+          const ComparisonOperatorValue = this.FormatObjectCriteriaValue(value);
+          if (ComparisonOperatorValue) {
+            searchOperator = ComparisonOperatorValue[0];
+            searchComparedAtValue = ComparisonOperatorValue[1];
+          }
+        } else {
+          searchOperator = "=";
+          searchComparedAtValue = value as number | boolean;
+        }
+        const [searchResult, total_lines] = await File.search(
+          join(this.folder, this.database, tableName, key + ".inib"),
+          searchOperator,
+          searchComparedAtValue,
+          searchLogicalOperator,
+          field?.type,
+          (field as any)?.children,
+          options.per_page,
+          (options.page as number) - 1 * (options.per_page as number) + 1,
+          true,
+          this.salt
+        );
+        if (searchResult) {
+          RETURN = Utils.deepMerge(RETURN, searchResult);
+          this.totalItems[tableName + "-" + key] = total_lines;
+        }
+
+        if (allTrue && index > 0) {
+          if (!Object.keys(RETURN).length) RETURN = {};
+          RETURN = Object.fromEntries(
+            Object.entries(RETURN).filter(
+              ([_index, item]) => Object.keys(item).length > index
+            )
+          );
+          if (!Object.keys(RETURN).length) RETURN = {};
+        }
+      }
+    }
+
+    return Object.keys(RETURN).length ? RETURN : null;
+  }
+
   get(
     tableName: string,
     where?: string | number | (string | number)[] | Criteria | undefined,
@@ -588,271 +1058,11 @@ export default class Inibase {
     if (options.columns.length)
       schema = filterSchemaByColumns(schema, options.columns);
 
-    const getItemsFromSchema = async (
-      path: string,
-      schema: Schema,
-      linesNumber: number[],
-      prefix?: string
-    ) => {
-      let RETURN: Record<number, Data> = {};
-      for (const field of schema) {
-        if (
-          (field.type === "array" ||
-            (Array.isArray(field.type) &&
-              (field.type as any).includes("array"))) &&
-          (field as FieldDefault & (FieldArrayType | FieldArrayArrayType))
-            .children
-        ) {
-          if (
-            Utils.isArrayOfObjects(
-              (field as FieldDefault & (FieldArrayType | FieldArrayArrayType))
-                .children
-            )
-          ) {
-            if (
-              (
-                (field as FieldDefault & (FieldArrayType | FieldArrayArrayType))
-                  .children as Schema
-              ).filter(
-                (children) =>
-                  children.type === "array" &&
-                  Utils.isArrayOfObjects(children.children)
-              ).length
-            ) {
-              // one of children has array field type and has children array of object = Schema
-              Object.entries(
-                (await getItemsFromSchema(
-                  path,
-                  (
-                    (
-                      field as FieldDefault &
-                        (FieldArrayType | FieldArrayArrayType)
-                    ).children as Schema
-                  ).filter(
-                    (children) =>
-                      children.type === "array" &&
-                      Utils.isArrayOfObjects(children.children)
-                  ),
-                  linesNumber,
-                  (prefix ?? "") + field.key + "."
-                )) ?? {}
-              ).forEach(([index, item]) => {
-                if (Utils.isObject(item)) {
-                  if (!RETURN[index]) RETURN[index] = {};
-                  if (!RETURN[index][field.key]) RETURN[index][field.key] = [];
-                  for (const child_field of (
-                    (
-                      field as FieldDefault &
-                        (FieldArrayType | FieldArrayArrayType)
-                    ).children as Schema
-                  ).filter(
-                    (children) =>
-                      children.type === "array" &&
-                      Utils.isArrayOfObjects(children.children)
-                  )) {
-                    if (Utils.isObject(item[child_field.key])) {
-                      Object.entries(item[child_field.key]).forEach(
-                        ([key, value]) => {
-                          for (let _i = 0; _i < value.length; _i++) {
-                            if (!RETURN[index][field.key][_i])
-                              RETURN[index][field.key][_i] = {};
-                            if (!RETURN[index][field.key][_i][child_field.key])
-                              RETURN[index][field.key][_i][child_field.key] =
-                                [];
-                            value[_i].forEach(
-                              (_element: any, _index: string | number) => {
-                                if (
-                                  !RETURN[index][field.key][_i][
-                                    child_field.key
-                                  ][_index]
-                                )
-                                  RETURN[index][field.key][_i][child_field.key][
-                                    _index
-                                  ] = {};
-                                RETURN[index][field.key][_i][child_field.key][
-                                  _index
-                                ][key] = _element;
-                              }
-                            );
-                          }
-                        }
-                      );
-                    }
-                  }
-                }
-              });
-              (
-                field as FieldDefault & (FieldArrayType | FieldArrayArrayType)
-              ).children = (
-                (field as FieldDefault & (FieldArrayType | FieldArrayArrayType))
-                  .children as Schema
-              ).filter(
-                (children) =>
-                  children.type !== "array" ||
-                  !Utils.isArrayOfObjects(children.children)
-              );
-            }
-
-            Object.entries(
-              (await getItemsFromSchema(
-                path,
-                (field as FieldDefault & (FieldArrayType | FieldArrayArrayType))
-                  .children as Schema,
-                linesNumber,
-                (prefix ?? "") + field.key + "."
-              )) ?? {}
-            ).forEach(([index, item]) => {
-              if (!RETURN[index]) RETURN[index] = {};
-              if (Utils.isObject(item)) {
-                if (!Object.values(item).every((i) => i === null)) {
-                  if (RETURN[index][field.key])
-                    Object.entries(item).forEach(([key, value], _index) => {
-                      RETURN[index][field.key] = RETURN[index][field.key].map(
-                        (_obj: any, _i: string | number) => ({
-                          ..._obj,
-                          [key]: value[_i],
-                        })
-                      );
-                    });
-                  else if (Object.values(item).every(Utils.isArrayOfArrays))
-                    RETURN[index][field.key] = item;
-                  else {
-                    RETURN[index][field.key] = [];
-                    Object.entries(item).forEach(([key, value]) => {
-                      for (let _i = 0; _i < value.length; _i++) {
-                        if (!RETURN[index][field.key][_i])
-                          RETURN[index][field.key][_i] = {};
-                        RETURN[index][field.key][_i][key] = value[_i];
-                      }
-                    });
-                  }
-                } else RETURN[index][field.key] = null;
-              } else RETURN[index][field.key] = item;
-            });
-          } else if (
-            (field as FieldDefault & (FieldArrayType | FieldArrayArrayType))
-              .children === "table" ||
-            (Array.isArray(
-              (field as FieldDefault & (FieldArrayType | FieldArrayArrayType))
-                .children
-            ) &&
-              (
-                (field as FieldDefault & (FieldArrayType | FieldArrayArrayType))
-                  .children as FieldType[]
-              ).includes("table"))
-          ) {
-            if (options.columns)
-              options.columns = (options.columns as string[])
-                .filter((column) => column.includes(`${field.key}.`))
-                .map((column) => column.replace(`${field.key}.`, ""));
-            const [items, total_lines] = await File.get(
-              join(path, (prefix ?? "") + field.key + ".inib"),
-              linesNumber,
-              field.type,
-              (field as FieldDefault & (FieldArrayType | FieldArrayArrayType))
-                .children as FieldType | FieldType[],
-              this.salt
-            );
-
-            this.totalItems[tableName + "-" + field.key] = total_lines;
-            for (const [index, item] of Object.entries(items)) {
-              if (!RETURN[index]) RETURN[index] = {};
-              RETURN[index][field.key] = item
-                ? await this.get(field.key, item as number, options)
-                : this.getDefaultValue(field);
-            }
-          } else if (
-            await File.isExists(
-              join(path, (prefix ?? "") + field.key + ".inib")
-            )
-          ) {
-            const [items, total_lines] = await File.get(
-              join(path, (prefix ?? "") + field.key + ".inib"),
-              linesNumber,
-              field.type,
-              (field as any)?.children,
-              this.salt
-            );
-
-            this.totalItems[tableName + "-" + field.key] = total_lines;
-            for (const [index, item] of Object.entries(items)) {
-              if (!RETURN[index]) RETURN[index] = {};
-              RETURN[index][field.key] = item ?? this.getDefaultValue(field);
-            }
-          }
-        } else if (field.type === "object") {
-          for (const [index, item] of Object.entries(
-            (await getItemsFromSchema(
-              path,
-              field.children as Schema,
-              linesNumber,
-              (prefix ?? "") + field.key + "."
-            )) ?? {}
-          )) {
-            if (!RETURN[index]) RETURN[index] = {};
-            if (Utils.isObject(item)) {
-              if (!Object.values(item).every((i) => i === null))
-                RETURN[index][field.key] = item;
-              else RETURN[index][field.key] = null;
-            } else RETURN[index][field.key] = null;
-          }
-        } else if (field.type === "table") {
-          if (
-            (await File.isExists(
-              join(this.folder, this.database, field.key)
-            )) &&
-            (await File.isExists(
-              join(path, (prefix ?? "") + field.key + ".inib")
-            ))
-          ) {
-            if (options.columns)
-              options.columns = (options.columns as string[])
-                .filter(
-                  (column) =>
-                    column.includes(`${field.key}.`) &&
-                    !column.includes(`${field.key}.`)
-                )
-                .map((column) => column.replace(`${field.key}.`, ""));
-            const [items, total_lines] = await File.get(
-              join(path, (prefix ?? "") + field.key + ".inib"),
-              linesNumber,
-              "number",
-              undefined,
-              this.salt
-            );
-            this.totalItems[tableName + "-" + field.key] = total_lines;
-            for (const [index, item] of Object.entries(items)) {
-              if (!RETURN[index]) RETURN[index] = {};
-              RETURN[index][field.key] = item
-                ? await this.get(field.key, item as number, options)
-                : this.getDefaultValue(field);
-            }
-          }
-        } else if (
-          await File.isExists(join(path, (prefix ?? "") + field.key + ".inib"))
-        ) {
-          const [items, total_lines] = await File.get(
-            join(path, (prefix ?? "") + field.key + ".inib"),
-            linesNumber,
-            field.type,
-            (field as any)?.children,
-            this.salt
-          );
-
-          this.totalItems[tableName + "-" + field.key] = total_lines;
-          for (const [index, item] of Object.entries(items)) {
-            if (!RETURN[index]) RETURN[index] = {};
-            RETURN[index][field.key] = item ?? this.getDefaultValue(field);
-          }
-        }
-      }
-      return RETURN;
-    };
     if (!where) {
       // Display all data
       RETURN = Object.values(
-        await getItemsFromSchema(
-          join(this.folder, this.database, tableName),
+        await this.getItemsFromSchema(
+          tableName,
           schema,
           Array.from(
             { length: options.per_page },
@@ -860,7 +1070,8 @@ export default class Inibase {
               ((options.page as number) - 1) * (options.per_page as number) +
               index +
               1
-          )
+          ),
+          options
         )
       );
     } else if (
@@ -897,237 +1108,23 @@ export default class Inibase {
           : null;
 
       RETURN = Object.values(
-        (await getItemsFromSchema(
-          join(this.folder, this.database, tableName),
+        (await this.getItemsFromSchema(
+          tableName,
           schema,
-          Object.keys(lineNumbers).map(Number)
+          Object.keys(lineNumbers).map(Number),
+          options
         )) ?? {}
       );
       if (RETURN.length && !Array.isArray(where)) RETURN = RETURN[0];
     } else if (Utils.isObject(where)) {
       // Criteria
-      const FormatObjectCriteriaValue = (
-        value: string,
-        isParentArray: boolean = false
-      ): [ComparisonOperator, string | number | boolean | null] => {
-        switch (value[0]) {
-          case ">":
-          case "<":
-          case "[":
-            return ["=", "]", "*"].includes(value[1])
-              ? [
-                  value.slice(0, 2) as ComparisonOperator,
-                  value.slice(2) as string | number,
-                ]
-              : [
-                  value.slice(0, 1) as ComparisonOperator,
-                  value.slice(1) as string | number,
-                ];
-          case "!":
-            return ["=", "*"].includes(value[1])
-              ? [
-                  value.slice(0, 2) as ComparisonOperator,
-                  value.slice(2) as string | number,
-                ]
-              : value[1] === "["
-              ? [
-                  value.slice(0, 3) as ComparisonOperator,
-                  value.slice(3) as string | number,
-                ]
-              : [
-                  (value.slice(0, 1) + "=") as ComparisonOperator,
-                  value.slice(1) as string | number,
-                ];
-          case "=":
-            return isParentArray
-              ? [
-                  value.slice(0, 1) as ComparisonOperator,
-                  value.slice(1) as string | number,
-                ]
-              : [
-                  value.slice(0, 1) as ComparisonOperator,
-                  (value.slice(1) + ",") as string,
-                ];
-          case "*":
-            return [
-              value.slice(0, 1) as ComparisonOperator,
-              value.slice(1) as string | number,
-            ];
-          default:
-            return ["=", value];
-        }
-      };
 
-      const applyCriteria = async (
-        criteria?: Criteria,
-        allTrue?: boolean
-      ): Promise<Record<number, Data> | null> => {
-        let RETURN: Record<number, Data> = {};
-        if (!criteria) return null;
-        if (criteria.and && Utils.isObject(criteria.and)) {
-          const searchResult = await applyCriteria(
-            criteria.and as Criteria,
-            true
-          );
-          if (searchResult) {
-            RETURN = Utils.deepMerge(
-              RETURN,
-              Object.fromEntries(
-                Object.entries(searchResult).filter(
-                  ([_k, v], _i) =>
-                    Object.keys(v).length ===
-                    Object.keys(criteria.and ?? {}).length
-                )
-              )
-            );
-            delete criteria.and;
-          } else return null;
-        }
-
-        if (criteria.or && Utils.isObject(criteria.or)) {
-          const searchResult = await applyCriteria(
-            criteria.or as Criteria,
-            false
-          );
-          delete criteria.or;
-          if (searchResult) RETURN = Utils.deepMerge(RETURN, searchResult);
-        }
-
-        if (Object.keys(criteria).length > 0) {
-          if (allTrue === undefined) allTrue = true;
-
-          let index = -1;
-          for (const [key, value] of Object.entries(criteria)) {
-            const field = this.getField(key, schema as Schema) as Field;
-            index++;
-            let searchOperator:
-                | ComparisonOperator
-                | ComparisonOperator[]
-                | undefined = undefined,
-              searchComparedAtValue:
-                | string
-                | number
-                | boolean
-                | null
-                | (string | number | boolean | null)[]
-                | undefined = undefined,
-              searchLogicalOperator: "and" | "or" | undefined = undefined;
-            if (Utils.isObject(value)) {
-              if (
-                (value as Criteria)?.or &&
-                Array.isArray((value as Criteria).or)
-              ) {
-                const searchCriteria = (
-                  (value as Criteria).or as (string | number | boolean)[]
-                )
-                  .map(
-                    (
-                      single_or
-                    ): [ComparisonOperator, string | number | boolean | null] =>
-                      typeof single_or === "string"
-                        ? FormatObjectCriteriaValue(single_or)
-                        : ["=", single_or]
-                  )
-                  .filter((a) => a) as [ComparisonOperator, string | number][];
-                if (searchCriteria.length > 0) {
-                  searchOperator = searchCriteria.map(
-                    (single_or) => single_or[0]
-                  );
-                  searchComparedAtValue = searchCriteria.map(
-                    (single_or) => single_or[1]
-                  );
-                  searchLogicalOperator = "or";
-                }
-                delete (value as Criteria).or;
-              }
-              if (
-                (value as Criteria)?.and &&
-                Array.isArray((value as Criteria).and)
-              ) {
-                const searchCriteria = (
-                  (value as Criteria).and as (string | number | boolean)[]
-                )
-                  .map(
-                    (
-                      single_and
-                    ): [ComparisonOperator, string | number | boolean | null] =>
-                      typeof single_and === "string"
-                        ? FormatObjectCriteriaValue(single_and)
-                        : ["=", single_and]
-                  )
-                  .filter((a) => a) as [ComparisonOperator, string | number][];
-                if (searchCriteria.length > 0) {
-                  searchOperator = searchCriteria.map(
-                    (single_and) => single_and[0]
-                  );
-                  searchComparedAtValue = searchCriteria.map(
-                    (single_and) => single_and[1]
-                  );
-                  searchLogicalOperator = "and";
-                }
-                delete (value as Criteria).and;
-              }
-            } else if (Array.isArray(value)) {
-              const searchCriteria = value
-                .map(
-                  (
-                    single
-                  ): [ComparisonOperator, string | number | boolean | null] =>
-                    typeof single === "string"
-                      ? FormatObjectCriteriaValue(single)
-                      : ["=", single]
-                )
-                .filter((a) => a) as [ComparisonOperator, string | number][];
-              if (searchCriteria.length > 0) {
-                searchOperator = searchCriteria.map((single) => single[0]);
-                searchComparedAtValue = searchCriteria.map(
-                  (single) => single[1]
-                );
-                searchLogicalOperator = "and";
-              }
-            } else if (typeof value === "string") {
-              const ComparisonOperatorValue = FormatObjectCriteriaValue(value);
-              if (ComparisonOperatorValue) {
-                searchOperator = ComparisonOperatorValue[0];
-                searchComparedAtValue = ComparisonOperatorValue[1];
-              }
-            } else {
-              searchOperator = "=";
-              searchComparedAtValue = value as number | boolean;
-            }
-            const [searchResult, total_lines] = await File.search(
-              join(this.folder, this.database, tableName, key + ".inib"),
-              searchOperator,
-              searchComparedAtValue,
-              searchLogicalOperator,
-              field?.type,
-              (field as any)?.children,
-              options.per_page,
-              (options.page as number) - 1 * (options.per_page as number) + 1,
-              true,
-              this.salt
-            );
-            if (searchResult) {
-              RETURN = Utils.deepMerge(RETURN, searchResult);
-              this.totalItems[tableName + "-" + key] = total_lines;
-            }
-
-            if (allTrue && index > 0) {
-              if (!Object.keys(RETURN).length) RETURN = {};
-              RETURN = Object.fromEntries(
-                Object.entries(RETURN).filter(
-                  ([_index, item]) => Object.keys(item).length > index
-                )
-              );
-              if (!Object.keys(RETURN).length) RETURN = {};
-            }
-          }
-        }
-
-        return Object.keys(RETURN).length ? RETURN : null;
-      };
-
-      RETURN = await applyCriteria(where as Criteria);
+      RETURN = await this.applyCriteria(
+        tableName,
+        schema,
+        options,
+        where as Criteria
+      );
       if (RETURN) {
         if (onlyLinesNumbers) return Object.keys(RETURN).map(Number);
         const alreadyExistsColumns = Object.keys(Object.values(RETURN)[0]).map(
@@ -1136,12 +1133,13 @@ export default class Inibase {
         RETURN = Object.values(
           Utils.deepMerge(
             RETURN,
-            await getItemsFromSchema(
-              join(this.folder, this.database, tableName),
+            await this.getItemsFromSchema(
+              tableName,
               schema.filter(
                 (field) => !alreadyExistsColumns.includes(field.key)
               ),
-              Object.keys(RETURN).map(Number)
+              Object.keys(RETURN).map(Number),
+              options
             )
           )
         );
