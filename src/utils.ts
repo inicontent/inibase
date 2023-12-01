@@ -6,6 +6,11 @@ export const isArrayOfObjects = (input: any): input is Record<any, any>[] =>
 export const isArrayOfArrays = (input: any): input is any[][] =>
   Array.isArray(input) && (input.length === 0 || input.every(Array.isArray));
 
+export const isArrayOfNulls = (input: any): input is null[] | null[][] =>
+  input.every((_input: null) =>
+    Array.isArray(_input) ? isArrayOfNulls(_input) : _input === null
+  );
+
 export const isObject = (obj: any) =>
   obj != null &&
   (obj.constructor.name === "Object" ||
@@ -34,8 +39,8 @@ export const combineObjects = (
         const newValue = obj[key];
 
         if (
-          typeof existingValue === "object" &&
-          typeof newValue === "object" &&
+          isObject(existingValue) &&
+          isObject(newValue) &&
           existingValue !== null &&
           existingValue !== undefined &&
           newValue !== null &&
@@ -48,7 +53,11 @@ export const combineObjects = (
           result[key] =
             existingValue !== null && existingValue !== undefined
               ? Array.isArray(existingValue)
-                ? [...existingValue, newValue]
+                ? Array.isArray(newValue)
+                  ? [...existingValue, ...newValue]
+                  : [...existingValue, newValue]
+                : Array.isArray(newValue)
+                ? [existingValue, ...newValue]
                 : [existingValue, newValue]
               : newValue;
         }
@@ -293,4 +302,5 @@ export default class Utils {
   static isIP = isIP;
   static validateFieldType = validateFieldType;
   static objectToDotNotation = objectToDotNotation;
+  static isArrayOfNulls = isArrayOfNulls;
 }
