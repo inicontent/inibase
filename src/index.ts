@@ -229,7 +229,7 @@ export default class Inibase {
           schemaToIdsPath(schema)
         );
       if (replaceOldPathes)
-        for (const [oldPath, newPath] of Object.entries(replaceOldPathes))
+        for await (const [oldPath, newPath] of Object.entries(replaceOldPathes))
           if (await File.isExists(join(TablePath, oldPath)))
             await rename(join(TablePath, oldPath), join(TablePath, newPath));
     }
@@ -526,7 +526,7 @@ export default class Inibase {
   ) {
     const path = join(this.folder, this.database, tableName);
     let RETURN: Record<number, Data> = {};
-    for (const field of schema) {
+    for await (const field of schema) {
       if (
         (field.type === "array" ||
           (Array.isArray(field.type) &&
@@ -671,7 +671,7 @@ export default class Inibase {
           );
 
           this.totalItems[tableName + "-" + field.key] = total_lines;
-          for (const [index, item] of Object.entries(items)) {
+          for await (const [index, item] of Object.entries(items)) {
             if (!RETURN[index]) RETURN[index] = {};
             RETURN[index][field.key] = item
               ? await this.get(field.key, item as number, options)
@@ -695,7 +695,7 @@ export default class Inibase {
           }
         }
       } else if (field.type === "object") {
-        for (const [index, item] of Object.entries(
+        for await (const [index, item] of Object.entries(
           (await this.getItemsFromSchema(
             tableName,
             field.children as Schema,
@@ -734,7 +734,7 @@ export default class Inibase {
             this.salt
           );
           this.totalItems[tableName + "-" + field.key] = total_lines;
-          for (const [index, item] of Object.entries(items)) {
+          for await (const [index, item] of Object.entries(items)) {
             if (!RETURN[index]) RETURN[index] = {};
             RETURN[index][field.key] = item
               ? await this.get(field.key, item as number, options)
@@ -861,7 +861,7 @@ export default class Inibase {
       if (allTrue === undefined) allTrue = true;
 
       let index = -1;
-      for (const [key, value] of Object.entries(criteria)) {
+      for await (const [key, value] of Object.entries(criteria)) {
         const field = this.getField(key, schema as Schema) as Field;
         index++;
         let searchOperator:
@@ -1387,6 +1387,16 @@ export default class Inibase {
     } else throw this.throwError("INVALID_PARAMETERS", tableName);
   }
 
+  delete(
+    tableName: string,
+    where?: number | string,
+    _id?: string | string[]
+  ): Promise<string | null>;
+  delete(
+    tableName: string,
+    where?: (number | string)[],
+    _id?: string | string[]
+  ): Promise<string[] | null>;
   public async delete(
     tableName: string,
     where?: number | string | (number | string)[] | Criteria,
@@ -1398,13 +1408,13 @@ export default class Inibase {
     if (!(await File.isExists(idFilePath)))
       throw this.throwError("NO_ITEMS", tableName);
     if (!where) {
-      const files = await readdir(join(this.folder, this.database, tableName));
-      if (files.length) {
-        for (const file in files.filter(
-          (fileName: string) => fileName !== "schema.json"
-        ))
+      const files = (
+        await readdir(join(this.folder, this.database, tableName))
+      )?.filter((fileName: string) => fileName.endsWith(".inib"));
+      if (files.length)
+        for await (const file of files)
           await unlink(join(this.folder, this.database, tableName, file));
-      }
+
       return "*";
     } else if (
       (Array.isArray(where) &&
@@ -1430,9 +1440,10 @@ export default class Inibase {
         Utils.isNumber(where)
       ) {
         // "where" in this case, is the line(s) number(s) and not id(s)
-        const files = await readdir(
-          join(this.folder, this.database, tableName)
-        );
+        const files = (
+          await readdir(join(this.folder, this.database, tableName))
+        )?.filter((fileName: string) => fileName.endsWith(".inib"));
+
         if (files.length) {
           if (!_id)
             _id = Object.values(
@@ -1446,11 +1457,10 @@ export default class Inibase {
                 )
               )[0] ?? {}
             ).map((id) => UtilsServer.encodeID(Number(id), this.salt));
+
           if (!_id.length) throw this.throwError("NO_ITEMS", tableName);
 
-          for (const file of files.filter((fileName: string) =>
-            fileName.endsWith(".inib")
-          ))
+          for await (const file of files)
             await File.remove(
               join(this.folder, this.database, tableName, file),
               where
@@ -1473,12 +1483,12 @@ export default class Inibase {
     return null;
   }
 
-  public async sum(
+  sum(
     tableName: string,
     columns: string,
     where?: number | string | (number | string)[] | Criteria
   ): Promise<number>;
-  public async sum(
+  sum(
     tableName: string,
     columns: string[],
     where?: number | string | (number | string)[] | Criteria
@@ -1521,11 +1531,21 @@ export default class Inibase {
     return Array.isArray(columns) ? RETURN : Object.values(RETURN)[0];
   }
 
+  max(
+    tableName: string,
+    columns: string,
+    where?: number | string | (number | string)[] | Criteria
+  ): Promise<number>;
+  max(
+    tableName: string,
+    columns: string[],
+    where?: number | string | (number | string)[] | Criteria
+  ): Promise<Record<string, number>>;
   public async max(
     tableName: string,
     columns: string | string[],
     where?: number | string | (number | string)[] | Criteria
-  ) {
+  ): Promise<number | Record<string, number>> {
     let RETURN: Record<string, number>;
     const schema = await this.getTableSchema(tableName);
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
@@ -1559,11 +1579,21 @@ export default class Inibase {
     return RETURN;
   }
 
+  min(
+    tableName: string,
+    columns: string,
+    where?: number | string | (number | string)[] | Criteria
+  ): Promise<number>;
+  min(
+    tableName: string,
+    columns: string[],
+    where?: number | string | (number | string)[] | Criteria
+  ): Promise<Record<string, number>>;
   public async min(
     tableName: string,
     columns: string | string[],
     where?: number | string | (number | string)[] | Criteria
-  ) {
+  ): Promise<number | Record<string, number>> {
     let RETURN: Record<string, number>;
     const schema = await this.getTableSchema(tableName);
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
