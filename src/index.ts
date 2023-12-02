@@ -1199,7 +1199,8 @@ export default class Inibase {
 
     let [last_line_number, last_id] = (await File.isExists(idFilePath))
       ? (Object.entries(
-          (await File.get(idFilePath, -1, "number", undefined, this.salt))[0]
+          (await File.get(idFilePath, -1, "number", undefined, this.salt))[0] ??
+            {}
         )[0]?.map(Number) as [number, number] | undefined) ?? [0, 0]
       : [0, 0];
 
