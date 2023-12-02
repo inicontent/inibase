@@ -1208,13 +1208,13 @@ export default class Inibase {
       RETURN = data.map(({ id, updatedAt, createdAt, ...rest }) => ({
         id: ++last_id,
         ...rest,
-        createdAt: new Date().getTime(),
+        createdAt: Date.now(),
       }));
     else
       RETURN = (({ id, updatedAt, createdAt, ...rest }) => ({
         id: ++last_id,
         ...rest,
-        createdAt: new Date().getTime(),
+        createdAt: Date.now(),
       }))(data);
 
     if (!RETURN) throw this.throwError("NO_DATA");
@@ -1305,11 +1305,11 @@ export default class Inibase {
           Utils.isArrayOfObjects(data)
             ? data.map((item: any) => ({
                 ...(({ id, ...restOfData }) => restOfData)(item),
-                updatedAt: new Date().getTime(),
+                updatedAt: Date.now(),
               }))
             : {
                 ...(({ id, ...restOfData }) => restOfData)(data as Data),
-                updatedAt: new Date().getTime(),
+                updatedAt: Date.now(),
               }
         );
         for await (const [path, content] of Object.entries(pathesContents))
@@ -1347,9 +1347,9 @@ export default class Inibase {
               Utils.isArrayOfObjects(data)
                 ? data.map((item: any) => ({
                     ...item,
-                    updatedAt: new Date().getTime(),
+                    updatedAt: Date.now(),
                   }))
-                : { ...data, updatedAt: new Date().getTime() }
+                : { ...data, updatedAt: Date.now() }
             )
           ).map(([path, content]) => [
             path,
