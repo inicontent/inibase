@@ -58,17 +58,13 @@ Become a sponsor and have your company logo here 👉 [GitHub Sponsors](https://
 To semplify the idea, each database has tables, each table has columns, each column will be stored in a seperated file. When POSTing new data, it will be appended to each columns file as new line. When GETing data, the file will be readed line-by-line so it can handle large data (without consuming a lot of resources)
 
 ## Benchmark
-```js
-Bulk
-            ┌─────────┬─────────┬─────────┐
-            │ 10      │ 100     │ 1000    │
-  ┌─────────┼─────────┼─────────┼─────────┤
-  │ POST    │ '23 ms' │ '20 ms' │ '83 ms' │
-  │ GET     │ '12 ms' │ '16 ms' │ '45 ms' │
-  │ PUT     │ '6 ms'  │ '4 ms'  │ '11 ms' │
-  │ DELETE  │ '18 ms' │ '21 ms' │ '27 ms' │
-  └─────────┴─────────┴─────────┴─────────┘
-```
+
+|        | 10    | 100   | 1000  |
+|--------|-------|-------|-------|
+| POST   | 23 ms | 20 ms | 83 ms |
+| GET    | 12 ms | 16 ms | 45 ms |
+| PUT    | 6 ms  | 4 ms  | 11 ms |
+| DELETE | 18 ms | 21 ms | 27 ms |
 
 ## Examples
 
