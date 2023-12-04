@@ -765,12 +765,14 @@ export default class Inibase {
   private FormatObjectCriteriaValue(
     value: string,
     isParentArray: boolean = false
-  ): [ComparisonOperator, string | number | boolean | null] {
+  ): [
+    ComparisonOperator,
+    string | number | boolean | null | (string | number | null)[]
+  ] {
     switch (value[0]) {
       case ">":
       case "<":
-      case "[":
-        return ["=", "]", "*"].includes(value[1])
+        return value[1] === "="
           ? [
               value.slice(0, 2) as ComparisonOperator,
               value.slice(2) as string | number,
@@ -779,6 +781,13 @@ export default class Inibase {
               value.slice(0, 1) as ComparisonOperator,
               value.slice(1) as string | number,
             ];
+      case "[":
+        return value[1] === "]"
+          ? [
+              value.slice(0, 2) as ComparisonOperator,
+              (value.slice(2) as string | number).toString().split(","),
+            ]
+          : ["[]", value.slice(1) as string | number];
       case "!":
         return ["=", "*"].includes(value[1])
           ? [
@@ -887,7 +896,10 @@ export default class Inibase {
               .map(
                 (
                   single_or
-                ): [ComparisonOperator, string | number | boolean | null] =>
+                ): [
+                  ComparisonOperator,
+                  string | number | boolean | null | (string | number | null)[]
+                ] =>
                   typeof single_or === "string"
                     ? this.FormatObjectCriteriaValue(single_or)
                     : ["=", single_or]
@@ -912,7 +924,10 @@ export default class Inibase {
               .map(
                 (
                   single_and
-                ): [ComparisonOperator, string | number | boolean | null] =>
+                ): [
+                  ComparisonOperator,
+                  string | number | boolean | null | (string | number | null)[]
+                ] =>
                   typeof single_and === "string"
                     ? this.FormatObjectCriteriaValue(single_and)
                     : ["=", single_and]
@@ -934,7 +949,10 @@ export default class Inibase {
             .map(
               (
                 single
-              ): [ComparisonOperator, string | number | boolean | null] =>
+              ): [
+                ComparisonOperator,
+                string | number | boolean | null | (string | number | null)[]
+              ] =>
                 typeof single === "string"
                   ? this.FormatObjectCriteriaValue(single)
                   : ["=", single]
