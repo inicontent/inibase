@@ -40,13 +40,6 @@ const users = await db.get("user", { favoriteFoods: "![]Pizza" });
 
 If you like Inibase, please sponsor: [GitHub Sponsors](https://github.com/sponsors/inicontent) || [Paypal](https://paypal.me/KarimAmahtil).
 
-## Sponsors
-
-<br>
-<br>
-
-Become a sponsor and have your company logo here 👉 [GitHub Sponsors](https://github.com/sponsors/inicontent) || [paypal](https://paypal.me/KarimAmahtil).
-
 ## Install
 
 ```js
