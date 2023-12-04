@@ -31,7 +31,7 @@ export const comparePassword = (
 };
 
 export const encodeID = (
-  id: number,
+  id: number | string,
   secretKeyOrSalt: string | number | Buffer
 ): string => {
   let cipher: Cipher;
