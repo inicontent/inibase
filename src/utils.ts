@@ -19,7 +19,7 @@ export const isObject = (obj: any) =>
 export const deepMerge = (target: any, source: any): any => {
   for (const key in source) {
     if (source.hasOwnProperty(key)) {
-      if (source[key] instanceof Object && target[key] instanceof Object)
+      if (isObject(source[key]) && isObject(target[key]))
         target[key] = deepMerge(target[key], source[key]);
       else target[key] = source[key];
     }
