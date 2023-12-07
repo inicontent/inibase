@@ -8,13 +8,14 @@
 
 ## Features
 
-- **Lightweight** 🪶 (~80kb)
+- **Lightweight** 🪶
 - **Minimalist** :white_circle:
 - **TypeScript** :large_blue_diamond:
-- **Super-Fast** :turtle:
+- **Super-Fast** :zap:
+- **Form-validation** included :sunglasses:
 - **Suitable for large data** :page_with_curl:
 - **Safe** :lock:
-- **Easy to use** :hourglass:
+- **Easy to use** :bread:
 - **...** and much more :rocket:
 
 ## Usage
@@ -48,7 +49,7 @@ If you like Inibase, please sponsor: [GitHub Sponsors](https://github.com/sponso
 
 ## How it works?
 
-To semplify the idea, each database has tables, each table has columns, each column will be stored in a seperated file. When POSTing new data, it will be appended to each columns file as new line. When GETing data, the file will be readed line-by-line so it can handle large data (without consuming a lot of resources)
+To simplify the idea, each database has tables, each table has columns, each column will be stored in a seperated file. When POSTing new data, it will be appended to the end of each file as new line. When GETing data, the file will be readed line-by-line so it can handle large data (without consuming a lot of resources), when PUTing(updating) in a specific column, only one file will be opened and updated
 
 ## Benchmark
 
