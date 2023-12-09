@@ -1186,7 +1186,7 @@ export default class Inibase {
   post(
     tableName: string,
     data: Data | Data[],
-    options: Options | undefined,
+    options?: Options,
     returnPostedData?: false
   ): Promise<void | null>;
   post(
@@ -1204,12 +1204,15 @@ export default class Inibase {
   public async post(
     tableName: string,
     data: Data | Data[],
-    options: Options = {
-      page: 1,
-      per_page: 15,
-    },
-    returnPostedData: boolean = true
+    options?: Options,
+    returnPostedData?: boolean
   ): Promise<Data | Data[] | null | void> {
+    if (!options)
+      options = {
+        page: 1,
+        per_page: 15,
+      };
+    if (!returnPostedData) returnPostedData = false;
     const schema = await this.getTableSchema(tableName);
     let RETURN: Data | Data[] | null | undefined;
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
