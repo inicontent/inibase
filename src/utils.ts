@@ -11,7 +11,7 @@ export const isArrayOfNulls = (input: any): input is null[] | null[][] =>
     Array.isArray(_input) ? isArrayOfNulls(_input) : _input === null
   );
 
-export const isObject = (obj: any) =>
+export const isObject = (obj: any): obj is Record<any, any> =>
   obj != null &&
   (obj.constructor.name === "Object" ||
     (typeof obj === "object" && !Array.isArray(obj)));

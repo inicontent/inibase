@@ -1,7 +1,12 @@
-import { open, rename, stat, writeFile, FileHandle } from "node:fs/promises";
+import { open, rename, stat, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { ComparisonOperator, FieldType } from "./index.js";
-import { detectFieldType, isArrayOfArrays, isNumber } from "./utils.js";
+import {
+  detectFieldType,
+  isArrayOfArrays,
+  isNumber,
+  isObject,
+} from "./utils.js";
 
 import { encodeID, comparePassword } from "./utils.server.js";
 
@@ -96,7 +101,7 @@ const reverseJoinMultidimensionalArray = (
   const reverseJoinMultidimensionalArrayHelper = (
     arr: any | any[] | any[][],
     delimiter: string
-  ) =>
+  ): any =>
     Array.isArray(arr)
       ? arr.map((ar: any) =>
           reverseJoinMultidimensionalArrayHelper(ar, delimiter)
@@ -118,7 +123,7 @@ const decodeHelper = (
   fieldType?: FieldType | FieldType[],
   fieldChildrenType?: FieldType | FieldType[],
   secretKey?: string | Buffer
-) => {
+): any => {
   if (Array.isArray(value) && fieldType !== "array")
     return value.map((v) =>
       decodeHelper(v, fieldType, fieldChildrenType, secretKey)
@@ -147,7 +152,9 @@ const decodeHelper = (
             )
           : value;
     case "id":
-      return isNumber(value) ? encodeID(value as number, secretKey) : value;
+      return isNumber(value) && secretKey
+        ? encodeID(value as number, secretKey)
+        : value;
     default:
       return value;
   }
@@ -188,12 +195,13 @@ export const get = async (
       | string
       | number
       | boolean
-      | (string | number | boolean | (string | number | boolean)[])[]
+      | null
+      | (string | number | boolean | (string | number | boolean)[] | null)[]
     > | null,
     number
   ]
 > => {
-  let fileHandle: FileHandle;
+  let fileHandle;
   try {
     fileHandle = await open(filePath, "r");
     const rl = doesSupportReadLines()
@@ -207,8 +215,8 @@ export const get = async (
         | string
         | number
         | boolean
-        | (string | number | boolean | (string | number | boolean)[] | null)[]
         | null
+        | (string | number | boolean | (string | number | boolean)[] | null)[]
       > = new Map(),
       lineCount = 0;
 
@@ -220,7 +228,7 @@ export const get = async (
             decode(line, fieldType, fieldChildrenType, secretKey)
           );
     } else if (lineNumbers === -1) {
-      let lastLine: string;
+      let lastLine: string | null = null;
       for await (const line of rl) lineCount++, (lastLine = line);
       if (lastLine)
         lines.set(
@@ -264,12 +272,12 @@ export const replace = async (
 ) => {
   if (await isExists(filePath)) {
     const fileTempPath = `${filePath.replace(".inib", "")}-${Date.now()}.tmp`;
-    let fileHandle: FileHandle,
-      fileTempHandle: FileHandle,
+    let fileHandle,
+      fileTempHandle,
       lineCount = 0;
     try {
       fileHandle = await open(filePath, "r");
-      fileTempHandle = await open(fileTempPath, "w+");
+      fileTempHandle = await open(fileTempPath, "w");
       const rl = doesSupportReadLines()
           ? fileHandle.readLines()
           : createInterface({
@@ -277,9 +285,9 @@ export const replace = async (
               crlfDelay: Infinity,
             }),
         writeStream = fileTempHandle.createWriteStream();
-      if (typeof replacements === "object" && !Array.isArray(replacements)) {
+      if (isObject(replacements)) {
         if (!(replacements instanceof Map))
-          replacements = new Map(Object.entries(replacements));
+          replacements = new Map(Object.entries(replacements)) as Map<any, any>;
         for await (const line of rl) {
           lineCount++;
           writeStream.write(
@@ -310,15 +318,15 @@ export const replace = async (
       await fileHandle?.close();
       await fileTempHandle?.close();
     }
-  } else if (typeof replacements === "object" && !Array.isArray(replacements)) {
+  } else if (isObject(replacements)) {
     if (!(replacements instanceof Map))
-      replacements = new Map(Object.entries(replacements));
+      replacements = new Map(Object.entries(replacements)) as Map<any, any>;
     await writeFile(
       filePath,
       (Math.min(...replacements.keys()) - 1 > 1
         ? "\n".repeat(Math.min(...replacements.keys()) - 1)
         : "") +
-        [...new Map([...replacements].sort(([a], [b]) => a - b)).values()].join(
+        [...[...replacements].toSorted(([a], [b]) => a - b).values()].join(
           "\n"
         ) +
         "\n"
@@ -328,28 +336,24 @@ export const replace = async (
 
 export const append = async (
   filePath: string,
-  data: string | number | (string | number)[],
+  data: string | number | (string | number)[] | Set<any>,
   startsAt: number = 1
 ): Promise<void> => {
-  let fileHandle: FileHandle;
+  let fileHandle;
   try {
-    fileHandle = await open(filePath, "a");
     const doesFileExists = await isExists(filePath);
+    fileHandle = await open(filePath, "a");
     const writeStream = fileHandle.createWriteStream();
+    data = new Set(Array.isArray(data) ? data : [data]);
 
     if (doesFileExists) {
       const currentNumberOfLines = await count(filePath);
       if (startsAt - currentNumberOfLines - 1 > 0)
         writeStream.write("\n".repeat(startsAt - currentNumberOfLines - 1));
-
-      if (Array.isArray(data)) {
-        for (const input of data) writeStream.write(input + "\n");
-      } else writeStream.write(data + "\n");
+      for (const input of data) writeStream.write(input + "\n");
     } else {
       if (startsAt - 1 > 0) writeStream.write("\n".repeat(startsAt - 1));
-      if (Array.isArray(data)) {
-        for (const input of data) writeStream.write(input + "\n");
-      } else writeStream.write(data + "\n");
+      for (const input of data) writeStream.write(input + "\n");
     }
   } finally {
     await fileHandle?.close();
@@ -361,14 +365,16 @@ export const remove = async (
   linesToDelete: number | number[]
 ): Promise<void> => {
   const fileTempPath = `${filePath.replace(".inib", "")}-${Date.now()}.tmp`;
-  let fileHandle: FileHandle,
-    fileTempHandle: FileHandle,
+  let fileHandle,
+    fileTempHandle,
     lineCount = 0;
   try {
     fileHandle = await open(filePath, "r");
-    fileTempHandle = await open(fileTempPath, "w+");
+    fileTempHandle = await open(fileTempPath, "w");
     const linesToDeleteArray = new Set(
-        Array.isArray(linesToDelete) ? linesToDelete : [linesToDelete]
+        Array.isArray(linesToDelete)
+          ? linesToDelete.map(Number)
+          : [Number(linesToDelete)]
       ),
       rl = doesSupportReadLines()
         ? fileHandle.readLines()
@@ -390,7 +396,7 @@ export const remove = async (
 };
 
 export const count = async (filePath: string): Promise<number> => {
-  let fileHandle: FileHandle,
+  let fileHandle,
     lineCount = 0;
   try {
     fileHandle = await open(filePath, "r");
@@ -403,7 +409,7 @@ export const count = async (filePath: string): Promise<number> => {
     for await (const line of rl) lineCount++;
     return lineCount;
   } finally {
-    await fileHandle.close();
+    await fileHandle?.close();
   }
 };
 
@@ -457,13 +463,29 @@ const handleComparisonOperator = (
         fieldType
       );
     case ">":
-      return originalValue > comparedAtValue;
+      return (
+        originalValue !== null &&
+        comparedAtValue !== null &&
+        originalValue > comparedAtValue
+      );
     case "<":
-      return originalValue < comparedAtValue;
+      return (
+        originalValue !== null &&
+        comparedAtValue !== null &&
+        originalValue < comparedAtValue
+      );
     case ">=":
-      return originalValue >= comparedAtValue;
+      return (
+        originalValue !== null &&
+        comparedAtValue !== null &&
+        originalValue >= comparedAtValue
+      );
     case "<=":
-      return originalValue <= comparedAtValue;
+      return (
+        originalValue !== null &&
+        comparedAtValue !== null &&
+        originalValue <= comparedAtValue
+      );
     case "[]":
       return (
         (Array.isArray(originalValue) &&
@@ -528,7 +550,7 @@ export const search = async (
     number
   ]
 > => {
-  let fileHandle: FileHandle,
+  let fileHandle,
     RETURN: Map<
       number,
       string | number | boolean | null | (string | number | boolean | null)[]
@@ -600,7 +622,7 @@ export const sum = async (
   filePath: string,
   lineNumbers?: number | number[]
 ): Promise<number> => {
-  let fileHandle: FileHandle,
+  let fileHandle,
     sum: number = 0;
   try {
     fileHandle = await open(filePath, "r");
@@ -620,11 +642,11 @@ export const sum = async (
       for await (const line of rl) {
         lineCount++;
         if (!lineNumbersArray.has(lineCount)) continue;
-        sum += +decode(line, "number");
+        sum += +(decode(line, "number") ?? 0);
         lineNumbersArray.delete(lineCount);
         if (!lineNumbersArray.size) break;
       }
-    } else for await (const line of rl) sum += +decode(line, "number");
+    } else for await (const line of rl) sum += +(decode(line, "number") ?? 0);
 
     return sum;
   } finally {
@@ -636,7 +658,7 @@ export const max = async (
   filePath: string,
   lineNumbers?: number | number[]
 ): Promise<number> => {
-  let fileHandle: FileHandle,
+  let fileHandle,
     max: number = 0;
   try {
     fileHandle = await open(filePath, "r");
@@ -656,14 +678,14 @@ export const max = async (
       for await (const line of rl) {
         lineCount++;
         if (!lineNumbersArray.has(lineCount)) continue;
-        const lineContentNum = +decode(line, "number");
+        const lineContentNum = +(decode(line, "number") ?? 0);
         if (lineContentNum > max) max = lineContentNum;
         lineNumbersArray.delete(lineCount);
         if (!lineNumbersArray.size) break;
       }
     } else
       for await (const line of rl) {
-        const lineContentNum = +decode(line, "number");
+        const lineContentNum = +(decode(line, "number") ?? 0);
         if (lineContentNum > max) max = lineContentNum;
       }
 
@@ -677,7 +699,7 @@ export const min = async (
   filePath: string,
   lineNumbers?: number | number[]
 ): Promise<number> => {
-  let fileHandle: FileHandle,
+  let fileHandle,
     min: number = 0;
   try {
     fileHandle = await open(filePath, "r");
@@ -697,14 +719,14 @@ export const min = async (
       for await (const line of rl) {
         lineCount++;
         if (!lineNumbersArray.has(lineCount)) continue;
-        const lineContentNum = +decode(line, "number");
+        const lineContentNum = +(decode(line, "number") ?? 0);
         if (lineContentNum < min) min = lineContentNum;
         lineNumbersArray.delete(lineCount);
         if (!lineNumbersArray.size) break;
       }
     } else
       for await (const line of rl) {
-        const lineContentNum = +decode(line, "number");
+        const lineContentNum = +(decode(line, "number") ?? 0);
         if (lineContentNum < min) min = lineContentNum;
       }
 
