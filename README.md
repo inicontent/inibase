@@ -53,12 +53,23 @@ To simplify the idea, each database has tables, each table has columns, each col
 
 ## Benchmark
 
-|        | 10    | 100   | 1000  |
-|--------|-------|-------|-------|
-| POST   | 23 ms | 20 ms | 83 ms |
-| GET    | 12 ms | 16 ms | 45 ms |
-| PUT    | 6 ms  | 4 ms  | 11 ms |
-| DELETE | 18 ms | 21 ms | 27 ms |
+### Bulk
+
+|        | 10              | 100             | 1000            |
+|--------|-----------------|-----------------|-----------------|
+| POST   | 11 ms (0.65 mb) | 19 ms (1.00 mb) | 85 ms (4.58 mb) |
+| GET    | 14 ms (2.77 mb) | 12 ms (3.16 mb) | 34 ms (1.38 mb) |
+| PUT    | 6 ms (1.11 mb)  | 5 ms (1.37 mb)  | 10 ms (1.12 mb) |
+| DELETE | 17 ms (1.68 mb) | 14 ms (5.45 mb) | 25 ms (5.94 mb) |
+
+### Single
+
+|        | 10                | 100                | 1000               |
+|--------|-------------------|--------------------|--------------------|
+| POST   | 43 ms (4.70 mb)   | 387 ms (6.36 mb)   | 5341 ms (24.73 mb) |
+| GET    | 99 ms (12.51 mb)  | 846 ms (30.68 mb)  | 7103 ms (30.86 mb) |
+| PUT    | 33 ms (10.29 mb)  | 312 ms (11.06 mb)  | 3539 ms (14.87 mb) |
+| DELETE | 134 ms (13.50 mb) | 1224 ms (16.57 mb) | 7339 ms (11.46 mb) |
 
 ## Examples
 
