@@ -6,8 +6,9 @@ import {
   mkdir,
   readdir,
 } from "node:fs/promises";
+import { existsSync, appendFileSync } from "node:fs";
 import { join, parse } from "node:path";
-import { scryptSync } from "node:crypto";
+import { scryptSync, randomBytes } from "node:crypto";
 import File from "./file.js";
 import Utils from "./utils.js";
 import UtilsServer from "./utils.server.js";
@@ -127,11 +128,13 @@ export default class Inibase {
     this.cache = new Map<string, any>();
     this.totalItems = {};
     this.pageInfo = { page: 1, per_page: 15 };
-    this.salt = scryptSync(
-      process.env.INIBASE_SECRET ?? "inibase",
-      (process.env.INIBASE_SECRET ?? "inibase") + "_salt",
-      32
-    );
+
+    if (!existsSync(".env") || !process.env.INIBASE_SECRET) {
+      this.salt = scryptSync(randomBytes(16), randomBytes(16), 32);
+      appendFileSync(".env", `INIBASE_SECRET=${this.salt.toString("hex")}\n`);
+    } else {
+      this.salt = Buffer.from(process.env.INIBASE_SECRET, "hex");
+    }
   }
 
   private throwError(
@@ -335,7 +338,10 @@ export default class Inibase {
             children && !Utils.isArrayOfObjects(children) ? children : undefined
           )
         )
-          throw this.throwError("INVALID_TYPE", key);
+          throw this.throwError(
+            "INVALID_TYPE",
+            key + " " + type + " " + data[key]
+          );
         if (
           (type === "array" || type === "object") &&
           children &&
@@ -788,6 +794,13 @@ export default class Inibase {
             if (!RETURN[index]) RETURN[index] = {};
             RETURN[index][field.key] = item ?? this.getDefaultValue(field);
           }
+        else
+          RETURN = Object.fromEntries(
+            Object.entries(RETURN).map(([index, data]) => [
+              index,
+              { ...data, [field.key]: this.getDefaultValue(field) },
+            ])
+          );
       }
     }
     return RETURN;
@@ -1017,7 +1030,17 @@ export default class Inibase {
           this.salt
         );
         if (searchResult) {
-          RETURN = Utils.deepMerge(RETURN, searchResult);
+          RETURN = Utils.deepMerge(
+            RETURN,
+            Object.fromEntries(
+              Object.entries(searchResult).map(([id, value]) => [
+                id,
+                {
+                  [key]: value,
+                },
+              ])
+            )
+          );
           this.totalItems[tableName + "-" + key] = total_lines;
         }
 
@@ -1060,11 +1083,14 @@ export default class Inibase {
     onlyOne?: boolean,
     onlyLinesNumbers?: boolean
   ): Promise<Data[] | Data | number[] | null> {
-    if (!options.columns) options.columns = [];
-    else if (!Array.isArray(options.columns))
-      options.columns = [options.columns];
-    if (options.columns.length && !(options.columns as string[]).includes("id"))
-      options.columns.push("id");
+    if (options.columns) {
+      if (!Array.isArray(options.columns)) options.columns = [options.columns];
+      if (
+        options.columns.length &&
+        !(options.columns as string[]).includes("id")
+      )
+        options.columns.push("id");
+    }
     if (!options.page) options.page = 1;
     if (!options.per_page) options.per_page = 15;
     let RETURN!: Data | Data[] | null;
@@ -1104,8 +1130,8 @@ export default class Inibase {
           return null;
         })
         .filter((i) => i) as Schema;
-    if (options.columns.length)
-      schema = filterSchemaByColumns(schema, options.columns);
+    if (options.columns && options.columns.length)
+      schema = filterSchemaByColumns(schema, options.columns as string[]);
 
     if (!where) {
       // Display all data
@@ -1177,9 +1203,8 @@ export default class Inibase {
       );
       if (RETURN) {
         if (onlyLinesNumbers) return Object.keys(RETURN).map(Number);
-        const alreadyExistsColumns = Object.keys(Object.values(RETURN)[0]).map(
-          (key) => parse(key).name
-        );
+        const alreadyExistsColumns = Object.keys(Object.values(RETURN)[0]);
+
         RETURN = Object.values(
           Utils.deepMerge(
             RETURN,
@@ -1281,7 +1306,17 @@ export default class Inibase {
     last_line_number += 1;
 
     for await (const [path, content] of Object.entries(pathesContents))
-      await File.append(path, content, last_line_number);
+      await File.append(
+        path,
+        // Array.isArray(content)
+        //   ? content.reduce((obj, value, index) => {
+        //       obj[last_line_number + index] = value;
+        //       return obj;
+        //     }, {})
+        //   : { [last_line_number]: content }
+        content,
+        last_line_number
+      );
 
     if (returnPostedData)
       return this.get(
