@@ -77,12 +77,11 @@ export const isEmail = (input: any) =>
 export const isURL = (input: any) => {
   if (typeof input !== "string") return false;
   if (
-    input[0] === "#" ||
+    (input[0] === "#" && !input.includes(" ")) ||
     input.startsWith("tel:") ||
     input.startsWith("mailto:")
   )
     return true;
-  else if ("canParse" in URL) return URL.canParse(input);
   else {
     var pattern = new RegExp(
       "^(https?:\\/\\/)?" + // protocol
@@ -102,13 +101,7 @@ export const isHTML = (input: any) =>
 
 export const isString = (input: any): input is string =>
   Object.prototype.toString.call(input) === "[object String]" &&
-  !isNumber(input) &&
-  !isBoolean(input) &&
-  !isEmail(input) &&
-  !isDate(input) &&
-  !isURL(input) &&
-  !isIP(input) &&
-  !isHTML(input);
+  [isNumber, isBoolean, isEmail, isURL, isIP].every((fn) => !fn(input));
 
 export const isIP = (input: any) =>
   /^(?:(?:^|\.)(?:2(?:5[0-5]|[0-4]\d)|1?\d?\d)){4}$/.test(input);
@@ -123,8 +116,7 @@ export const isBoolean = (input: any): input is boolean =>
 export const isPassword = (input: any): input is string => input.length === 161;
 
 export const isDate = (input: any) =>
-  (isNumber(input) && new Date(input).getTime() > 0) ||
-  (!isNaN(Date.parse(String(input))) && Date.parse(String(input)) >= 0);
+  !isNaN(new Date(input).getTime()) || !isNaN(Date.parse(input));
 
 export const isValidID = (input: any): input is string => {
   return typeof input === "string" && input.length === 32;
