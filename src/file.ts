@@ -1,4 +1,11 @@
-import { open, rename, stat, writeFile } from "node:fs/promises";
+import {
+  FileHandle,
+  open,
+  rename,
+  stat,
+  writeFile,
+  appendFile,
+} from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { ComparisonOperator, FieldType } from "./index.js";
 import {
@@ -7,12 +14,13 @@ import {
   isNumber,
   isObject,
 } from "./utils.js";
-
 import { encodeID, comparePassword } from "./utils.server.js";
 
-const doesSupportReadLines = () => {
-  const [major, minor, patch] = process.versions.node.split(".").map(Number);
-  return major > 18 || (major === 18 && minor >= 11);
+const readLineInternface = (fileHandle: FileHandle) => {
+  return createInterface({
+    input: fileHandle.createReadStream(),
+    crlfDelay: Infinity,
+  });
 };
 
 export const isExists = async (path: string) => {
@@ -29,7 +37,7 @@ const delimiters = [",", "|", "&", "$", "#", "@", "^", "%", ":", "!", ";"];
 const secureString = (input: string | number | boolean | null) => {
   if (["true", "false"].includes(String(input))) return input ? 1 : 0;
   return typeof input === "string"
-    ? decodeURIComponent(input)
+    ? decodeURIComponent(input.replace(/%(?![0-9][0-9a-fA-F]+)/g, ""))
         .replaceAll("<", "&lt;")
         .replaceAll(">", "&gt;")
         .replaceAll(",", "%2C")
@@ -201,59 +209,51 @@ export const get = async (
     number
   ]
 > => {
-  let fileHandle;
-  try {
-    fileHandle = await open(filePath, "r");
-    const rl = doesSupportReadLines()
-      ? fileHandle.readLines()
-      : createInterface({
-          input: fileHandle.createReadStream(),
-          crlfDelay: Infinity,
-        });
-    let lines: Map<
-        number,
-        | string
-        | number
-        | boolean
-        | null
-        | (string | number | boolean | (string | number | boolean)[] | null)[]
-      > = new Map(),
-      lineCount = 0;
+  const fileHandle = await open(filePath, "r"),
+    rl = readLineInternface(fileHandle);
 
-    if (!lineNumbers) {
-      for await (const line of rl)
-        lineCount++,
-          lines.set(
-            lineCount,
-            decode(line, fieldType, fieldChildrenType, secretKey)
-          );
-    } else if (lineNumbers === -1) {
-      let lastLine: string | null = null;
-      for await (const line of rl) lineCount++, (lastLine = line);
-      if (lastLine)
-        lines.set(
-          lineCount,
-          decode(lastLine, fieldType, fieldChildrenType, secretKey)
-        );
-    } else {
-      let lineNumbersArray = new Set(
-        Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers]
-      );
-      for await (const line of rl) {
-        lineCount++;
-        if (!lineNumbersArray.has(lineCount)) continue;
+  let lines: Map<
+      number,
+      | string
+      | number
+      | boolean
+      | null
+      | (string | number | boolean | (string | number | boolean)[] | null)[]
+    > = new Map(),
+    lineCount = 0;
+
+  if (!lineNumbers) {
+    for await (const line of rl)
+      lineCount++,
         lines.set(
           lineCount,
           decode(line, fieldType, fieldChildrenType, secretKey)
         );
-        lineNumbersArray.delete(lineCount);
-        if (!lineNumbersArray.size) break;
-      }
+  } else if (lineNumbers === -1) {
+    let lastLine: string | null = null;
+    for await (const line of rl) lineCount++, (lastLine = line);
+    if (lastLine)
+      lines.set(
+        lineCount,
+        decode(lastLine, fieldType, fieldChildrenType, secretKey)
+      );
+  } else {
+    let lineNumbersArray = new Set(
+      Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers]
+    );
+    for await (const line of rl) {
+      lineCount++;
+      if (!lineNumbersArray.has(lineCount)) continue;
+      lines.set(
+        lineCount,
+        decode(line, fieldType, fieldChildrenType, secretKey)
+      );
+      lineNumbersArray.delete(lineCount);
+      if (!lineNumbersArray.size) break;
     }
-    return [lines.size ? Object.fromEntries(lines) : null, lineCount];
-  } finally {
-    await fileHandle?.close();
   }
+  await fileHandle.close();
+  return [lines.size ? Object.fromEntries(lines) : null, lineCount];
 };
 
 export const replace = async (
@@ -271,64 +271,59 @@ export const replace = async (
     | Map<number, string | number | boolean | (string | number | boolean)[]>
 ) => {
   if (await isExists(filePath)) {
-    const fileTempPath = `${filePath.replace(".inib", "")}-${Date.now()}.tmp`;
-    let fileHandle,
-      fileTempHandle,
-      lineCount = 0;
-    try {
-      fileHandle = await open(filePath, "r");
-      fileTempHandle = await open(fileTempPath, "w");
-      const rl = doesSupportReadLines()
-          ? fileHandle.readLines()
-          : createInterface({
-              input: fileHandle.createReadStream(),
-              crlfDelay: Infinity,
-            }),
-        writeStream = fileTempHandle.createWriteStream();
-      if (isObject(replacements)) {
-        if (!(replacements instanceof Map))
-          replacements = new Map(Object.entries(replacements)) as Map<any, any>;
-        for await (const line of rl) {
-          lineCount++;
-          writeStream.write(
-            (replacements.has(lineCount.toString() as any)
-              ? replacements.get(lineCount.toString() as any)
-              : line) + "\n"
-          );
-        }
-        const newLinesNumbers = new Set(
-          [...replacements.keys()].filter((num) => num > lineCount)
+    let lineCount = 0;
+    const fileHandle = await open(filePath, "r"),
+      fileTempPath = `${filePath.replace(".inib", "")}-${Date.now()}.tmp`,
+      fileTempHandle = await open(fileTempPath, "w"),
+      rl = readLineInternface(fileHandle),
+      writeStream = fileTempHandle.createWriteStream();
+
+    if (isObject(replacements)) {
+      if (!(replacements instanceof Map))
+        replacements = new Map(Object.entries(replacements)) as Map<any, any>;
+      for await (const line of rl) {
+        lineCount++;
+        writeStream.write(
+          (replacements.has(lineCount.toString() as any)
+            ? replacements.get(lineCount.toString() as any)
+            : line) + "\n"
         );
+      }
+      const newLinesNumbers = new Set(
+        [...replacements.keys()].filter((num) => num > lineCount)
+      );
 
-        if (newLinesNumbers.size) {
-          if (Math.min(...newLinesNumbers) - lineCount - 1 > 1)
-            writeStream.write(
-              "\n".repeat(Math.min(...newLinesNumbers) - lineCount - 1)
-            );
-          for (const newLineNumber of newLinesNumbers)
-            writeStream.write(
-              replacements.get(newLineNumber.toString() as any) + "\n"
-            );
-        }
-      } else
-        for await (const _line of rl) writeStream.write(replacements + "\n");
+      if (newLinesNumbers.size) {
+        if (Math.min(...newLinesNumbers) - lineCount - 1 > 1)
+          writeStream.write(
+            "\n".repeat(Math.min(...newLinesNumbers) - lineCount - 1)
+          );
 
-      await rename(fileTempPath, filePath);
-    } finally {
-      await fileHandle?.close();
-      await fileTempHandle?.close();
-    }
+        for await (const newLineNumber of newLinesNumbers)
+          writeStream.write(
+            replacements.get(newLineNumber.toString() as any) + "\n"
+          );
+      }
+    } else for await (const _line of rl) writeStream.write(replacements + "\n");
+
+    await fileHandle.close();
+    await fileTempHandle.close();
+    await rename(fileTempPath, filePath);
   } else if (isObject(replacements)) {
     if (!(replacements instanceof Map))
-      replacements = new Map(Object.entries(replacements)) as Map<any, any>;
+      replacements = new Map(
+        Object.entries(replacements).map(([key, value]) => [Number(key), value])
+      ) as Map<any, any>;
     await writeFile(
       filePath,
       (Math.min(...replacements.keys()) - 1 > 1
         ? "\n".repeat(Math.min(...replacements.keys()) - 1)
         : "") +
-        [...[...replacements].toSorted(([a], [b]) => a - b).values()].join(
-          "\n"
-        ) +
+        Array.from(
+          new Map(
+            [...replacements.entries()].sort(([keyA], [keyB]) => keyA - keyB)
+          ).values()
+        ).join("\n") +
         "\n"
     );
   }
@@ -336,81 +331,63 @@ export const replace = async (
 
 export const append = async (
   filePath: string,
-  data: string | number | (string | number)[] | Set<any>,
+  data: string | number | (string | number)[],
   startsAt: number = 1
 ): Promise<void> => {
-  let fileHandle;
-  try {
-    const doesFileExists = await isExists(filePath);
-    fileHandle = await open(filePath, "a");
-    const writeStream = fileHandle.createWriteStream();
-    data = new Set(Array.isArray(data) ? data : [data]);
+  let currentNumberOfLines = 0;
+  const doesFileExists = await isExists(filePath);
 
-    if (doesFileExists) {
-      const currentNumberOfLines = await count(filePath);
-      if (startsAt - currentNumberOfLines - 1 > 0)
-        writeStream.write("\n".repeat(startsAt - currentNumberOfLines - 1));
-      for (const input of data) writeStream.write(input + "\n");
-    } else {
-      if (startsAt - 1 > 0) writeStream.write("\n".repeat(startsAt - 1));
-      for (const input of data) writeStream.write(input + "\n");
-    }
-  } finally {
-    await fileHandle?.close();
-  }
+  if (doesFileExists) currentNumberOfLines = await count(filePath);
+
+  await appendFile(
+    filePath,
+    (currentNumberOfLines > 0
+      ? startsAt - currentNumberOfLines - 1 > 0
+        ? "\n".repeat(startsAt - currentNumberOfLines - 1)
+        : ""
+      : "") +
+      (Array.isArray(data) ? data.join("\n") : data) +
+      "\n"
+  );
 };
 
 export const remove = async (
   filePath: string,
   linesToDelete: number | number[]
 ): Promise<void> => {
-  const fileTempPath = `${filePath.replace(".inib", "")}-${Date.now()}.tmp`;
-  let fileHandle,
-    fileTempHandle,
-    lineCount = 0;
-  try {
-    fileHandle = await open(filePath, "r");
-    fileTempHandle = await open(fileTempPath, "w");
-    const linesToDeleteArray = new Set(
-        Array.isArray(linesToDelete)
-          ? linesToDelete.map(Number)
-          : [Number(linesToDelete)]
-      ),
-      rl = doesSupportReadLines()
-        ? fileHandle.readLines()
-        : createInterface({
-            input: fileHandle.createReadStream(),
-            crlfDelay: Infinity,
-          }),
-      writeStream = fileTempHandle.createWriteStream();
+  let lineCount = 0;
 
-    for await (const line of rl) {
-      lineCount++;
-      if (!linesToDeleteArray.has(lineCount)) writeStream.write(`${line}\n`);
-    }
-    await rename(fileTempPath, filePath);
-  } finally {
-    await fileTempHandle?.close();
-    await fileHandle?.close();
+  const fileHandle = await open(filePath, "r"),
+    fileTempPath = `${filePath.replace(".inib", "")}-${Date.now()}.tmp`,
+    fileTempHandle = await open(fileTempPath, "w"),
+    linesToDeleteArray = new Set(
+      Array.isArray(linesToDelete)
+        ? linesToDelete.map(Number)
+        : [Number(linesToDelete)]
+    ),
+    rl = readLineInternface(fileHandle),
+    writeStream = fileTempHandle.createWriteStream();
+
+  for await (const line of rl) {
+    lineCount++;
+    if (!linesToDeleteArray.has(lineCount)) writeStream.write(`${line}\n`);
   }
+  await rename(fileTempPath, filePath);
+  await fileTempHandle.close();
+  await fileHandle.close();
 };
 
 export const count = async (filePath: string): Promise<number> => {
-  let fileHandle,
-    lineCount = 0;
-  try {
-    fileHandle = await open(filePath, "r");
-    const rl = doesSupportReadLines()
-      ? fileHandle.readLines()
-      : createInterface({
-          input: fileHandle.createReadStream(),
-          crlfDelay: Infinity,
-        });
-    for await (const line of rl) lineCount++;
-    return lineCount;
-  } finally {
-    await fileHandle?.close();
-  }
+  // return Number((await exec(`wc -l < ${filePath}`)).stdout.trim());
+  let lineCount = 0;
+
+  const fileHandle = await open(filePath, "r"),
+    rl = readLineInternface(fileHandle);
+
+  for await (const line of rl) lineCount++;
+
+  await fileHandle.close();
+  return lineCount;
 };
 
 const handleComparisonOperator = (
@@ -550,190 +527,155 @@ export const search = async (
     number
   ]
 > => {
-  let fileHandle,
-    RETURN: Map<
+  let RETURN: Map<
       number,
       string | number | boolean | null | (string | number | boolean | null)[]
     > = new Map(),
     lineCount = 0,
     foundItems = 0;
-  try {
-    fileHandle = await open(filePath, "r");
-    const rl = doesSupportReadLines()
-      ? fileHandle.readLines()
-      : createInterface({
-          input: fileHandle.createReadStream(),
-          crlfDelay: Infinity,
-        });
 
-    for await (const line of rl) {
-      lineCount++;
-      const decodedLine = decode(line, fieldType, fieldChildrenType, secretKey);
-      if (
-        (Array.isArray(operator) &&
-          Array.isArray(comparedAtValue) &&
-          ((logicalOperator &&
-            logicalOperator === "or" &&
-            operator.some((single_operator, index) =>
-              handleComparisonOperator(
-                single_operator,
-                decodedLine,
-                comparedAtValue[index],
-                fieldType
-              )
-            )) ||
-            operator.every((single_operator, index) =>
-              handleComparisonOperator(
-                single_operator,
-                decodedLine,
-                comparedAtValue[index],
-                fieldType
-              )
-            ))) ||
-        (!Array.isArray(operator) &&
-          handleComparisonOperator(
-            operator,
-            decodedLine,
-            comparedAtValue,
-            fieldType
-          ))
-      ) {
-        foundItems++;
-        if (offset && foundItems < offset) continue;
-        if (limit && foundItems > limit)
-          if (readWholeFile) continue;
-          else break;
-        RETURN.set(lineCount, decodedLine);
-      }
+  const fileHandle = await open(filePath, "r"),
+    rl = readLineInternface(fileHandle);
+
+  for await (const line of rl) {
+    lineCount++;
+    const decodedLine = decode(line, fieldType, fieldChildrenType, secretKey);
+    if (
+      (Array.isArray(operator) &&
+        Array.isArray(comparedAtValue) &&
+        ((logicalOperator &&
+          logicalOperator === "or" &&
+          operator.some((single_operator, index) =>
+            handleComparisonOperator(
+              single_operator,
+              decodedLine,
+              comparedAtValue[index],
+              fieldType
+            )
+          )) ||
+          operator.every((single_operator, index) =>
+            handleComparisonOperator(
+              single_operator,
+              decodedLine,
+              comparedAtValue[index],
+              fieldType
+            )
+          ))) ||
+      (!Array.isArray(operator) &&
+        handleComparisonOperator(
+          operator,
+          decodedLine,
+          comparedAtValue,
+          fieldType
+        ))
+    ) {
+      foundItems++;
+      if (offset && foundItems < offset) continue;
+      if (limit && foundItems > limit)
+        if (readWholeFile) continue;
+        else break;
+      RETURN.set(lineCount, decodedLine);
     }
-
-    return foundItems
-      ? [
-          Object.fromEntries(RETURN),
-          readWholeFile ? foundItems : foundItems - 1,
-        ]
-      : [null, 0];
-  } finally {
-    await fileHandle?.close();
   }
+
+  await fileHandle.close();
+  return foundItems
+    ? [Object.fromEntries(RETURN), readWholeFile ? foundItems : foundItems - 1]
+    : [null, 0];
 };
 
 export const sum = async (
   filePath: string,
   lineNumbers?: number | number[]
 ): Promise<number> => {
-  let fileHandle,
-    sum: number = 0;
-  try {
-    fileHandle = await open(filePath, "r");
-    const rl = doesSupportReadLines()
-      ? fileHandle.readLines()
-      : createInterface({
-          input: fileHandle.createReadStream(),
-          crlfDelay: Infinity,
-        });
+  let sum: number = 0;
 
-    if (lineNumbers) {
-      let lineCount = 0;
-      let lineNumbersArray = new Set(
-        Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers]
-      );
+  const fileHandle = await open(filePath, "r"),
+    rl = readLineInternface(fileHandle);
 
-      for await (const line of rl) {
-        lineCount++;
-        if (!lineNumbersArray.has(lineCount)) continue;
-        sum += +(decode(line, "number") ?? 0);
-        lineNumbersArray.delete(lineCount);
-        if (!lineNumbersArray.size) break;
-      }
-    } else for await (const line of rl) sum += +(decode(line, "number") ?? 0);
+  if (lineNumbers) {
+    let lineCount = 0;
+    let lineNumbersArray = new Set(
+      Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers]
+    );
 
-    return sum;
-  } finally {
-    await fileHandle?.close();
-  }
+    for await (const line of rl) {
+      lineCount++;
+      if (!lineNumbersArray.has(lineCount)) continue;
+      sum += +(decode(line, "number") ?? 0);
+      lineNumbersArray.delete(lineCount);
+      if (!lineNumbersArray.size) break;
+    }
+  } else for await (const line of rl) sum += +(decode(line, "number") ?? 0);
+
+  await fileHandle.close();
+  return sum;
 };
 
 export const max = async (
   filePath: string,
   lineNumbers?: number | number[]
 ): Promise<number> => {
-  let fileHandle,
-    max: number = 0;
-  try {
-    fileHandle = await open(filePath, "r");
-    const rl = doesSupportReadLines()
-      ? fileHandle.readLines()
-      : createInterface({
-          input: fileHandle.createReadStream(),
-          crlfDelay: Infinity,
-        });
+  let max: number = 0;
 
-    if (lineNumbers) {
-      let lineCount = 0;
+  const fileHandle = await open(filePath, "r"),
+    rl = readLineInternface(fileHandle);
 
-      let lineNumbersArray = new Set(
-        Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers]
-      );
-      for await (const line of rl) {
-        lineCount++;
-        if (!lineNumbersArray.has(lineCount)) continue;
-        const lineContentNum = +(decode(line, "number") ?? 0);
-        if (lineContentNum > max) max = lineContentNum;
-        lineNumbersArray.delete(lineCount);
-        if (!lineNumbersArray.size) break;
-      }
-    } else
-      for await (const line of rl) {
-        const lineContentNum = +(decode(line, "number") ?? 0);
-        if (lineContentNum > max) max = lineContentNum;
-      }
+  if (lineNumbers) {
+    let lineCount = 0;
 
-    return max;
-  } finally {
-    await fileHandle?.close();
-  }
+    let lineNumbersArray = new Set(
+      Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers]
+    );
+    for await (const line of rl) {
+      lineCount++;
+      if (!lineNumbersArray.has(lineCount)) continue;
+      const lineContentNum = +(decode(line, "number") ?? 0);
+      if (lineContentNum > max) max = lineContentNum;
+      lineNumbersArray.delete(lineCount);
+      if (!lineNumbersArray.size) break;
+    }
+  } else
+    for await (const line of rl) {
+      const lineContentNum = +(decode(line, "number") ?? 0);
+      if (lineContentNum > max) max = lineContentNum;
+    }
+
+  await fileHandle.close();
+  return max;
 };
 
 export const min = async (
   filePath: string,
   lineNumbers?: number | number[]
 ): Promise<number> => {
-  let fileHandle,
-    min: number = 0;
-  try {
-    fileHandle = await open(filePath, "r");
-    const rl = doesSupportReadLines()
-      ? fileHandle.readLines()
-      : createInterface({
-          input: fileHandle.createReadStream(),
-          crlfDelay: Infinity,
-        });
+  let min: number = 0;
 
-    if (lineNumbers) {
-      let lineCount = 0;
+  const fileHandle = await open(filePath, "r"),
+    rl = readLineInternface(fileHandle);
 
-      let lineNumbersArray = new Set(
-        Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers]
-      );
-      for await (const line of rl) {
-        lineCount++;
-        if (!lineNumbersArray.has(lineCount)) continue;
-        const lineContentNum = +(decode(line, "number") ?? 0);
-        if (lineContentNum < min) min = lineContentNum;
-        lineNumbersArray.delete(lineCount);
-        if (!lineNumbersArray.size) break;
-      }
-    } else
-      for await (const line of rl) {
-        const lineContentNum = +(decode(line, "number") ?? 0);
-        if (lineContentNum < min) min = lineContentNum;
-      }
+  if (lineNumbers) {
+    let lineCount = 0;
 
-    return min;
-  } finally {
-    await fileHandle?.close();
-  }
+    let lineNumbersArray = new Set(
+      Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers]
+    );
+    for await (const line of rl) {
+      lineCount++;
+      if (!lineNumbersArray.has(lineCount)) continue;
+      const lineContentNum = +(decode(line, "number") ?? 0);
+      if (lineContentNum < min) min = lineContentNum;
+      lineNumbersArray.delete(lineCount);
+      if (!lineNumbersArray.size) break;
+    }
+  } else
+    for await (const line of rl) {
+      const lineContentNum = +(decode(line, "number") ?? 0);
+      if (lineContentNum < min) min = lineContentNum;
+    }
+
+  await fileHandle.close();
+  return min;
 };
 
 export const sort = async (
