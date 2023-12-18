@@ -1,5 +1,4 @@
 import { type Schema } from "./index.js";
-
 import {
   createCipheriv,
   createDecipheriv,
@@ -9,7 +8,7 @@ import {
   type Decipher,
   createHash,
 } from "node:crypto";
-import Utils from "./utils.js";
+import { isArrayOfObjects, isNumber, isValidID } from "./utils.js";
 
 export const hashPassword = (password: string) => {
   const salt = randomBytes(16).toString("hex");
@@ -88,11 +87,11 @@ export const findLastIdNumber = (
   if (lastField) {
     if (
       (lastField.type === "array" || lastField.type === "object") &&
-      Utils.isArrayOfObjects(lastField.children)
+      isArrayOfObjects(lastField.children)
     )
       return findLastIdNumber(lastField.children as Schema, secretKeyOrSalt);
     else if (lastField.id)
-      return Utils.isValidID(lastField.id)
+      return isValidID(lastField.id)
         ? decodeID(lastField.id as string, secretKeyOrSalt)
         : lastField.id;
   }
@@ -109,8 +108,7 @@ export const addIdToSchema = (
       oldIndex++;
       field.id = encodeID(oldIndex, secretKeyOrSalt);
     } else {
-      if (!Utils.isNumber(field.id))
-        oldIndex = decodeID(field.id, secretKeyOrSalt);
+      if (!isNumber(field.id)) oldIndex = decodeID(field.id, secretKeyOrSalt);
       else {
         oldIndex = field.id;
         field.id = encodeID(field.id, secretKeyOrSalt);
@@ -118,7 +116,7 @@ export const addIdToSchema = (
     }
     if (
       (field.type === "array" || field.type === "object") &&
-      Utils.isArrayOfObjects(field.children)
+      isArrayOfObjects(field.children)
     ) {
       field.children = addIdToSchema(
         field.children as Schema,
