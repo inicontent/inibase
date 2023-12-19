@@ -32,7 +32,7 @@ export const isExists = async (path: string) => {
   }
 };
 
-const delimiters = [",", "|", "&", "$", "#", "@", "^", "%", ":", "!", ";"];
+const delimiters = [",", "|", "&", "$", "#", "@", "^", ":", "!", ";"];
 
 const secureString = (input: string | number | boolean | null) => {
   if (["true", "false"].includes(String(input))) return input ? 1 : 0;
@@ -47,7 +47,6 @@ const secureString = (input: string | number | boolean | null) => {
         .replaceAll("#", "%23")
         .replaceAll("@", "%40")
         .replaceAll("^", "%5E")
-        .replaceAll("%", "%25")
         .replaceAll(":", "%3A")
         .replaceAll("!", "%21")
         .replaceAll(";", "%3B")
@@ -95,7 +94,6 @@ const unSecureString = (input: string) =>
     .replaceAll("%23", "#")
     .replaceAll("%40", "@")
     .replaceAll("%5E", "^")
-    .replaceAll("%25", "%")
     .replaceAll("%3A", ":")
     .replaceAll("%21", "!")
     .replaceAll("%3B", ";")
