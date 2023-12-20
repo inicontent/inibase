@@ -1,4 +1,4 @@
-import { type FieldType, type Data } from './index.js';
+import { type FieldType, type Data } from "./index.js";
 
 /**
  * Type guard function to check if the input is an array of objects.
@@ -45,8 +45,8 @@ export const isArrayOfNulls = (input: any): input is null[] | null[][] =>
  */
 export const isObject = (obj: any): obj is Record<any, any> =>
   obj != null &&
-  (obj.constructor.name === 'Object' ||
-    (typeof obj === 'object' && !Array.isArray(obj)));
+  (obj.constructor.name === "Object" ||
+    (typeof obj === "object" && !Array.isArray(obj)));
 
 /**
  * Recursively merges properties from a source object into a target object. If a property exists in both, the source's value overwrites the target's.
@@ -149,22 +149,22 @@ export const isEmail = (input: any) =>
  *       Also recognizes 'tel:' and 'mailto:' as valid URL formats, as well as strings starting with '#' without spaces.
  */
 export const isURL = (input: any) => {
-  if (typeof input !== 'string') return false;
+  if (typeof input !== "string") return false;
   if (
-    (input[0] === '#' && !input.includes(' ')) ||
-    input.startsWith('tel:') ||
-    input.startsWith('mailto:')
+    (input[0] === "#" && !input.includes(" ")) ||
+    input.startsWith("tel:") ||
+    input.startsWith("mailto:")
   )
     return true;
   else {
     var pattern = new RegExp(
-      '^(https?:\\/\\/)?' + // protocol
-        '((([a-z\\d]([a-z\\d-]*[a-z\\d])*)\\.)+[a-z]{2,}|' + // domain name
-        '((\\d{1,3}\\.){3}\\d{1,3}))' + // OR ip (v4) address
-        '(\\:\\d+)?(\\/[-a-z\\d%_.~+]*)*' + // port and path
-        '(\\?[;&a-z\\d%_.~+=-]*)?' + // query string
-        '(\\#[-a-z\\d_]*)?$',
-      'i'
+      "^(https?:\\/\\/)?" + // protocol
+        "((([a-z\\d]([a-z\\d-]*[a-z\\d])*)\\.)+[a-z]{2,}|" + // domain name
+        "((\\d{1,3}\\.){3}\\d{1,3}))" + // OR ip (v4) address
+        "(\\:\\d+)?(\\/[-a-z\\d%_.~+]*)*" + // port and path
+        "(\\?[;&a-z\\d%_.~+=-]*)?" + // query string
+        "(\\#[-a-z\\d_]*)?$",
+      "i"
     ); // fragment locator
     return !!pattern.test(input);
   }
@@ -191,7 +191,7 @@ export const isHTML = (input: any) =>
  * Note: Validates the input against being a number, boolean, email, URL, or IP address to ensure it's a general string.
  */
 export const isString = (input: any): input is string =>
-  Object.prototype.toString.call(input) === '[object String]' &&
+  Object.prototype.toString.call(input) === "[object String]" &&
   [isNumber, isBoolean, isEmail, isURL, isIP].every((fn) => !fn(input));
 
 /**
@@ -214,9 +214,9 @@ export const isIP = (input: any) =>
  * Note: Recognizes both boolean literals (true, false) and their string representations ("true", "false").
  */
 export const isBoolean = (input: any): input is boolean =>
-  typeof input === 'boolean' ||
-  input === 'true' ||
-  input === 'false' ||
+  typeof input === "boolean" ||
+  input === "true" ||
+  input === "false" ||
   input === true ||
   input === false;
 
@@ -230,13 +230,33 @@ export const isBoolean = (input: any): input is boolean =>
  */
 export const isPassword = (input: any): input is string => input.length === 161;
 
+/**
+ * Checks if the input can be converted to a valid date.
+ *
+ * @param input - The input to be checked, can be of any type.
+ * @returns A boolean indicating whether the input is a valid date.
+ */
 export const isDate = (input: any) =>
   !isNaN(new Date(input).getTime()) || !isNaN(Date.parse(input));
 
+/**
+ * Checks if the input is a valid ID.
+ *
+ * @param input - The input to be checked, can be of any type.
+ * @returns A boolean indicating whether the input is a string representing a valid ID of length 32.
+ */
+
 export const isValidID = (input: any): input is string => {
-  return typeof input === 'string' && input.length === 32;
+  return typeof input === "string" && input.length === 32;
 };
 
+/**
+ * Identifies and returns properties that have changed between two objects.
+ *
+ * @param obj1 - The first object for comparison, with string keys and values.
+ * @param obj2 - The second object for comparison, with string keys and values.
+ * @returns A record of changed properties with original values from obj1 and new values from obj2, or null if no changes are found.
+ */
 export const findChangedProperties = (
   obj1: Record<string, string>,
   obj2: Record<string, string>
@@ -250,40 +270,55 @@ export const findChangedProperties = (
   return Object.keys(result).length ? result : null;
 };
 
+/**
+ * Detects the field type of an input based on available types.
+ *
+ * @param input - The input whose field type is to be detected.
+ * @param availableTypes - An array of potential field types to consider.
+ * @returns The detected field type as a string, or undefined if no matching type is found.
+ */
 export const detectFieldType = (
   input: any,
   availableTypes: FieldType[]
 ): FieldType | undefined => {
   if (!Array.isArray(input)) {
     if (
-      (input === '0' ||
-        input === '1' ||
-        input === 'true' ||
-        input === 'false') &&
-      availableTypes.includes('boolean')
+      (input === "0" ||
+        input === "1" ||
+        input === "true" ||
+        input === "false") &&
+      availableTypes.includes("boolean")
     )
-      return 'boolean';
+      return "boolean";
     else if (isNumber(input)) {
-      if (availableTypes.includes('table')) return 'table';
-      else if (availableTypes.includes('date')) return 'date';
-      else if (availableTypes.includes('number')) return 'number';
-    } else if (availableTypes.includes('table') && isValidID(input))
-      return 'table';
-    else if (input.includes(',') && availableTypes.includes('array'))
-      return 'array';
-    else if (availableTypes.includes('email') && isEmail(input)) return 'email';
-    else if (availableTypes.includes('url') && isURL(input)) return 'url';
-    else if (availableTypes.includes('password') && isPassword(input))
-      return 'password';
-    else if (availableTypes.includes('date') && isDate(input)) return 'date';
-    else if (availableTypes.includes('string') && isString(input))
-      return 'string';
-    else if (availableTypes.includes('ip') && isIP(input)) return 'ip';
-  } else return 'array';
+      if (availableTypes.includes("table")) return "table";
+      else if (availableTypes.includes("date")) return "date";
+      else if (availableTypes.includes("number")) return "number";
+    } else if (availableTypes.includes("table") && isValidID(input))
+      return "table";
+    else if (input.includes(",") && availableTypes.includes("array"))
+      return "array";
+    else if (availableTypes.includes("email") && isEmail(input)) return "email";
+    else if (availableTypes.includes("url") && isURL(input)) return "url";
+    else if (availableTypes.includes("password") && isPassword(input))
+      return "password";
+    else if (availableTypes.includes("date") && isDate(input)) return "date";
+    else if (availableTypes.includes("string") && isString(input))
+      return "string";
+    else if (availableTypes.includes("ip") && isIP(input)) return "ip";
+  } else return "array";
 
   return undefined;
 };
 
+/**
+ * Validates if the given value matches the specified field type(s).
+ *
+ * @param value - The value to be validated.
+ * @param fieldType - The expected field type or an array of possible field types.
+ * @param fieldChildrenType - Optional; the expected type(s) of children elements, used if the field type is an array.
+ * @returns A boolean indicating whether the value matches the specified field type(s).
+ */
 export const validateFieldType = (
   value: any,
   fieldType: FieldType | FieldType[],
@@ -292,7 +327,7 @@ export const validateFieldType = (
   if (value === null) return true;
   if (Array.isArray(fieldType))
     return detectFieldType(value, fieldType) !== undefined;
-  if (fieldType === 'array' && fieldChildrenType && Array.isArray(value))
+  if (fieldType === "array" && fieldChildrenType && Array.isArray(value))
     return value.some(
       (v) =>
         detectFieldType(
@@ -304,36 +339,36 @@ export const validateFieldType = (
     );
 
   switch (fieldType) {
-    case 'string':
+    case "string":
       return isString(value);
-    case 'password':
+    case "password":
       return isNumber(value) || isString(value) || isPassword(value);
-    case 'number':
+    case "number":
       return isNumber(value);
-    case 'html':
+    case "html":
       return isHTML(value);
-    case 'ip':
+    case "ip":
       return isIP(value);
-    case 'boolean':
+    case "boolean":
       return isBoolean(value);
-    case 'date':
+    case "date":
       return isDate(value);
-    case 'object':
+    case "object":
       return isObject(value);
-    case 'array':
+    case "array":
       return Array.isArray(value);
-    case 'email':
+    case "email":
       return isEmail(value);
-    case 'url':
+    case "url":
       return isURL(value);
-    case 'table':
+    case "table":
       // feat: check if id exists
       if (Array.isArray(value))
         return (
           (isArrayOfObjects(value) &&
             value.every(
               (element: Data) =>
-                element.hasOwnProperty('id') &&
+                element.hasOwnProperty("id") &&
                 (isValidID(element.id) || isNumber(element.id))
             )) ||
           value.every(isNumber) ||
@@ -341,11 +376,11 @@ export const validateFieldType = (
         );
       else if (isObject(value))
         return (
-          value.hasOwnProperty('id') &&
+          value.hasOwnProperty("id") &&
           (isValidID((value as Data).id) || isNumber((value as Data).id))
         );
       else return isNumber(value) || isValidID(value);
-    case 'id':
+    case "id":
       return isNumber(value) || isValidID(value);
     default:
       return false;
@@ -370,7 +405,7 @@ export const objectToDotNotation = (input: Record<string, any>) => {
         const isStringOrNumberArray =
           isArray &&
           value.every(
-            (item: any) => typeof item === 'string' || typeof item === 'number'
+            (item: any) => typeof item === "string" || typeof item === "number"
           );
 
         if (isStringOrNumberArray) {

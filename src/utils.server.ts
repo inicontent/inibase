@@ -10,6 +10,12 @@ import {
 } from "node:crypto";
 import { isArrayOfObjects, isNumber, isValidID } from "./utils.js";
 
+/**
+ * Generates a hashed password using SHA-256.
+ *
+ * @param password - The plain text password to hash.
+ * @returns A string containing the salt and the hashed password, separated by a colon.
+ */
 export const hashPassword = (password: string) => {
   const salt = randomBytes(16).toString("hex");
   const hash = createHash("sha256")
@@ -18,6 +24,13 @@ export const hashPassword = (password: string) => {
   return `${salt}:${hash}`;
 };
 
+/**
+ * Compares a hashed password with an input password to verify a match.
+ *
+ * @param hashedPassword - The hashed password, containing both the salt and the hash, separated by a colon.
+ * @param inputPassword - The plain text input password to compare against the hashed password.
+ * @returns A boolean indicating whether the input password matches the hashed password.
+ */
 export const comparePassword = (
   hashedPassword: string,
   inputPassword: string
@@ -29,6 +42,13 @@ export const comparePassword = (
   return inputHash === originalHash;
 };
 
+/**
+ * Encodes an ID using AES-256-CBC encryption.
+ *
+ * @param id - The ID to encode, either a number or a string.
+ * @param secretKeyOrSalt - The secret key or salt for encryption, can be a string, number, or Buffer.
+ * @returns The encoded ID as a hexadecimal string.
+ */
 export const encodeID = (
   id: number | string,
   secretKeyOrSalt: string | number | Buffer
@@ -52,6 +72,14 @@ export const encodeID = (
 
   return cipher.update(id.toString(), "utf8", "hex") + cipher.final("hex");
 };
+
+/**
+ * Decodes an encrypted ID using AES-256-CBC decryption.
+ *
+ * @param input - The encrypted ID as a hexadecimal string.
+ * @param secretKeyOrSalt - The secret key or salt used for decryption, can be a string, number, or Buffer.
+ * @returns The decoded ID as a number.
+ */
 
 export const decodeID = (
   input: string,
@@ -79,6 +107,14 @@ export const decodeID = (
   );
 };
 
+/**
+ * Finds the last ID number in a schema, potentially decoding it if encrypted.
+ *
+ * @param schema - The schema to search, defined as an array of schema objects.
+ * @param secretKeyOrSalt - The secret key or salt for decoding an encrypted ID, can be a string, number, or Buffer.
+ * @returns The last ID number in the schema, decoded if necessary.
+ */
+
 export const findLastIdNumber = (
   schema: Schema,
   secretKeyOrSalt: string | number | Buffer
@@ -98,6 +134,14 @@ export const findLastIdNumber = (
   return 0;
 };
 
+/**
+ * Adds or updates IDs in a schema, encoding them using a provided secret key or salt.
+ *
+ * @param schema - The schema to update, defined as an array of schema objects.
+ * @param oldIndex - The starting index for generating new IDs, defaults to 0.
+ * @param secretKeyOrSalt - The secret key or salt for encoding IDs, can be a string, number, or Buffer.
+ * @returns The updated schema with encoded IDs.
+ */
 export const addIdToSchema = (
   schema: Schema,
   oldIndex: number = 0,
