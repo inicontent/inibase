@@ -5,16 +5,16 @@ import {
   stat,
   writeFile,
   appendFile,
-} from "node:fs/promises";
-import { createInterface } from "node:readline";
-import { ComparisonOperator, FieldType } from "./index.js";
+} from 'node:fs/promises';
+import { createInterface } from 'node:readline';
+import { ComparisonOperator, FieldType } from './index.js';
 import {
   detectFieldType,
   isArrayOfArrays,
   isNumber,
   isObject,
-} from "./utils.js";
-import { encodeID, comparePassword } from "./utils.server.js";
+} from './utils.js';
+import { encodeID, comparePassword } from './utils.server.js';
 
 /**
  * Creates a readline interface for a given file handle.
@@ -44,7 +44,7 @@ export const isExists = async (path: string) => {
   }
 };
 
-const delimiters = [",", "|", "&", "$", "#", "@", "^", ":", "!", ";"];
+const delimiters = [',', '|', '&', '$', '#', '@', '^', ':', '!', ';'];
 
 /**
  * Secures input by encoding/escaping characters.
@@ -53,23 +53,23 @@ const delimiters = [",", "|", "&", "$", "#", "@", "^", ":", "!", ";"];
  * @returns Encoded string for true/false, special characters in strings, or original input.
  */
 const secureString = (input: string | number | boolean | null) => {
-  if (["true", "false"].includes(String(input))) return input ? 1 : 0;
-  return typeof input === "string"
-    ? decodeURIComponent(input.replace(/%(?![0-9][0-9a-fA-F]+)/g, ""))
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll(",", "%2C")
-        .replaceAll("|", "%7C")
-        .replaceAll("&", "%26")
-        .replaceAll("$", "%24")
-        .replaceAll("#", "%23")
-        .replaceAll("@", "%40")
-        .replaceAll("^", "%5E")
-        .replaceAll(":", "%3A")
-        .replaceAll("!", "%21")
-        .replaceAll(";", "%3B")
-        .replaceAll("\n", "\\n")
-        .replaceAll("\r", "\\r")
+  if (['true', 'false'].includes(String(input))) return input ? 1 : 0;
+  return typeof input === 'string'
+    ? decodeURIComponent(input.replace(/%(?![0-9][0-9a-fA-F]+)/g, ''))
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll(',', '%2C')
+        .replaceAll('|', '%7C')
+        .replaceAll('&', '%26')
+        .replaceAll('$', '%24')
+        .replaceAll('#', '%23')
+        .replaceAll('@', '%40')
+        .replaceAll('^', '%5E')
+        .replaceAll(':', '%3A')
+        .replaceAll('!', '%21')
+        .replaceAll(';', '%3B')
+        .replaceAll('\n', '\\n')
+        .replaceAll('\r', '\\r')
     : input;
 };
 
@@ -133,20 +133,20 @@ export const encode = (
  */
 const unSecureString = (input: string) =>
   input
-    .replaceAll("&lt;", "<")
-    .replaceAll("&gt;", ">")
-    .replaceAll("%2C", ",")
-    .replaceAll("%7C", "|")
-    .replaceAll("%26", "&")
-    .replaceAll("%24", "$")
-    .replaceAll("%23", "#")
-    .replaceAll("%40", "@")
-    .replaceAll("%5E", "^")
-    .replaceAll("%3A", ":")
-    .replaceAll("%21", "!")
-    .replaceAll("%3B", ";")
-    .replaceAll("\\n", "\n")
-    .replaceAll("\\r", "\r") || null;
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('%2C', ',')
+    .replaceAll('%7C', '|')
+    .replaceAll('%26', '&')
+    .replaceAll('%24', '$')
+    .replaceAll('%23', '#')
+    .replaceAll('%40', '@')
+    .replaceAll('%5E', '^')
+    .replaceAll('%3A', ':')
+    .replaceAll('%21', '!')
+    .replaceAll('%3B', ';')
+    .replaceAll('\\n', '\n')
+    .replaceAll('\\r', '\r') || null;
 
 /**
  * Decodes each element in an array or a single value using unSecureString.
@@ -204,17 +204,17 @@ const decodeHelper = (
   fieldChildrenType?: FieldType | FieldType[],
   secretKey?: string | Buffer
 ): any => {
-  if (Array.isArray(value) && fieldType !== "array")
+  if (Array.isArray(value) && fieldType !== 'array')
     return value.map((v) =>
       decodeHelper(v, fieldType, fieldChildrenType, secretKey)
     );
   switch (fieldType as FieldType) {
-    case "table":
-    case "number":
+    case 'table':
+    case 'number':
       return isNumber(value) ? Number(value) : null;
-    case "boolean":
-      return typeof value === "string" ? value === "true" : Boolean(value);
-    case "array":
+    case 'boolean':
+      return typeof value === 'string' ? value === 'true' : Boolean(value);
+    case 'array':
       if (!Array.isArray(value)) return [value];
 
       if (fieldChildrenType)
@@ -231,7 +231,7 @@ const decodeHelper = (
                 ) as string | number | boolean | null
             )
           : value;
-    case "id":
+    case 'id':
       return isNumber(value) && secretKey
         ? encodeID(value as number, secretKey)
         : value;
@@ -257,12 +257,12 @@ export const decode = (
   secretKey?: string | Buffer
 ): string | number | boolean | null | (string | number | null | boolean)[] => {
   if (!fieldType) return null;
-  if (input === null || input === "") return null;
+  if (input === null || input === '') return null;
   if (Array.isArray(fieldType))
     fieldType = detectFieldType(String(input), fieldType);
   return decodeHelper(
-    typeof input === "string"
-      ? input.includes(",")
+    typeof input === 'string'
+      ? input.includes(',')
         ? unSecureArray(reverseJoinMultidimensionalArray(input))
         : unSecureString(input)
       : input,
@@ -304,7 +304,7 @@ export const get = async (
     number
   ]
 > => {
-  const fileHandle = await open(filePath, "r"),
+  const fileHandle = await open(filePath, 'r'),
     rl = readLineInternface(fileHandle);
 
   let lines: Map<
@@ -377,9 +377,9 @@ export const replace = async (
 ) => {
   if (await isExists(filePath)) {
     let lineCount = 0;
-    const fileHandle = await open(filePath, "r"),
-      fileTempPath = `${filePath.replace(".inib", "")}-${Date.now()}.tmp`,
-      fileTempHandle = await open(fileTempPath, "w"),
+    const fileHandle = await open(filePath, 'r'),
+      fileTempPath = `${filePath.replace('.inib', '')}-${Date.now()}.tmp`,
+      fileTempHandle = await open(fileTempPath, 'w'),
       rl = readLineInternface(fileHandle),
       writeStream = fileTempHandle.createWriteStream();
 
@@ -391,7 +391,7 @@ export const replace = async (
         writeStream.write(
           (replacements.has(lineCount.toString() as any)
             ? replacements.get(lineCount.toString() as any)
-            : line) + "\n"
+            : line) + '\n'
         );
       }
       const newLinesNumbers = new Set(
@@ -401,15 +401,15 @@ export const replace = async (
       if (newLinesNumbers.size) {
         if (Math.min(...newLinesNumbers) - lineCount - 1 > 1)
           writeStream.write(
-            "\n".repeat(Math.min(...newLinesNumbers) - lineCount - 1)
+            '\n'.repeat(Math.min(...newLinesNumbers) - lineCount - 1)
           );
 
         for await (const newLineNumber of newLinesNumbers)
           writeStream.write(
-            replacements.get(newLineNumber.toString() as any) + "\n"
+            replacements.get(newLineNumber.toString() as any) + '\n'
           );
       }
-    } else for await (const _line of rl) writeStream.write(replacements + "\n");
+    } else for await (const _line of rl) writeStream.write(replacements + '\n');
 
     await fileHandle.close();
     await fileTempHandle.close();
@@ -422,14 +422,14 @@ export const replace = async (
     await writeFile(
       filePath,
       (Math.min(...replacements.keys()) - 1 > 1
-        ? "\n".repeat(Math.min(...replacements.keys()) - 1)
-        : "") +
+        ? '\n'.repeat(Math.min(...replacements.keys()) - 1)
+        : '') +
         Array.from(
           new Map(
             [...replacements.entries()].sort(([keyA], [keyB]) => keyA - keyB)
           ).values()
-        ).join("\n") +
-        "\n"
+        ).join('\n') +
+        '\n'
     );
   }
 };
@@ -459,11 +459,11 @@ export const append = async (
     filePath,
     (currentNumberOfLines > 0
       ? startsAt - currentNumberOfLines - 1 > 0
-        ? "\n".repeat(startsAt - currentNumberOfLines - 1)
-        : ""
-      : "") +
-      (Array.isArray(data) ? data.join("\n") : data) +
-      "\n"
+        ? '\n'.repeat(startsAt - currentNumberOfLines - 1)
+        : ''
+      : '') +
+      (Array.isArray(data) ? data.join('\n') : data) +
+      '\n'
   );
 };
 
@@ -482,9 +482,9 @@ export const remove = async (
 ): Promise<void> => {
   let lineCount = 0;
 
-  const fileHandle = await open(filePath, "r"),
-    fileTempPath = `${filePath.replace(".inib", "")}-${Date.now()}.tmp`,
-    fileTempHandle = await open(fileTempPath, "w"),
+  const fileHandle = await open(filePath, 'r'),
+    fileTempPath = `${filePath.replace('.inib', '')}-${Date.now()}.tmp`,
+    fileTempHandle = await open(fileTempPath, 'w'),
     linesToDeleteArray = new Set(
       Array.isArray(linesToDelete)
         ? linesToDelete.map(Number)
@@ -514,7 +514,7 @@ export const count = async (filePath: string): Promise<number> => {
   // return Number((await exec(`wc -l < ${filePath}`)).stdout.trim());
   let lineCount = 0;
 
-  const fileHandle = await open(filePath, "r"),
+  const fileHandle = await open(filePath, 'r'),
     rl = readLineInternface(fileHandle);
 
   for await (const line of rl) lineCount++;
@@ -554,7 +554,7 @@ const handleComparisonOperator = (
 ): boolean => {
   if (Array.isArray(fieldType))
     fieldType = detectFieldType(String(originalValue), fieldType);
-  if (Array.isArray(comparedAtValue) && !["[]", "![]"].includes(operator))
+  if (Array.isArray(comparedAtValue) && !['[]', '![]'].includes(operator))
     return comparedAtValue.some((comparedAtValueSingle) =>
       handleComparisonOperator(
         operator,
@@ -565,50 +565,50 @@ const handleComparisonOperator = (
     );
   // check if not array or object // it can't be array or object!
   switch (operator) {
-    case "=":
+    case '=':
       switch (fieldType) {
-        case "password":
-          return typeof originalValue === "string" &&
-            typeof comparedAtValue === "string"
+        case 'password':
+          return typeof originalValue === 'string' &&
+            typeof comparedAtValue === 'string'
             ? comparePassword(originalValue, comparedAtValue)
             : false;
-        case "boolean":
+        case 'boolean':
           return Number(originalValue) - Number(comparedAtValue) === 0;
         default:
           return originalValue === comparedAtValue;
       }
-    case "!=":
+    case '!=':
       return !handleComparisonOperator(
-        "=",
+        '=',
         originalValue,
         comparedAtValue,
         fieldType
       );
-    case ">":
+    case '>':
       return (
         originalValue !== null &&
         comparedAtValue !== null &&
         originalValue > comparedAtValue
       );
-    case "<":
+    case '<':
       return (
         originalValue !== null &&
         comparedAtValue !== null &&
         originalValue < comparedAtValue
       );
-    case ">=":
+    case '>=':
       return (
         originalValue !== null &&
         comparedAtValue !== null &&
         originalValue >= comparedAtValue
       );
-    case "<=":
+    case '<=':
       return (
         originalValue !== null &&
         comparedAtValue !== null &&
         originalValue <= comparedAtValue
       );
-    case "[]":
+    case '[]':
       return (
         (Array.isArray(originalValue) &&
           Array.isArray(comparedAtValue) &&
@@ -620,24 +620,24 @@ const handleComparisonOperator = (
           Array.isArray(comparedAtValue) &&
           comparedAtValue.includes(originalValue))
       );
-    case "![]":
+    case '![]':
       return !handleComparisonOperator(
-        "[]",
+        '[]',
         originalValue,
         comparedAtValue,
         fieldType
       );
-    case "*":
+    case '*':
       return new RegExp(
-        `^${(String(comparedAtValue).includes("%")
+        `^${(String(comparedAtValue).includes('%')
           ? String(comparedAtValue)
-          : "%" + String(comparedAtValue) + "%"
-        ).replace(/%/g, ".*")}$`,
-        "i"
+          : '%' + String(comparedAtValue) + '%'
+        ).replace(/%/g, '.*')}$`,
+        'i'
       ).test(String(originalValue));
-    case "!*":
+    case '!*':
       return !handleComparisonOperator(
-        "*",
+        '*',
         originalValue,
         comparedAtValue,
         fieldType
@@ -675,7 +675,7 @@ export const search = async (
     | boolean
     | null
     | (string | number | boolean | null)[],
-  logicalOperator?: "and" | "or",
+  logicalOperator?: 'and' | 'or',
   fieldType?: FieldType | FieldType[],
   fieldChildrenType?: FieldType | FieldType[],
   limit?: number,
@@ -698,7 +698,7 @@ export const search = async (
     lineCount = 0,
     foundItems = 0;
 
-  const fileHandle = await open(filePath, "r"),
+  const fileHandle = await open(filePath, 'r'),
     rl = readLineInternface(fileHandle);
 
   for await (const line of rl) {
@@ -708,7 +708,7 @@ export const search = async (
       (Array.isArray(operator) &&
         Array.isArray(comparedAtValue) &&
         ((logicalOperator &&
-          logicalOperator === "or" &&
+          logicalOperator === 'or' &&
           operator.some((single_operator, index) =>
             handleComparisonOperator(
               single_operator,
@@ -763,7 +763,7 @@ export const sum = async (
 ): Promise<number> => {
   let sum: number = 0;
 
-  const fileHandle = await open(filePath, "r"),
+  const fileHandle = await open(filePath, 'r'),
     rl = readLineInternface(fileHandle);
 
   if (lineNumbers) {
@@ -775,11 +775,11 @@ export const sum = async (
     for await (const line of rl) {
       lineCount++;
       if (!lineNumbersArray.has(lineCount)) continue;
-      sum += +(decode(line, "number") ?? 0);
+      sum += +(decode(line, 'number') ?? 0);
       lineNumbersArray.delete(lineCount);
       if (!lineNumbersArray.size) break;
     }
-  } else for await (const line of rl) sum += +(decode(line, "number") ?? 0);
+  } else for await (const line of rl) sum += +(decode(line, 'number') ?? 0);
 
   await fileHandle.close();
   return sum;
@@ -800,7 +800,7 @@ export const max = async (
 ): Promise<number> => {
   let max: number = 0;
 
-  const fileHandle = await open(filePath, "r"),
+  const fileHandle = await open(filePath, 'r'),
     rl = readLineInternface(fileHandle);
 
   if (lineNumbers) {
@@ -812,14 +812,14 @@ export const max = async (
     for await (const line of rl) {
       lineCount++;
       if (!lineNumbersArray.has(lineCount)) continue;
-      const lineContentNum = +(decode(line, "number") ?? 0);
+      const lineContentNum = +(decode(line, 'number') ?? 0);
       if (lineContentNum > max) max = lineContentNum;
       lineNumbersArray.delete(lineCount);
       if (!lineNumbersArray.size) break;
     }
   } else
     for await (const line of rl) {
-      const lineContentNum = +(decode(line, "number") ?? 0);
+      const lineContentNum = +(decode(line, 'number') ?? 0);
       if (lineContentNum > max) max = lineContentNum;
     }
 
@@ -842,7 +842,7 @@ export const min = async (
 ): Promise<number> => {
   let min: number = 0;
 
-  const fileHandle = await open(filePath, "r"),
+  const fileHandle = await open(filePath, 'r'),
     rl = readLineInternface(fileHandle);
 
   if (lineNumbers) {
@@ -854,14 +854,14 @@ export const min = async (
     for await (const line of rl) {
       lineCount++;
       if (!lineNumbersArray.has(lineCount)) continue;
-      const lineContentNum = +(decode(line, "number") ?? 0);
+      const lineContentNum = +(decode(line, 'number') ?? 0);
       if (lineContentNum < min) min = lineContentNum;
       lineNumbersArray.delete(lineCount);
       if (!lineNumbersArray.size) break;
     }
   } else
     for await (const line of rl) {
-      const lineContentNum = +(decode(line, "number") ?? 0);
+      const lineContentNum = +(decode(line, 'number') ?? 0);
       if (lineContentNum < min) min = lineContentNum;
     }
 
@@ -882,7 +882,7 @@ export const min = async (
  */
 export const sort = async (
   filePath: string,
-  sortDirection: 1 | -1 | "asc" | "desc",
+  sortDirection: 1 | -1 | 'asc' | 'desc',
   lineNumbers?: number | number[],
   _lineNumbersPerChunk: number = 100000
 ): Promise<void> => {};

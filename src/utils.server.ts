@@ -1,4 +1,4 @@
-import { type Schema } from "./index.js";
+import { type Schema } from './index.js';
 import {
   createCipheriv,
   createDecipheriv,
@@ -7,8 +7,8 @@ import {
   type Cipher,
   type Decipher,
   createHash,
-} from "node:crypto";
-import { isArrayOfObjects, isNumber, isValidID } from "./utils.js";
+} from 'node:crypto';
+import { isArrayOfObjects, isNumber, isValidID } from './utils.js';
 
 /**
  * Generates a hashed password using SHA-256.
@@ -17,10 +17,10 @@ import { isArrayOfObjects, isNumber, isValidID } from "./utils.js";
  * @returns A string containing the salt and the hashed password, separated by a colon.
  */
 export const hashPassword = (password: string) => {
-  const salt = randomBytes(16).toString("hex");
-  const hash = createHash("sha256")
+  const salt = randomBytes(16).toString('hex');
+  const hash = createHash('sha256')
     .update(password + salt)
-    .digest("hex");
+    .digest('hex');
   return `${salt}:${hash}`;
 };
 
@@ -35,10 +35,10 @@ export const comparePassword = (
   hashedPassword: string,
   inputPassword: string
 ) => {
-  const [salt, originalHash] = hashedPassword.split(":");
-  const inputHash = createHash("sha256")
+  const [salt, originalHash] = hashedPassword.split(':');
+  const inputHash = createHash('sha256')
     .update(inputPassword + salt)
-    .digest("hex");
+    .digest('hex');
   return inputHash === originalHash;
 };
 
@@ -57,20 +57,20 @@ export const encodeID = (
 
   if (Buffer.isBuffer(secretKeyOrSalt))
     cipher = createCipheriv(
-      "aes-256-cbc",
+      'aes-256-cbc',
       secretKeyOrSalt,
       secretKeyOrSalt.subarray(0, 16)
     );
   else {
     const salt = scryptSync(
       secretKeyOrSalt.toString(),
-      (process.env.INIBASE_SECRET ?? "inibase") + "_salt",
+      (process.env.INIBASE_SECRET ?? 'inibase') + '_salt',
       32
     );
-    cipher = createCipheriv("aes-256-cbc", salt, salt.subarray(0, 16));
+    cipher = createCipheriv('aes-256-cbc', salt, salt.subarray(0, 16));
   }
 
-  return cipher.update(id.toString(), "utf8", "hex") + cipher.final("hex");
+  return cipher.update(id.toString(), 'utf8', 'hex') + cipher.final('hex');
 };
 
 /**
@@ -89,21 +89,21 @@ export const decodeID = (
 
   if (Buffer.isBuffer(secretKeyOrSalt))
     decipher = createDecipheriv(
-      "aes-256-cbc",
+      'aes-256-cbc',
       secretKeyOrSalt,
       secretKeyOrSalt.subarray(0, 16)
     );
   else {
     const salt = scryptSync(
       secretKeyOrSalt.toString(),
-      (process.env.INIBASE_SECRET ?? "inibase") + "_salt",
+      (process.env.INIBASE_SECRET ?? 'inibase') + '_salt',
       32
     );
-    decipher = createDecipheriv("aes-256-cbc", salt, salt.subarray(0, 16));
+    decipher = createDecipheriv('aes-256-cbc', salt, salt.subarray(0, 16));
   }
 
   return Number(
-    decipher.update(input as string, "hex", "utf8") + decipher.final("utf8")
+    decipher.update(input as string, 'hex', 'utf8') + decipher.final('utf8')
   );
 };
 
@@ -122,7 +122,7 @@ export const findLastIdNumber = (
   const lastField = schema[schema.length - 1];
   if (lastField) {
     if (
-      (lastField.type === "array" || lastField.type === "object") &&
+      (lastField.type === 'array' || lastField.type === 'object') &&
       isArrayOfObjects(lastField.children)
     )
       return findLastIdNumber(lastField.children as Schema, secretKeyOrSalt);
@@ -159,7 +159,7 @@ export const addIdToSchema = (
       }
     }
     if (
-      (field.type === "array" || field.type === "object") &&
+      (field.type === 'array' || field.type === 'object') &&
       isArrayOfObjects(field.children)
     ) {
       field.children = addIdToSchema(
