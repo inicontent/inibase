@@ -387,6 +387,12 @@ export const validateFieldType = (
   }
 };
 
+/**
+ * Converts a nested object to dot notation, flattening the object's structure.
+ *
+ * @param input - The input object to be converted.
+ * @returns A flattened object using dot notation for keys.
+ */
 export const objectToDotNotation = (input: Record<string, any>) => {
   const result: Record<string, string | number | (string | number)[]> = {};
   const stack: Array<{ obj: Record<string, any>; parentKey?: string }> = [
