@@ -1,12 +1,15 @@
 import {
   FileHandle,
   open,
-  rename,
-  stat,
+  access,
+  constants,
   writeFile,
-  appendFile,
 } from "node:fs/promises";
 import { createInterface } from "node:readline";
+import { Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
+// import { createDeflate, createInflate, deflate, constants } from "node:zlib";
+// import { promisify } from "node:util";
 import { ComparisonOperator, FieldType } from "./index.js";
 import {
   detectFieldType,
@@ -23,10 +26,13 @@ import { encodeID, comparePassword } from "./utils.server.js";
  * @returns A readline.Interface instance configured with the provided file stream.
  */
 const readLineInternface = (fileHandle: FileHandle) => {
-  return createInterface({
-    input: fileHandle.createReadStream(),
-    crlfDelay: Infinity,
-  });
+  const [major, minor, patch] = process.versions.node.split(".").map(Number);
+  return major > 18 || (major === 18 && minor >= 11)
+    ? fileHandle.readLines()
+    : createInterface({
+        input: fileHandle.createReadStream(), // .pipe(createInflate())
+        crlfDelay: Infinity,
+      });
 };
 
 /**
@@ -37,7 +43,7 @@ const readLineInternface = (fileHandle: FileHandle) => {
  */
 export const isExists = async (path: string) => {
   try {
-    await stat(path);
+    await access(path, constants.R_OK | constants.W_OK);
     return true;
   } catch {
     return false;
@@ -357,7 +363,7 @@ export const get = async (
  * @param filePath - Path of the file to modify.
  * @param replacements - Map of line numbers to replacement values, or a single replacement value for all lines.
  *   Can be a string, number, boolean, null, array of these types, or a Record/Map of line numbers to these types.
- * @returns void. The function modifies the file directly.
+ * @returns Promise<string[]>
  *
  * Note: If the file doesn't exist and replacements is an object, it creates a new file with the specified replacements.
  */
@@ -373,98 +379,107 @@ export const replace = async (
         number,
         string | boolean | number | null | (string | boolean | number | null)[]
       >
-    | Map<number, string | number | boolean | (string | number | boolean)[]>
-) => {
-  if (await isExists(filePath)) {
-    let lineCount = 0;
-    const fileHandle = await open(filePath, "r"),
-      fileTempPath = `${filePath.replace(".inib", "")}-${Date.now()}.tmp`,
-      fileTempHandle = await open(fileTempPath, "w"),
-      rl = readLineInternface(fileHandle),
-      writeStream = fileTempHandle.createWriteStream();
+): Promise<string[]> => {
+  let lineCount = 0;
+  const fileHandle = await open(filePath, "r"),
+    fileTempPath = filePath.replace(/([^/]+)\/?$/, `.tmp/${Date.now()}-$1`),
+    fileTempHandle = await open(fileTempPath, "w"),
+    rl = readLineInternface(fileHandle);
 
-    if (isObject(replacements)) {
-      if (!(replacements instanceof Map))
-        replacements = new Map(Object.entries(replacements)) as Map<any, any>;
-      for await (const line of rl) {
-        lineCount++;
-        writeStream.write(
-          (replacements.has(lineCount.toString() as any)
-            ? replacements.get(lineCount.toString() as any)
-            : line) + "\n"
-        );
-      }
-      const newLinesNumbers = new Set(
-        [...replacements.keys()].filter((num) => num > lineCount)
-      );
-
-      if (newLinesNumbers.size) {
-        if (Math.min(...newLinesNumbers) - lineCount - 1 > 1)
-          writeStream.write(
-            "\n".repeat(Math.min(...newLinesNumbers) - lineCount - 1)
+  if (isObject(replacements))
+    await pipeline(
+      rl,
+      new Transform({
+        transform(line, encoding, callback) {
+          lineCount++;
+          callback(
+            null,
+            (replacements.hasOwnProperty(lineCount)
+              ? replacements[lineCount]
+              : line) + "\n"
           );
+        },
+        final(callback) {
+          const newLinesNumbers = Object.entries(replacements)
+            .map(([key, value]) => Number(key))
+            .filter((num) => num > lineCount);
 
-        for await (const newLineNumber of newLinesNumbers)
-          writeStream.write(
-            replacements.get(newLineNumber.toString() as any) + "\n"
-          );
-      }
-    } else for await (const _line of rl) writeStream.write(replacements + "\n");
-
-    await fileHandle.close();
-    await fileTempHandle.close();
-    await rename(fileTempPath, filePath);
-  } else if (isObject(replacements)) {
-    if (!(replacements instanceof Map))
-      replacements = new Map(
-        Object.entries(replacements).map(([key, value]) => [Number(key), value])
-      ) as Map<any, any>;
-    await writeFile(
-      filePath,
-      (Math.min(...replacements.keys()) - 1 > 1
-        ? "\n".repeat(Math.min(...replacements.keys()) - 1)
-        : "") +
-        Array.from(
-          new Map(
-            [...replacements.entries()].sort(([keyA], [keyB]) => keyA - keyB)
-          ).values()
-        ).join("\n") +
-        "\n"
+          if (newLinesNumbers.length) {
+            if (Math.min(...newLinesNumbers) - lineCount - 1 > 1)
+              this.push(
+                "\n".repeat(Math.min(...newLinesNumbers) - lineCount - 1)
+              );
+            this.push(
+              newLinesNumbers
+                .map((newLineNumber) => replacements[newLineNumber])
+                .join("\n") + "\n"
+            );
+          }
+          callback();
+        },
+      }),
+      // createDeflate(),
+      fileTempHandle.createWriteStream()
     );
-  }
+  else
+    await pipeline(
+      rl,
+      new Transform({
+        transform(line, encoding, callback) {
+          lineCount++;
+          callback(null, replacements + "\n");
+        },
+      }),
+      // createDeflate(),
+      fileTempHandle.createWriteStream()
+    );
+
+  await fileHandle.close();
+  await fileTempHandle.close();
+  return [fileTempPath, filePath];
 };
 
 /**
- * Asynchronously appends data to a file, starting from a specified line number.
+ * Asynchronously appends data to a file.
  *
  * @param filePath - Path of the file to append to.
  * @param data - Data to append. Can be a string, number, or an array of strings/numbers.
- * @param startsAt - The line number to start appending from. Defaults to 1.
- * @returns Promise<void>. Modifies the file by appending data.
+ * @returns Promise<string[]>. Modifies the file by appending data.
  *
- * Note: If the file exists, it calculates the current number of lines and appends accordingly.
- *       If the file doesn't exist, it creates a new one starting with the specified data.
  */
 export const append = async (
   filePath: string,
-  data: string | number | (string | number)[],
-  startsAt: number = 1
-): Promise<void> => {
-  let currentNumberOfLines = 0;
-  const doesFileExists = await isExists(filePath);
+  data: string | number | (string | number)[]
+): Promise<string[]> => {
+  const fileTempPath = filePath.replace(/([^/]+)\/?$/, `.tmp/${Date.now()}-$1`);
+  if (await isExists(filePath)) {
+    const fileHandle = await open(filePath, "r"),
+      fileTempHandle = await open(fileTempPath, "w"),
+      rl = readLineInternface(fileHandle);
 
-  if (doesFileExists) currentNumberOfLines = await count(filePath);
+    await pipeline(
+      rl,
+      new Transform({
+        transform(line, encoding, callback) {
+          callback(null, `${line}\n`);
+        },
+        final(callback) {
+          this.push((Array.isArray(data) ? data.join("\n") : data) + "\n");
+          callback();
+        },
+      }),
+      // createDeflate(),
+      fileTempHandle.createWriteStream()
+    );
 
-  await appendFile(
-    filePath,
-    (currentNumberOfLines > 0
-      ? startsAt - currentNumberOfLines - 1 > 0
-        ? "\n".repeat(startsAt - currentNumberOfLines - 1)
-        : ""
-      : "") +
-      (Array.isArray(data) ? data.join("\n") : data) +
-      "\n"
-  );
+    await fileHandle.close();
+    await fileTempHandle.close();
+  } else
+    await writeFile(
+      fileTempPath,
+      `${Array.isArray(data) ? data.join("\n") : data}\n`
+    );
+  return [fileTempPath, filePath];
 };
 
 /**
@@ -472,34 +487,40 @@ export const append = async (
  *
  * @param filePath - Path of the file from which lines are to be removed.
  * @param linesToDelete - A single line number or an array of line numbers to be deleted.
- * @returns Promise<void>. Modifies the file by removing specified lines.
+ * @returns Promise<string[]>. Modifies the file by removing specified lines.
  *
  * Note: Creates a temporary file during the process and replaces the original file with it after removing lines.
  */
 export const remove = async (
   filePath: string,
   linesToDelete: number | number[]
-): Promise<void> => {
+): Promise<string[]> => {
   let lineCount = 0;
 
   const fileHandle = await open(filePath, "r"),
-    fileTempPath = `${filePath.replace(".inib", "")}-${Date.now()}.tmp`,
+    fileTempPath = filePath.replace(/([^/]+)\/?$/, `.tmp/${Date.now()}-$1`),
     fileTempHandle = await open(fileTempPath, "w"),
     linesToDeleteArray = new Set(
       Array.isArray(linesToDelete)
         ? linesToDelete.map(Number)
         : [Number(linesToDelete)]
     ),
-    rl = readLineInternface(fileHandle),
-    writeStream = fileTempHandle.createWriteStream();
-
-  for await (const line of rl) {
-    lineCount++;
-    if (!linesToDeleteArray.has(lineCount)) writeStream.write(`${line}\n`);
-  }
-  await rename(fileTempPath, filePath);
+    rl = readLineInternface(fileHandle);
+  await pipeline(
+    rl,
+    new Transform({
+      transform(line, encoding, callback) {
+        lineCount++;
+        if (!linesToDeleteArray.has(lineCount)) callback(null, `${line}\n`);
+        callback();
+      },
+    }),
+    // createDeflate(),
+    fileTempHandle.createWriteStream()
+  );
   await fileTempHandle.close();
   await fileHandle.close();
+  return [fileTempPath, filePath];
 };
 
 /**
