@@ -460,6 +460,9 @@ await db.min("user", ["age", ...], { isActive: false });
   - [x] POST
   - [x] PUT
   - [x] DELETE
+  - [x] SUM
+  - [x] MAX
+  - [x] MIN
 - [ ] Schema supported types:
   - [x] String
   - [x] Number
@@ -476,7 +479,7 @@ await db.min("user", ["age", ...], { isActive: false });
   - [x] Id
 - [ ] TO-DO:
   - [ ] Improve caching
-  - [ ] Commenting the code
+  - [x] Commenting the code
 - [ ] Features:
   - [ ] Encryption
   - [ ] Compress data
