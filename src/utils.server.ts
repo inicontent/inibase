@@ -172,6 +172,44 @@ export const addIdToSchema = (
     return field;
   });
 
+function sortObject(obj: Record<any, any>): Record<any, any> {
+  if (typeof obj !== "object" || obj === null) return obj;
+
+  if (Array.isArray(obj)) return obj.toSorted().map(sortObject);
+
+  const sorted: Record<any, any> = {};
+  const keys = Object.keys(obj).sort();
+  const length = keys.length;
+
+  for (let i = 0; i < length; i++) {
+    const key = keys[i];
+    sorted[key] = sortObject(obj[key]);
+  }
+
+  return sorted;
+}
+
+function stringifyObject(obj: Record<any, any>): string {
+  if (typeof obj !== "object" || obj === null) return String(obj);
+
+  if (Array.isArray(obj))
+    return "[" + obj.map((value) => stringifyObject(value)).join(",") + "]";
+
+  return (
+    "{" +
+    Object.keys(obj)
+      .toSorted()
+      .map((key) => `${key}:${stringifyObject(obj[key])}`)
+      .join(",") +
+    "}"
+  );
+}
+
+export const hashObject = (obj: any): string =>
+  createHash("sha256")
+    .update(stringifyObject(sortObject(obj)))
+    .digest("hex");
+
 export default class UtilsServer {
   static encodeID = encodeID;
   static decodeID = decodeID;
@@ -179,4 +217,6 @@ export default class UtilsServer {
   static comparePassword = comparePassword;
   static findLastIdNumber = findLastIdNumber;
   static addIdToSchema = addIdToSchema;
+
+  static hashObject = hashObject;
 }

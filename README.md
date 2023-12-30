@@ -4,17 +4,20 @@
 
 [![npmjs](https://img.shields.io/npm/dm/inibase.svg?style=flat)](https://www.npmjs.org/package/inibase) [![License](https://img.shields.io/github/license/inicontent/inibase.svg?style=flat&colorA=18181B&colorB=28CF8D)](./LICENSE) [![Activity](https://img.shields.io/github/commit-activity/m/inicontent/inibase)](https://github.com/inicontent/inibase/pulse) [![GitHub stars](https://img.shields.io/github/stars/inicontent/inibase?style=social)](https://github.com/inicontent/inibase)
 
-> File-based relational database, simple to use and can handle large data :fire:
+> A file-based & memory-efficient, serverless relational database management system :fire:
 
 ## Features
 
 - **Lightweight** 🪶
-- **Minimalist** :white_circle:
+- **Minimalist** :white_circle: (but powerful)
 - **TypeScript** :large_blue_diamond:
-- **Super-Fast** :zap:
-- **Form-validation** included :sunglasses:
-- **Suitable for large data** :page_with_curl:
-- **Safe** :lock:
+- **Super-Fast** :zap: (built-in caching system)
+- **Built-in form-validation** included :sunglasses:
+- **Suitable for large data** :page_with_curl: (tested with 200K row)
+- **Support Compression** :eight_spoked_asterisk: (using built-in nodejs zlib)
+- **Support Table Joins** :link:
+- **Low memory-usage** :chart_with_downwards_trend: (3-5mb)
+- **Safe** :lock: (no sql or javascript injections)
 - **Easy to use** :bread:
 - **...** and much more :rocket:
 
@@ -35,8 +38,8 @@ const users = await db.get("user", undefined, {
   columns: ["username", "address.street", "hobbies.name"],
 });
 
-// Get items from "user" table where "favoriteFoods" does not includes "Pizza"
-const users = await db.get("user", { favoriteFoods: "![]Pizza" });
+// Get items from "user" table where "favoriteFoods" does not includes "Pizza" or "Burger"
+const users = await db.get("user", { favoriteFoods: "![]Pizza,Burger" });
 ```
 
 If you like Inibase, please sponsor: [GitHub Sponsors](https://github.com/sponsors/inicontent) || [Paypal](https://paypal.me/KarimAmahtil).
@@ -49,7 +52,7 @@ If you like Inibase, please sponsor: [GitHub Sponsors](https://github.com/sponso
 
 ## How it works?
 
-To simplify the idea, each database has tables, each table has columns, each column will be stored in a seperated file. When POSTing new data, it will be appended to the end of each file as new line. When GETing data, the file will be readed line-by-line so it can handle large data (without consuming a lot of resources), when PUTing(updating) in a specific column, only one file will be opened and updated
+To simplify the idea, each database has tables, each table has columns, each column will be stored in a seperated file. When **POST**ing new data, it will be appended to the _head_ of each file as new line. When **GET**ing data, the file will be readed line-by-line so it can handle large data (without consuming a lot of resources), when **PUT**ing(updating) in a specific column, only one file will be opened and updated
 
 ## Benchmark
 
@@ -70,6 +73,45 @@ To simplify the idea, each database has tables, each table has columns, each col
 | GET    | 99 ms (12.51 mb)  | 846 ms (30.68 mb)  | 7103 ms (30.86 mb) |
 | PUT    | 33 ms (10.29 mb)  | 312 ms (11.06 mb)  | 3539 ms (14.87 mb) |
 | DELETE | 134 ms (13.50 mb) | 1224 ms (16.57 mb) | 7339 ms (11.46 mb) |
+
+
+## Roadmap
+
+- [x] Actions:
+  - [x] GET:
+    - [x] Pagination
+    - [x] Criteria
+    - [x] Columns
+    - [ ] Order By
+  - [x] POST
+  - [x] PUT
+  - [x] DELETE
+  - [x] SUM
+  - [x] MAX
+  - [x] MIN
+- [ ] Schema supported types:
+  - [x] String
+  - [x] Number
+  - [x] Boolean
+  - [x] Date
+  - [x] Email
+  - [x] Url
+  - [x] Table
+  - [x] Object
+  - [x] Array
+  - [x] Password
+  - [x] IP
+  - [x] HTML
+  - [x] Id
+- [ ] TO-DO:
+  - [x] Improve caching
+  - [x] Commenting the code
+- [ ] Features:
+  - [ ] Encryption
+  - [x] Data Compression
+  - [x] Caching System
+  - [ ] Suggest [new feature +](https://github.com/inicontent/inibase/discussions/new?category=ideas)
+
 
 ## Examples
 
@@ -447,43 +489,17 @@ await db.min("user", ["age", ...], { isActive: false });
 
 </details>
 
+## Config
 
+The `.env` file supports the following parameters (make sure to run command with flag --env-file=.env)
 
-## Roadmap
+```ini
+# Auto generated secret key, will be using for encrypting the IDs
+INIBASE_SECRET=
 
-- [x] Actions:
-  - [x] GET:
-    - [x] Pagination
-    - [x] Criteria
-    - [x] Columns
-    - [ ] Order By
-  - [x] POST
-  - [x] PUT
-  - [x] DELETE
-  - [x] SUM
-  - [x] MAX
-  - [x] MIN
-- [ ] Schema supported types:
-  - [x] String
-  - [x] Number
-  - [x] Boolean
-  - [x] Date
-  - [x] Email
-  - [x] Url
-  - [x] Table
-  - [x] Object
-  - [x] Array
-  - [x] Password
-  - [x] IP
-  - [x] HTML
-  - [x] Id
-- [ ] TO-DO:
-  - [ ] Improve caching
-  - [x] Commenting the code
-- [ ] Features:
-  - [ ] Encryption
-  - [ ] Compress data
-  - [ ] Suggest [new feature +](https://github.com/inicontent/inibase/discussions/new?category=ideas)
+INIBASE_COMPRESSION=true
+INIBASE_CACHE=true
+```
 
 ## License
 
