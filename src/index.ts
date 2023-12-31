@@ -2,7 +2,7 @@ import { unlink, rename, mkdir, readdir } from "node:fs/promises";
 import { existsSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { cpus } from "node:os";
-import { scryptSync, randomBytes, createHash } from "node:crypto";
+import { scryptSync, randomBytes } from "node:crypto";
 import File from "./file.js";
 import Utils from "./utils.js";
 import UtilsServer from "./utils.server.js";
@@ -39,9 +39,11 @@ type FieldDefault = {
 };
 type FieldStringType = {
   type: Exclude<FieldType, "array" | "object">;
+  children?: never;
 };
 type FieldStringArrayType = {
-  type: Exclude<FieldType, "array" | "object">[];
+  type: Array<Exclude<FieldType, "array" | "object">>;
+  children?: never;
 };
 type FieldArrayType = {
   type: "array";
@@ -51,7 +53,7 @@ type FieldArrayType = {
     | Schema;
 };
 type FieldArrayArrayType = {
-  type: ["array", ...Exclude<FieldType, "array" | "object">[]];
+  type: Array<"array" | Exclude<FieldType, "array" | "object">>;
   children:
     | Exclude<FieldType, "array" | "object">
     | Exclude<FieldType, "array" | "object">[];
@@ -64,10 +66,9 @@ type FieldObjectType = {
 export type Field = FieldDefault &
   (
     | FieldStringType
-    | FieldStringArrayType
+    | (FieldStringArrayType & FieldArrayArrayType)
     | FieldObjectType
     | FieldArrayType
-    | FieldArrayArrayType
   );
 
 export type Schema = Field[];
@@ -557,10 +558,14 @@ export default class Inibase {
     const path = join(this.folder, this.database, tableName);
     let RETURN: Record<number, Data> = {};
     for await (const field of schema) {
-      if (field.type === "array" && field.children) {
+      if (
+        (field.type === "array" ||
+          (Array.isArray(field.type) && field.type.includes("array"))) &&
+        field.children
+      ) {
         if (Utils.isArrayOfObjects(field.children)) {
           if (
-            (field.children as Schema).filter(
+            field.children.filter(
               (children) =>
                 children.type === "array" &&
                 Utils.isArrayOfObjects(children.children)
@@ -636,7 +641,7 @@ export default class Inibase {
           Object.entries(
             (await this.getItemsFromSchema(
               tableName,
-              field.children as Schema,
+              field.children,
               linesNumber,
               options,
               (prefix ?? "") + field.key + "."
@@ -681,6 +686,7 @@ export default class Inibase {
           });
         } else if (
           field.children === "table" ||
+          (Array.isArray(field.type) && field.type.includes("table")) ||
           (Array.isArray(field.children) && field.children.includes("table"))
         ) {
           if (options.columns)
@@ -1337,9 +1343,7 @@ export default class Inibase {
               RETURN,
               await this.getItemsFromSchema(
                 tableName,
-                schema.filter(
-                  (field) => !alreadyExistsColumns.includes(field.key)
-                ),
+                schema.filter(({ key }) => !alreadyExistsColumns.includes(key)),
                 Object.keys(RETURN).map(Number),
                 options
               )

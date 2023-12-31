@@ -278,56 +278,39 @@ const decodeHelper = (
   fieldChildrenType?: FieldType | FieldType[],
   secretKey?: string | Buffer
 ): any => {
-  // Use a stack-based approach for efficient processing without recursion.
-  const stack = [{ value }];
+  if (Array.isArray(value) && fieldType !== "array")
+    return value.map((v) =>
+      decodeHelper(v, fieldType, fieldChildrenType, secretKey)
+    );
+  switch (fieldType as FieldType) {
+    case "table":
+    case "number":
+      return isNumber(value) ? Number(value) : null;
+    case "boolean":
+      return typeof value === "string" ? value === "true" : Boolean(value);
+    case "array":
+      if (!Array.isArray(value)) return [value];
 
-  while (stack.length > 0) {
-    // Explicitly check if stack.pop() is not undefined.
-    const stackItem = stack.pop();
-    if (!stackItem) {
-      // Skip the rest of the loop if the stack item is undefined.
-      continue;
-    }
-
-    const { value } = stackItem;
-
-    if (Array.isArray(value) && fieldType !== "array") {
-      // If the value is an array and the fieldType is not 'array', process each element.
-      stack.push(...value.map((v) => ({ value: v })));
-    } else {
-      switch (fieldType as FieldType) {
-        // Handle different field types with appropriate decoding logic.
-        case "table":
-        case "number":
-          return isNumber(value) ? Number(value) : null;
-        case "boolean":
-          return typeof value === "string" ? value === "true" : Boolean(value);
-        case "array":
-          if (!Array.isArray(value)) return [value];
-
-          if (fieldChildrenType)
-            // Decode each element in the array based on the specified fieldChildrenType.
-            return fieldChildrenType
-              ? value.map(
-                  (v) =>
-                    decode(
-                      v,
-                      Array.isArray(fieldChildrenType)
-                        ? detectFieldType(v, fieldChildrenType)
-                        : fieldChildrenType,
-                      undefined,
-                      secretKey
-                    ) as string | number | boolean | null
-                )
-              : value;
-        case "id":
-          return isNumber(value) && secretKey
-            ? encodeID(value as number, secretKey)
-            : value;
-        default:
-          return value;
-      }
-    }
+      if (fieldChildrenType)
+        return fieldChildrenType
+          ? value.map(
+              (v) =>
+                decode(
+                  v,
+                  Array.isArray(fieldChildrenType)
+                    ? detectFieldType(v, fieldChildrenType)
+                    : fieldChildrenType,
+                  undefined,
+                  secretKey
+                ) as string | number | boolean | null
+            )
+          : value;
+    case "id":
+      return isNumber(value) && secretKey
+        ? encodeID(value as number, secretKey)
+        : value;
+    default:
+      return value;
   }
 };
 
@@ -384,7 +367,8 @@ export function get(
   lineNumbers?: number | number[],
   fieldType?: FieldType | FieldType[],
   fieldChildrenType?: FieldType | FieldType[],
-  secretKey?: string | Buffer
+  secretKey?: string | Buffer,
+  readWholeFile?: false
 ): Promise<Record<
   number,
   | string
@@ -419,7 +403,7 @@ export async function get(
   fieldType?: FieldType | FieldType[],
   fieldChildrenType?: FieldType | FieldType[],
   secretKey?: string | Buffer,
-  readWholeFile?: boolean
+  readWholeFile: boolean = false
 ): Promise<
   | Record<
       number,
