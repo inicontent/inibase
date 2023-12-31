@@ -1,4 +1,4 @@
-import { type FieldType, type Data } from "./index.js";
+import { type FieldType, type Data, ComparisonOperator } from "./index.js";
 
 /**
  * Type guard function to check if the input is an array of objects.
@@ -430,6 +430,67 @@ export const objectToDotNotation = (input: Record<string, any>) => {
   return result;
 };
 
+export function FormatObjectCriteriaValue(
+  value: string,
+  isParentArray: boolean = false
+): [
+  ComparisonOperator,
+  string | number | boolean | null | (string | number | null)[]
+] {
+  switch (value[0]) {
+    case ">":
+    case "<":
+      return value[1] === "="
+        ? [
+            value.slice(0, 2) as ComparisonOperator,
+            value.slice(2) as string | number,
+          ]
+        : [
+            value.slice(0, 1) as ComparisonOperator,
+            value.slice(1) as string | number,
+          ];
+    case "[":
+      return value[1] === "]"
+        ? [
+            value.slice(0, 2) as ComparisonOperator,
+            (value.slice(2) as string | number).toString().split(","),
+          ]
+        : ["[]", value.slice(1) as string | number];
+    case "!":
+      return ["=", "*"].includes(value[1])
+        ? [
+            value.slice(0, 2) as ComparisonOperator,
+            value.slice(2) as string | number,
+          ]
+        : value[1] === "["
+        ? [
+            value.slice(0, 3) as ComparisonOperator,
+            value.slice(3) as string | number,
+          ]
+        : [
+            (value.slice(0, 1) + "=") as ComparisonOperator,
+            value.slice(1) as string | number,
+          ];
+    case "=":
+      return isParentArray
+        ? [
+            value.slice(0, 1) as ComparisonOperator,
+            value.slice(1) as string | number,
+          ]
+        : [
+            value.slice(0, 1) as ComparisonOperator,
+            (value.slice(1) + ",") as string,
+          ];
+    case "*":
+      return [
+        value.slice(0, 1) as ComparisonOperator,
+        value.slice(1) as string | number,
+      ];
+    default:
+      return ["=", value];
+  }
+}
+
 export default class Utils {
   static isNumber = isNumber;
   static isObject = isObject;
@@ -451,4 +512,5 @@ export default class Utils {
   static validateFieldType = validateFieldType;
   static objectToDotNotation = objectToDotNotation;
   static isArrayOfNulls = isArrayOfNulls;
+  static FormatObjectCriteriaValue = FormatObjectCriteriaValue;
 }

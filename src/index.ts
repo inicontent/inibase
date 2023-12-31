@@ -800,67 +800,6 @@ export default class Inibase {
     return RETURN;
   }
 
-  private FormatObjectCriteriaValue(
-    value: string,
-    isParentArray: boolean = false
-  ): [
-    ComparisonOperator,
-    string | number | boolean | null | (string | number | null)[]
-  ] {
-    switch (value[0]) {
-      case ">":
-      case "<":
-        return value[1] === "="
-          ? [
-              value.slice(0, 2) as ComparisonOperator,
-              value.slice(2) as string | number,
-            ]
-          : [
-              value.slice(0, 1) as ComparisonOperator,
-              value.slice(1) as string | number,
-            ];
-      case "[":
-        return value[1] === "]"
-          ? [
-              value.slice(0, 2) as ComparisonOperator,
-              (value.slice(2) as string | number).toString().split(","),
-            ]
-          : ["[]", value.slice(1) as string | number];
-      case "!":
-        return ["=", "*"].includes(value[1])
-          ? [
-              value.slice(0, 2) as ComparisonOperator,
-              value.slice(2) as string | number,
-            ]
-          : value[1] === "["
-          ? [
-              value.slice(0, 3) as ComparisonOperator,
-              value.slice(3) as string | number,
-            ]
-          : [
-              (value.slice(0, 1) + "=") as ComparisonOperator,
-              value.slice(1) as string | number,
-            ];
-      case "=":
-        return isParentArray
-          ? [
-              value.slice(0, 1) as ComparisonOperator,
-              value.slice(1) as string | number,
-            ]
-          : [
-              value.slice(0, 1) as ComparisonOperator,
-              (value.slice(1) + ",") as string,
-            ];
-      case "*":
-        return [
-          value.slice(0, 1) as ComparisonOperator,
-          value.slice(1) as string | number,
-        ];
-      default:
-        return ["=", value];
-    }
-  }
-
   private async applyCriteria(
     tableName: string,
     schema: Schema,
@@ -944,7 +883,7 @@ export default class Inibase {
                   string | number | boolean | null | (string | number | null)[]
                 ] =>
                   typeof single_or === "string"
-                    ? this.FormatObjectCriteriaValue(single_or)
+                    ? Utils.FormatObjectCriteriaValue(single_or)
                     : ["=", single_or]
               )
               .filter((a) => a) as [ComparisonOperator, string | number][];
@@ -972,7 +911,7 @@ export default class Inibase {
                   string | number | boolean | null | (string | number | null)[]
                 ] =>
                   typeof single_and === "string"
-                    ? this.FormatObjectCriteriaValue(single_and)
+                    ? Utils.FormatObjectCriteriaValue(single_and)
                     : ["=", single_and]
               )
               .filter((a) => a) as [ComparisonOperator, string | number][];
@@ -997,7 +936,7 @@ export default class Inibase {
                 string | number | boolean | null | (string | number | null)[]
               ] =>
                 typeof single === "string"
-                  ? this.FormatObjectCriteriaValue(single)
+                  ? Utils.FormatObjectCriteriaValue(single)
                   : ["=", single]
             )
             .filter((a) => a) as [ComparisonOperator, string | number][];
@@ -1007,7 +946,8 @@ export default class Inibase {
             searchLogicalOperator = "and";
           }
         } else if (typeof value === "string") {
-          const ComparisonOperatorValue = this.FormatObjectCriteriaValue(value);
+          const ComparisonOperatorValue =
+            Utils.FormatObjectCriteriaValue(value);
           if (ComparisonOperatorValue) {
             searchOperator = ComparisonOperatorValue[0];
             searchComparedAtValue = ComparisonOperatorValue[1];
