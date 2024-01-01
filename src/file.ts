@@ -508,7 +508,7 @@ export const replace = async (
         string | boolean | number | null | (string | boolean | number | null)[]
       >
 ): Promise<string[]> => {
-  const fileTempPath = filePath.replace(/([^/]+)\/?$/, `.tmp/${Date.now()}-$1`);
+  const fileTempPath = filePath.replace(/([^/]+)\/?$/, `.tmp/$1`);
   if (await isExists(filePath)) {
     let fileHandle, fileTempHandle, rl;
     try {
@@ -575,7 +575,7 @@ export const append = async (
   filePath: string,
   data: string | number | (string | number)[]
 ): Promise<string[]> => {
-  const fileTempPath = filePath.replace(/([^/]+)\/?$/, `.tmp/${Date.now()}-$1`);
+  const fileTempPath = filePath.replace(/([^/]+)\/?$/, `.tmp/$1`);
   if (await isExists(filePath)) {
     let fileHandle, fileTempHandle, rl;
     try {
@@ -583,6 +583,7 @@ export const append = async (
       fileTempHandle = await open(fileTempPath, "w");
       rl = readLineInternface(fileHandle);
       let isAppended = false;
+
       await _pipeline(
         rl,
         fileTempHandle.createWriteStream(),
@@ -607,7 +608,8 @@ export const append = async (
   } else
     await write(
       fileTempPath,
-      `${Array.isArray(data) ? data.join("\n") : data}\n`
+      `${Array.isArray(data) ? data.join("\n") : data}\n`,
+      undefined
     );
   return [fileTempPath, filePath];
 };
@@ -625,10 +627,11 @@ export const remove = async (
   filePath: string,
   linesToDelete: number | number[]
 ): Promise<string[]> => {
-  let linesCount = 0;
+  let linesCount = 0,
+    deletedCount = 0;
 
   const fileHandle = await open(filePath, "r"),
-    fileTempPath = filePath.replace(/([^/]+)\/?$/, `.tmp/${Date.now()}-$1`),
+    fileTempPath = filePath.replace(/([^/]+)\/?$/, `.tmp/$1`),
     fileTempHandle = await open(fileTempPath, "w"),
     linesToDeleteArray = new Set(
       Array.isArray(linesToDelete)
@@ -643,9 +646,14 @@ export const remove = async (
     new Transform({
       transform(line, encoding, callback) {
         linesCount++;
-        return !linesToDeleteArray.has(linesCount)
-          ? callback(null, `${line}\n`)
-          : callback();
+        if (linesToDeleteArray.has(linesCount)) {
+          deletedCount++;
+          return callback();
+        } else return callback(null, `${line}\n`);
+      },
+      final(callback) {
+        if (deletedCount === linesCount) this.push("\n");
+        return callback();
       },
     })
   );

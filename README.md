@@ -4,7 +4,7 @@
 
 [![npmjs](https://img.shields.io/npm/dm/inibase.svg?style=flat)](https://www.npmjs.org/package/inibase) [![License](https://img.shields.io/github/license/inicontent/inibase.svg?style=flat&colorA=18181B&colorB=28CF8D)](./LICENSE) [![Activity](https://img.shields.io/github/commit-activity/m/inicontent/inibase)](https://github.com/inicontent/inibase/pulse) [![GitHub stars](https://img.shields.io/github/stars/inicontent/inibase?style=social)](https://github.com/inicontent/inibase)
 
-> A file-based & memory-efficient, serverless relational database management system :fire:
+> A file-based & memory-efficient, serverless, ACID compliant, relational database management system :fire:
 
 ## Features
 
@@ -73,6 +73,8 @@ To simplify the idea, each database has tables, each table has columns, each col
 | GET    | 99 ms (12.51 mb)  | 846 ms (30.68 mb)  | 7103 ms (30.86 mb) |
 | PUT    | 33 ms (10.29 mb)  | 312 ms (11.06 mb)  | 3539 ms (14.87 mb) |
 | DELETE | 134 ms (13.50 mb) | 1224 ms (16.57 mb) | 7339 ms (11.46 mb) |
+
+Ps: Testing by default with `user` table, with username, email, password fields _so results include password encryption process_
 
 
 ## Roadmap

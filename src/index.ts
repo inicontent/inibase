@@ -1,4 +1,4 @@
-import { unlink, rename, mkdir, readdir } from "node:fs/promises";
+import { unlink, rename, mkdir, readdir, open } from "node:fs/promises";
 import { existsSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { cpus } from "node:os";
@@ -241,9 +241,12 @@ export default class Inibase {
           schemaToIdsPath(schema)
         );
       if (replaceOldPathes)
-        for await (const [oldPath, newPath] of Object.entries(replaceOldPathes))
-          if (await File.isExists(join(TablePath, oldPath)))
-            await rename(join(TablePath, oldPath), join(TablePath, newPath));
+        await Promise.all(
+          Object.entries(replaceOldPathes).map(async ([oldPath, newPath]) => {
+            if (await File.isExists(join(TablePath, oldPath)))
+              await rename(join(TablePath, oldPath), join(TablePath, newPath));
+          })
+        );
     }
 
     await File.write(
@@ -557,157 +560,231 @@ export default class Inibase {
   ) {
     const path = join(this.folder, this.database, tableName);
     let RETURN: Record<number, Data> = {};
-    for await (const field of schema) {
-      if (
-        (field.type === "array" ||
-          (Array.isArray(field.type) && field.type.includes("array"))) &&
-        field.children
-      ) {
-        if (Utils.isArrayOfObjects(field.children)) {
-          if (
-            field.children.filter(
-              (children) =>
-                children.type === "array" &&
-                Utils.isArrayOfObjects(children.children)
-            ).length
-          ) {
-            // one of children has array field type and has children array of object = Schema
+    await Promise.all(
+      schema.map(async (field) => {
+        if (
+          (field.type === "array" ||
+            (Array.isArray(field.type) && field.type.includes("array"))) &&
+          field.children
+        ) {
+          if (Utils.isArrayOfObjects(field.children)) {
+            if (
+              field.children.filter(
+                (children) =>
+                  children.type === "array" &&
+                  Utils.isArrayOfObjects(children.children)
+              ).length
+            ) {
+              // one of children has array field type and has children array of object = Schema
+              Object.entries(
+                (await this.getItemsFromSchema(
+                  tableName,
+                  (field.children as Schema).filter(
+                    (children) =>
+                      children.type === "array" &&
+                      Utils.isArrayOfObjects(children.children)
+                  ),
+                  linesNumber,
+                  options,
+                  (prefix ?? "") + field.key + "."
+                )) ?? {}
+              ).forEach(([index, item]) => {
+                if (Utils.isObject(item)) {
+                  if (!RETURN[index]) RETURN[index] = {};
+                  if (!RETURN[index][field.key]) RETURN[index][field.key] = [];
+                  for (const child_field of (field.children as Schema).filter(
+                    (children) =>
+                      children.type === "array" &&
+                      Utils.isArrayOfObjects(children.children)
+                  )) {
+                    if (Utils.isObject(item[child_field.key])) {
+                      Object.entries(item[child_field.key]).forEach(
+                        ([key, value]) => {
+                          if (!Utils.isArrayOfArrays(value))
+                            value = value.map((_value: any) =>
+                              child_field.type === "array"
+                                ? [[_value]]
+                                : [_value]
+                            );
+
+                          for (let _i = 0; _i < value.length; _i++) {
+                            if (Utils.isArrayOfNulls(value[_i])) continue;
+
+                            if (!RETURN[index][field.key][_i])
+                              RETURN[index][field.key][_i] = {};
+                            if (!RETURN[index][field.key][_i][child_field.key])
+                              RETURN[index][field.key][_i][child_field.key] =
+                                [];
+                            value[_i].forEach(
+                              (_element: any, _index: string | number) => {
+                                if (
+                                  !RETURN[index][field.key][_i][
+                                    child_field.key
+                                  ][_index]
+                                )
+                                  RETURN[index][field.key][_i][child_field.key][
+                                    _index
+                                  ] = {};
+                                RETURN[index][field.key][_i][child_field.key][
+                                  _index
+                                ][key] = _element;
+                              }
+                            );
+                          }
+                        }
+                      );
+                    }
+                  }
+                }
+              });
+
+              field.children = field.children.filter(
+                (children) =>
+                  children.type !== "array" ||
+                  !Utils.isArrayOfObjects(children.children)
+              );
+            }
+
             Object.entries(
               (await this.getItemsFromSchema(
                 tableName,
-                (field.children as Schema).filter(
-                  (children) =>
-                    children.type === "array" &&
-                    Utils.isArrayOfObjects(children.children)
-                ),
+                field.children,
                 linesNumber,
                 options,
                 (prefix ?? "") + field.key + "."
               )) ?? {}
             ).forEach(([index, item]) => {
+              if (!RETURN[index]) RETURN[index] = {};
               if (Utils.isObject(item)) {
-                if (!RETURN[index]) RETURN[index] = {};
-                if (!RETURN[index][field.key]) RETURN[index][field.key] = [];
-                for (const child_field of (field.children as Schema).filter(
-                  (children) =>
-                    children.type === "array" &&
-                    Utils.isArrayOfObjects(children.children)
-                )) {
-                  if (Utils.isObject(item[child_field.key])) {
-                    Object.entries(item[child_field.key]).forEach(
-                      ([key, value]) => {
-                        if (!Utils.isArrayOfArrays(value))
-                          value = value.map((_value: any) =>
-                            child_field.type === "array" ? [[_value]] : [_value]
-                          );
-
-                        for (let _i = 0; _i < value.length; _i++) {
-                          if (Utils.isArrayOfNulls(value[_i])) continue;
-
-                          if (!RETURN[index][field.key][_i])
-                            RETURN[index][field.key][_i] = {};
-                          if (!RETURN[index][field.key][_i][child_field.key])
-                            RETURN[index][field.key][_i][child_field.key] = [];
-                          value[_i].forEach(
-                            (_element: any, _index: string | number) => {
-                              if (
-                                !RETURN[index][field.key][_i][child_field.key][
-                                  _index
-                                ]
-                              )
-                                RETURN[index][field.key][_i][child_field.key][
-                                  _index
-                                ] = {};
-                              RETURN[index][field.key][_i][child_field.key][
-                                _index
-                              ][key] = _element;
-                            }
-                          );
-                        }
+                if (!Object.values(item).every((i) => i === null)) {
+                  if (RETURN[index][field.key]) {
+                    Object.entries(item).forEach(([key, value], _index) => {
+                      RETURN[index][field.key] = RETURN[index][field.key].map(
+                        (_obj: any, _i: string | number) => ({
+                          ..._obj,
+                          [key]: value[_i],
+                        })
+                      );
+                    });
+                  } else if (
+                    Object.values(item).every(
+                      (_i) => Utils.isArrayOfArrays(_i) || Array.isArray(_i)
+                    )
+                  )
+                    RETURN[index][field.key] = item;
+                  else {
+                    RETURN[index][field.key] = [];
+                    Object.entries(item).forEach(([key, value]) => {
+                      for (let _i = 0; _i < value.length; _i++) {
+                        if (
+                          value[_i] === null ||
+                          (Array.isArray(value[_i]) &&
+                            value[_i].every((_item: any) => _item === null))
+                        )
+                          continue;
+                        if (!RETURN[index][field.key][_i])
+                          RETURN[index][field.key][_i] = {};
+                        RETURN[index][field.key][_i][key] = value[_i];
                       }
-                    );
+                    });
                   }
-                }
-              }
+                } else RETURN[index][field.key] = null;
+              } else RETURN[index][field.key] = item;
             });
-
-            field.children = field.children.filter(
-              (children) =>
-                children.type !== "array" ||
-                !Utils.isArrayOfObjects(children.children)
+          } else if (
+            field.children === "table" ||
+            (Array.isArray(field.type) && field.type.includes("table")) ||
+            (Array.isArray(field.children) && field.children.includes("table"))
+          ) {
+            if (options.columns)
+              options.columns = (options.columns as string[])
+                .filter((column) => column.includes(`${field.key}.`))
+                .map((column) => column.replace(`${field.key}.`, ""));
+            const items = await File.get(
+              join(path, (prefix ?? "") + field.key + ".inib"),
+              linesNumber,
+              field.type,
+              field.children,
+              this.salt
             );
-          }
 
-          Object.entries(
+            if (items)
+              await Promise.all(
+                Object.entries(items).map(async ([index, item]) => {
+                  if (!RETURN[index]) RETURN[index] = {};
+                  RETURN[index][field.key] = item
+                    ? await this.get(field.key, item as number, options)
+                    : this.getDefaultValue(field);
+                })
+              );
+          } else if (
+            await File.isExists(
+              join(path, (prefix ?? "") + field.key + ".inib")
+            )
+          ) {
+            const items = await File.get(
+              join(path, (prefix ?? "") + field.key + ".inib"),
+              linesNumber,
+              field.type,
+              (field as any)?.children,
+              this.salt
+            );
+
+            if (items)
+              for (const [index, item] of Object.entries(items)) {
+                if (!RETURN[index]) RETURN[index] = {};
+                RETURN[index][field.key] = item ?? this.getDefaultValue(field);
+              }
+          }
+        } else if (field.type === "object") {
+          for await (const [index, item] of Object.entries(
             (await this.getItemsFromSchema(
               tableName,
-              field.children,
+              field.children as Schema,
               linesNumber,
               options,
               (prefix ?? "") + field.key + "."
             )) ?? {}
-          ).forEach(([index, item]) => {
+          )) {
             if (!RETURN[index]) RETURN[index] = {};
             if (Utils.isObject(item)) {
-              if (!Object.values(item).every((i) => i === null)) {
-                if (RETURN[index][field.key]) {
-                  Object.entries(item).forEach(([key, value], _index) => {
-                    RETURN[index][field.key] = RETURN[index][field.key].map(
-                      (_obj: any, _i: string | number) => ({
-                        ..._obj,
-                        [key]: value[_i],
-                      })
-                    );
-                  });
-                } else if (
-                  Object.values(item).every(
-                    (_i) => Utils.isArrayOfArrays(_i) || Array.isArray(_i)
-                  )
+              if (!Object.values(item).every((i) => i === null))
+                RETURN[index][field.key] = item;
+              else RETURN[index][field.key] = null;
+            } else RETURN[index][field.key] = null;
+          }
+        } else if (field.type === "table") {
+          if (
+            (await File.isExists(
+              join(this.folder, this.database, field.key)
+            )) &&
+            (await File.isExists(
+              join(path, (prefix ?? "") + field.key + ".inib")
+            ))
+          ) {
+            if (options.columns)
+              options.columns = (options.columns as string[])
+                .filter(
+                  (column) =>
+                    column.includes(`${field.key}.`) &&
+                    !column.includes(`${field.key}.`)
                 )
-                  RETURN[index][field.key] = item;
-                else {
-                  RETURN[index][field.key] = [];
-                  Object.entries(item).forEach(([key, value]) => {
-                    for (let _i = 0; _i < value.length; _i++) {
-                      if (
-                        value[_i] === null ||
-                        (Array.isArray(value[_i]) &&
-                          value[_i].every((_item: any) => _item === null))
-                      )
-                        continue;
-                      if (!RETURN[index][field.key][_i])
-                        RETURN[index][field.key][_i] = {};
-                      RETURN[index][field.key][_i][key] = value[_i];
-                    }
-                  });
-                }
-              } else RETURN[index][field.key] = null;
-            } else RETURN[index][field.key] = item;
-          });
-        } else if (
-          field.children === "table" ||
-          (Array.isArray(field.type) && field.type.includes("table")) ||
-          (Array.isArray(field.children) && field.children.includes("table"))
-        ) {
-          if (options.columns)
-            options.columns = (options.columns as string[])
-              .filter((column) => column.includes(`${field.key}.`))
-              .map((column) => column.replace(`${field.key}.`, ""));
-          const items = await File.get(
-            join(path, (prefix ?? "") + field.key + ".inib"),
-            linesNumber,
-            field.type,
-            field.children,
-            this.salt
-          );
-
-          if (items)
-            for await (const [index, item] of Object.entries(items)) {
-              if (!RETURN[index]) RETURN[index] = {};
-              RETURN[index][field.key] = item
-                ? await this.get(field.key, item as number, options)
-                : this.getDefaultValue(field);
-            }
+                .map((column) => column.replace(`${field.key}.`, ""));
+            const items = await File.get(
+              join(path, (prefix ?? "") + field.key + ".inib"),
+              linesNumber,
+              "number",
+              undefined,
+              this.salt
+            );
+            if (items)
+              for await (const [index, item] of Object.entries(items)) {
+                if (!RETURN[index]) RETURN[index] = {};
+                RETURN[index][field.key] = item
+                  ? await this.get(field.key, item as number, options)
+                  : this.getDefaultValue(field);
+              }
+          }
         } else if (
           await File.isExists(join(path, (prefix ?? "") + field.key + ".inib"))
         ) {
@@ -724,79 +801,16 @@ export default class Inibase {
               if (!RETURN[index]) RETURN[index] = {};
               RETURN[index][field.key] = item ?? this.getDefaultValue(field);
             }
+          else
+            RETURN = Object.fromEntries(
+              Object.entries(RETURN).map(([index, data]) => [
+                index,
+                { ...data, [field.key]: this.getDefaultValue(field) },
+              ])
+            );
         }
-      } else if (field.type === "object") {
-        for await (const [index, item] of Object.entries(
-          (await this.getItemsFromSchema(
-            tableName,
-            field.children as Schema,
-            linesNumber,
-            options,
-            (prefix ?? "") + field.key + "."
-          )) ?? {}
-        )) {
-          if (!RETURN[index]) RETURN[index] = {};
-          if (Utils.isObject(item)) {
-            if (!Object.values(item).every((i) => i === null))
-              RETURN[index][field.key] = item;
-            else RETURN[index][field.key] = null;
-          } else RETURN[index][field.key] = null;
-        }
-      } else if (field.type === "table") {
-        if (
-          (await File.isExists(join(this.folder, this.database, field.key))) &&
-          (await File.isExists(
-            join(path, (prefix ?? "") + field.key + ".inib")
-          ))
-        ) {
-          if (options.columns)
-            options.columns = (options.columns as string[])
-              .filter(
-                (column) =>
-                  column.includes(`${field.key}.`) &&
-                  !column.includes(`${field.key}.`)
-              )
-              .map((column) => column.replace(`${field.key}.`, ""));
-          const items = await File.get(
-            join(path, (prefix ?? "") + field.key + ".inib"),
-            linesNumber,
-            "number",
-            undefined,
-            this.salt
-          );
-          if (items)
-            for await (const [index, item] of Object.entries(items)) {
-              if (!RETURN[index]) RETURN[index] = {};
-              RETURN[index][field.key] = item
-                ? await this.get(field.key, item as number, options)
-                : this.getDefaultValue(field);
-            }
-        }
-      } else if (
-        await File.isExists(join(path, (prefix ?? "") + field.key + ".inib"))
-      ) {
-        const items = await File.get(
-          join(path, (prefix ?? "") + field.key + ".inib"),
-          linesNumber,
-          field.type,
-          (field as any)?.children,
-          this.salt
-        );
-
-        if (items)
-          for (const [index, item] of Object.entries(items)) {
-            if (!RETURN[index]) RETURN[index] = {};
-            RETURN[index][field.key] = item ?? this.getDefaultValue(field);
-          }
-        else
-          RETURN = Object.fromEntries(
-            Object.entries(RETURN).map(([index, data]) => [
-              index,
-              { ...data, [field.key]: this.getDefaultValue(field) },
-            ])
-          );
-      }
-    }
+      })
+    );
     return RETURN;
   }
 
@@ -1328,7 +1342,7 @@ export default class Inibase {
     tableName: string,
     data: Data | Data[],
     options?: Options,
-    returnPostedData?: false
+    returnPostedData?: boolean
   ): Promise<void | null>;
   post(
     tableName: string,
@@ -1359,6 +1373,22 @@ export default class Inibase {
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
     const idFilePath = join(this.folder, this.database, tableName, "id.inib"),
       cashFolderPath = join(this.folder, this.database, tableName, ".tmp");
+
+    let testFileHandle;
+    try {
+      testFileHandle = await open(join(cashFolderPath, "id.inib"), "wx");
+    } catch ({ message }: any) {
+      if (message.split(":")[0] === "EEXIST")
+        return await new Promise<any>((resolve, reject) =>
+          setTimeout(
+            () =>
+              resolve(this.post(tableName, data, options, returnPostedData)),
+            13
+          )
+        );
+    } finally {
+      await testFileHandle?.close();
+    }
 
     let lastId = 0,
       totalItems = 0,
@@ -1412,12 +1442,15 @@ export default class Inibase {
       Array.isArray(RETURN) ? RETURN.toReversed() : RETURN
     );
 
-    const renameList = [];
-    for await (const [path, content] of Object.entries(pathesContents))
-      renameList.push(await File.append(path, content));
+    const renameList = await Promise.all(
+      Object.entries(pathesContents).map(async ([path, content]) =>
+        File.append(path, content)
+      )
+    );
 
-    for await (const [tempPath, filePath] of renameList)
-      await rename(tempPath, filePath);
+    await Promise.all(
+      renameList.map(async ([tempPath, filePath]) => rename(tempPath, filePath))
+    );
 
     await File.write(
       join(cashFolderPath, "lastId.inib"),
@@ -1515,8 +1548,36 @@ export default class Inibase {
                 updatedAt: Date.now(),
               }
         );
-        for await (const [path, content] of Object.entries(pathesContents))
-          await File.replace(path, content);
+
+        let testFileHandle;
+        try {
+          testFileHandle = await open(
+            Object.keys(pathesContents)[0].replace(/([^/]+)\/?$/, `.tmp/$1`),
+            "wx"
+          );
+        } catch ({ message }: any) {
+          if (message.split(":")[0] === "EEXIST")
+            return await new Promise<any>((resolve, reject) =>
+              setTimeout(
+                () => resolve(this.put(tableName, data, where, options)),
+                13
+              )
+            );
+        } finally {
+          await testFileHandle?.close();
+        }
+
+        const renameList: string[][] = await Promise.all(
+          Object.entries(pathesContents).map(async ([path, content]) =>
+            File.replace(path, content)
+          )
+        );
+
+        await Promise.all(
+          renameList.map(async ([tempPath, filePath]) =>
+            rename(tempPath, filePath)
+          )
+        );
 
         if (Config.isCacheEnabled) {
           const cacheFiles = (
@@ -1526,10 +1587,13 @@ export default class Inibase {
               !["lastId.inib", "totalItems.inib"].includes(fileName)
           );
           if (cacheFiles.length)
-            for await (const file of cacheFiles)
-              await unlink(
-                join(this.folder, this.database, tableName, ".tmp", file)
-              );
+            await Promise.all(
+              cacheFiles.map(async (file) =>
+                unlink(
+                  join(this.folder, this.database, tableName, ".tmp", file)
+                )
+              )
+            );
         }
         if (returnPostedData)
           return this.get(
@@ -1588,12 +1652,35 @@ export default class Inibase {
           ])
         );
 
-        const renameList = [];
-        for await (const [path, content] of Object.entries(pathesContents))
-          renameList.push(await File.replace(path, content));
+        let testFileHandle;
+        try {
+          testFileHandle = await open(
+            Object.keys(pathesContents)[0].replace(/([^/]+)\/?$/, `.tmp/$1`),
+            "wx"
+          );
+        } catch ({ message }: any) {
+          if (message.split(":")[0] === "EEXIST")
+            return await new Promise<any>((resolve, reject) =>
+              setTimeout(
+                () => resolve(this.put(tableName, data, where, options)),
+                13
+              )
+            );
+        } finally {
+          await testFileHandle?.close();
+        }
 
-        for await (const [tempPath, filePath] of renameList)
-          await rename(tempPath, filePath);
+        const renameList: string[][] = await Promise.all(
+          Object.entries(pathesContents).map(async ([path, content]) =>
+            File.replace(path, content)
+          )
+        );
+
+        await Promise.all(
+          renameList.map(async ([tempPath, filePath]) =>
+            rename(tempPath, filePath)
+          )
+        );
 
         if (Config.isCacheEnabled) {
           const cacheFiles = (
@@ -1603,10 +1690,13 @@ export default class Inibase {
               !["lastId.inib", "totalItems.inib"].includes(fileName)
           );
           if (cacheFiles.length)
-            for await (const file of cacheFiles)
-              await unlink(
-                join(this.folder, this.database, tableName, ".tmp", file)
-              );
+            await Promise.all(
+              cacheFiles.map(async (file) =>
+                unlink(
+                  join(this.folder, this.database, tableName, ".tmp", file)
+                )
+              )
+            );
         }
         if (returnPostedData)
           return this.get(
@@ -1658,8 +1748,12 @@ export default class Inibase {
         await readdir(join(this.folder, this.database, tableName))
       )?.filter((fileName: string) => fileName.endsWith(".inib"));
       if (files.length)
-        for await (const file of files)
-          await unlink(join(this.folder, this.database, tableName, file));
+        await Promise.all(
+          files.map(async (file) =>
+            unlink(join(this.folder, this.database, tableName, file))
+          )
+        );
+
       if (Config.isCacheEnabled) {
         const cacheFiles = (
           await readdir(join(this.folder, this.database, tableName, ".tmp"))
@@ -1668,10 +1762,11 @@ export default class Inibase {
             !["lastId.inib", "totalItems.inib"].includes(fileName)
         );
         if (cacheFiles.length)
-          for await (const file of cacheFiles)
-            await unlink(
-              join(this.folder, this.database, tableName, ".tmp", file)
-            );
+          await Promise.all(
+            cacheFiles.map(async (file) =>
+              unlink(join(this.folder, this.database, tableName, ".tmp", file))
+            )
+          );
       }
       return "*";
     } else if (
@@ -1717,16 +1812,39 @@ export default class Inibase {
 
           if (!_id.length) throw this.throwError("NO_ITEMS", tableName);
 
-          const renameList = [];
-          for await (const file of files)
-            renameList.push(
-              await File.remove(
+          let testFileHandle;
+          try {
+            testFileHandle = await open(
+              join(this.folder, this.database, tableName, ".tmp", "id.inib"),
+              "wx"
+            );
+          } catch ({ message }: any) {
+            if (message.split(":")[0] === "EEXIST")
+              return await new Promise<any>((resolve, reject) =>
+                setTimeout(
+                  () => resolve(this.delete(tableName, where as any, _id)),
+                  13
+                )
+              );
+          } finally {
+            await testFileHandle?.close();
+          }
+
+          const renameList: string[][] = await Promise.all(
+            files.map(async (file) =>
+              File.remove(
                 join(this.folder, this.database, tableName, file),
                 where
               )
-            );
-          for await (const [tempPath, filePath] of renameList)
-            await rename(tempPath, filePath);
+            )
+          );
+
+          await Promise.all(
+            renameList.map(async ([tempPath, filePath]) =>
+              rename(tempPath, filePath)
+            )
+          );
+
           if (Config.isCacheEnabled) {
             const cacheFiles = (
               await readdir(join(this.folder, this.database, tableName, ".tmp"))
@@ -1735,10 +1853,13 @@ export default class Inibase {
                 !["lastId.inib", "totalItems.inib"].includes(fileName)
             );
             if (cacheFiles.length)
-              for await (const file of cacheFiles)
-                await unlink(
-                  join(this.folder, this.database, tableName, ".tmp", file)
-                );
+              await Promise.all(
+                cacheFiles.map(async (file) =>
+                  unlink(
+                    join(this.folder, this.database, tableName, ".tmp", file)
+                  )
+                )
+              );
 
             await File.write(
               join(
