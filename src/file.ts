@@ -67,12 +67,16 @@ const _pipeline = async (
  * @returns A readline.Interface instance configured with the provided file stream.
  */
 const readLineInternface = (fileHandle: FileHandle) => {
-  return createInterface({
-    input: Config.isCompressionEnabled
-      ? fileHandle.createReadStream().pipe(createGunzip())
-      : fileHandle.createReadStream(),
-    crlfDelay: Infinity,
-  });
+  const [major, minor, patch] = process.versions.node.split(".").map(Number);
+  return major > 18 ||
+    (major === 18 && minor >= 11 && !Config.isCompressionEnabled)
+    ? fileHandle.readLines()
+    : createInterface({
+        input: Config.isCompressionEnabled
+          ? fileHandle.createReadStream().pipe(createGunzip())
+          : fileHandle.createReadStream(),
+        crlfDelay: Infinity,
+      });
 };
 
 /**
