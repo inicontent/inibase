@@ -5,6 +5,7 @@ import {
   writeFile,
   readFile,
   constants as fsConstants,
+  unlink,
 } from "node:fs/promises";
 import type { WriteStream } from "node:fs";
 import { createInterface, type Interface } from "node:readline";
@@ -17,6 +18,7 @@ import {
   gunzip as gunzipAsync,
 } from "node:zlib";
 import { promisify } from "node:util";
+import { join } from "node:path";
 import { ComparisonOperator, FieldType } from "./index.js";
 import {
   detectFieldType,
@@ -30,6 +32,28 @@ import Config from "./config.js";
 const gzip = promisify(gzipAsync);
 const gunzip = promisify(gunzipAsync);
 
+export const lock = async (folderPath: string): Promise<void> => {
+  let lockFile,
+    lockFilePath = join(folderPath, "locked.inib");
+  try {
+    lockFile = await open(lockFilePath, "wx");
+    return;
+  } catch ({ message }: any) {
+    if (message.split(":")[0] === "EEXIST")
+      return await new Promise<any>((resolve, reject) =>
+        setTimeout(() => resolve(lock(folderPath)), 13)
+      );
+  } finally {
+    await lockFile?.close();
+  }
+};
+
+export const unlock = async (folderPath: string) => {
+  try {
+    await unlink(join(folderPath, "locked.inib"));
+  } catch {}
+};
+
 export const write = async (
   filePath: string,
   data: any,
@@ -37,7 +61,9 @@ export const write = async (
 ) => {
   await writeFile(
     filePath,
-    Config.isCompressionEnabled && !disableCompression ? await gzip(data) : data
+    Config.isCompressionEnabled && !disableCompression
+      ? await gzip(String(data))
+      : String(data)
   );
 };
 
@@ -287,7 +313,6 @@ const decodeHelper = (
       decodeHelper(v, fieldType, fieldChildrenType, secretKey)
     );
   switch (fieldType as FieldType) {
-    case "table":
     case "number":
       return isNumber(value) ? Number(value) : null;
     case "boolean":
@@ -309,6 +334,7 @@ const decodeHelper = (
                 ) as string | number | boolean | null
             )
           : value;
+    case "table":
     case "id":
       return isNumber(value) && secretKey
         ? encodeID(value as number, secretKey)
@@ -336,8 +362,9 @@ export const decode = (
 ): string | number | boolean | null | (string | number | null | boolean)[] => {
   if (!fieldType) return null;
   if (input === null || input === "") return null;
+
+  // Detect the fieldType based on the input and the provided array of possible types.
   if (Array.isArray(fieldType))
-    // Detect the fieldType based on the input and the provided array of possible types.
     fieldType = detectFieldType(String(input), fieldType);
 
   // Decode the input using the decodeHelper function.
@@ -1200,4 +1227,7 @@ export default class File {
 
   static write = write;
   static read = read;
+
+  static lock = lock;
+  static unlock = unlock;
 }
