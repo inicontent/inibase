@@ -39,7 +39,7 @@ const single = async () => {
   table[0].METHOD = "POST";
 
   // SINGLE POST 10
-  gc();
+  if (gc) gc();
   startMemory = process.memoryUsage().heapUsed;
   startTime = Date.now();
   for (let i = 0; i < 10; i++)
@@ -55,7 +55,7 @@ const single = async () => {
   ).toFixed(2)} mb)`;
 
   // SINGLE POST 100
-  gc();
+  if (gc) gc();
   startMemory = process.memoryUsage().heapUsed;
   startTime = Date.now();
   for (let i = 0; i < 100; i++)
@@ -71,7 +71,7 @@ const single = async () => {
   ).toFixed(2)} mb)`;
 
   // SINGLE POST 1000
-  gc();
+  if (gc) gc();
   startMemory = process.memoryUsage().heapUsed;
   startTime = Date.now();
   for (let i = 0; i < 1000; i++)
@@ -91,7 +91,7 @@ const single = async () => {
   table[1].METHOD = "GET";
 
   // SINGLE GET 10
-  gc();
+  if (gc) gc();
   startMemory = process.memoryUsage().heapUsed;
   startTime = Date.now();
   for (let i = 0; i < 10; i++) await db.get("user", i + 1);
@@ -102,7 +102,7 @@ const single = async () => {
   ).toFixed(2)} mb)`;
 
   // SINGLE GET 100
-  gc();
+  if (gc) gc();
   startMemory = process.memoryUsage().heapUsed;
   startTime = Date.now();
   for (let i = 0; i < 100; i++) await db.get("user", i + 1);
@@ -113,7 +113,7 @@ const single = async () => {
   ).toFixed(2)} mb)`;
 
   // SINGLE GET 1000
-  gc();
+  if (gc) gc();
   startMemory = process.memoryUsage().heapUsed;
   startTime = Date.now();
   for (let i = 0; i < 1000; i++) await db.get("user", i + 1);
@@ -128,7 +128,7 @@ const single = async () => {
   table[2].METHOD = "PUT";
 
   // SINGLE PUT 10
-  gc();
+  if (gc) gc();
   startMemory = process.memoryUsage().heapUsed;
   startTime = Date.now();
   for (let i = 0; i < 10; i++)
@@ -140,7 +140,7 @@ const single = async () => {
   ).toFixed(2)} mb)`;
 
   // SINGLE PUT 100
-  gc();
+  if (gc) gc();
   startMemory = process.memoryUsage().heapUsed;
   startTime = Date.now();
   for (let i = 0; i < 100; i++)
@@ -152,7 +152,7 @@ const single = async () => {
   ).toFixed(2)} mb)`;
 
   // SINGLE PUT 1000
-  gc();
+  if (gc) gc();
   startMemory = process.memoryUsage().heapUsed;
   startTime = Date.now();
   for (let i = 0; i < 1000; i++)
@@ -168,7 +168,7 @@ const single = async () => {
   table[3].METHOD = "DELETE";
 
   // SINGLE DELETE 10
-  gc();
+  if (gc) gc();
   startMemory = process.memoryUsage().heapUsed;
   startTime = Date.now();
   for (let i = 0; i < 10; i++) await db.delete("user", 1110 - (i + 1));
@@ -179,7 +179,7 @@ const single = async () => {
   ).toFixed(2)} mb)`;
 
   // SINGLE DELETE 100
-  gc();
+  if (gc) gc();
   startMemory = process.memoryUsage().heapUsed;
   startTime = Date.now();
   for (let i = 0; i < 100; i++) await db.delete("user", 1100 - (i + 1));
@@ -190,7 +190,7 @@ const single = async () => {
   ).toFixed(2)} mb)`;
 
   // SINGLE DELETE 1000
-  gc();
+  if (gc) gc();
   startMemory = process.memoryUsage().heapUsed;
   startTime = Date.now();
   for (let i = 0; i < 1000; i++) await db.delete("user", 1000 - (i + 1));

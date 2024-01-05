@@ -40,7 +40,7 @@ const bulk = async () => {
   table[0].METHOD = "POST";
 
   // BULK POST 10
-  gc();
+  if (gc) gc();
   startMemory = process.memoryUsage().heapUsed;
   startTime = Date.now();
   await db.post(
@@ -58,7 +58,7 @@ const bulk = async () => {
   ).toFixed(2)} mb)`;
 
   // BULK POST 100
-  gc();
+  if (gc) gc();
   startMemory = process.memoryUsage().heapUsed;
   startTime = Date.now();
   await db.post(
@@ -76,7 +76,7 @@ const bulk = async () => {
   ).toFixed(2)} mb)`;
 
   // BULK POST 1000
-  gc();
+  if (gc) gc();
   startMemory = process.memoryUsage().heapUsed;
   startTime = Date.now();
   await db.post(
@@ -98,7 +98,7 @@ const bulk = async () => {
   table[1].METHOD = "GET";
 
   // BULK GET 10
-  gc();
+  if (gc) gc();
   startMemory = process.memoryUsage().heapUsed;
   startTime = Date.now();
   await db.get(
@@ -112,7 +112,7 @@ const bulk = async () => {
   ).toFixed(2)} mb)`;
 
   // BULK GET 100
-  gc();
+  if (gc) gc();
   startMemory = process.memoryUsage().heapUsed;
   startTime = Date.now();
   await db.get(
@@ -126,7 +126,7 @@ const bulk = async () => {
   ).toFixed(2)} mb)`;
 
   // BULK GET 1000
-  gc();
+  if (gc) gc();
   startMemory = process.memoryUsage().heapUsed;
   startTime = Date.now();
   await db.get(
@@ -144,7 +144,7 @@ const bulk = async () => {
   table[2].METHOD = "PUT";
 
   // BULK PUT 10
-  gc();
+  if (gc) gc();
   startMemory = process.memoryUsage().heapUsed;
   startTime = Date.now();
   await db.put(
@@ -159,7 +159,7 @@ const bulk = async () => {
   ).toFixed(2)} mb)`;
 
   // BULK PUT 100
-  gc();
+  if (gc) gc();
   startMemory = process.memoryUsage().heapUsed;
   startTime = Date.now();
   await db.put(
@@ -174,7 +174,7 @@ const bulk = async () => {
   ).toFixed(2)} mb)`;
 
   // BULK PUT 1000
-  gc();
+  if (gc) gc();
   startMemory = process.memoryUsage().heapUsed;
   startTime = Date.now();
   await db.put(
@@ -193,7 +193,7 @@ const bulk = async () => {
   table[3].METHOD = "DELETE";
 
   // BULK DELETE 10
-  gc();
+  if (gc) gc();
   startMemory = process.memoryUsage().heapUsed;
   startTime = Date.now();
   await db.delete(
@@ -207,7 +207,7 @@ const bulk = async () => {
   ).toFixed(2)} mb)`;
 
   // BULK DELETE 100
-  gc();
+  if (gc) gc();
   startMemory = process.memoryUsage().heapUsed;
   startTime = Date.now();
   await db.delete(
@@ -221,7 +221,7 @@ const bulk = async () => {
   ).toFixed(2)} mb)`;
 
   // BULK DELETE 1000
-  gc();
+  if (gc) gc();
   startMemory = process.memoryUsage().heapUsed;
   startTime = Date.now();
   await db.delete(
