@@ -1334,8 +1334,6 @@ export default class Inibase {
       };
     const tablePath = join(this.folder, this.database, tableName);
 
-    await File.lock(join(tablePath, ".tmp"));
-
     if (!returnPostedData) returnPostedData = false;
     const schema = await this.getTableSchema(tableName);
     let RETURN: Data | Data[] | null | undefined;
@@ -1344,47 +1342,48 @@ export default class Inibase {
     let lastId = 0,
       totalItems = 0,
       renameList: string[][] = [];
-
-    if (await File.isExists(join(tablePath, "id.inib"))) {
-      if (
-        Config.isCacheEnabled &&
-        (await File.isExists(join(tablePath, ".tmp", "pagination.inib")))
-      )
-        [lastId, totalItems] = (
-          await File.read(join(tablePath, ".tmp", "pagination.inib"), true)
-        )
-          .split(",")
-          .map(Number);
-      else {
-        let lastIdObj;
-        [lastIdObj, totalItems] = await File.get(
-          join(tablePath, "id.inib"),
-          -1,
-          "number",
-          undefined,
-          this.salt,
-          true
-        );
-        if (lastIdObj) lastId = Number(Object.keys(lastIdObj)![0] ?? 0);
-      }
-    }
-
-    if (Utils.isArrayOfObjects(data))
-      RETURN = data.map(({ id, updatedAt, createdAt, ...rest }) => ({
-        id: ++lastId,
-        ...rest,
-        createdAt: Date.now(),
-      }));
-    else
-      RETURN = (({ id, updatedAt, createdAt, ...rest }) => ({
-        id: ++lastId,
-        ...rest,
-        createdAt: Date.now(),
-      }))(data);
-
-    if (!RETURN) throw this.throwError("NO_DATA");
-
     try {
+      await File.lock(join(tablePath, ".tmp"));
+
+      if (await File.isExists(join(tablePath, "id.inib"))) {
+        if (
+          Config.isCacheEnabled &&
+          (await File.isExists(join(tablePath, ".tmp", "pagination.inib")))
+        )
+          [lastId, totalItems] = (
+            await File.read(join(tablePath, ".tmp", "pagination.inib"), true)
+          )
+            .split(",")
+            .map(Number);
+        else {
+          let lastIdObj;
+          [lastIdObj, totalItems] = await File.get(
+            join(tablePath, "id.inib"),
+            -1,
+            "number",
+            undefined,
+            this.salt,
+            true
+          );
+          if (lastIdObj) lastId = Number(Object.keys(lastIdObj)![0] ?? 0);
+        }
+      }
+
+      if (Utils.isArrayOfObjects(data))
+        RETURN = data.map(({ id, updatedAt, createdAt, ...rest }) => ({
+          id: ++lastId,
+          ...rest,
+          createdAt: Date.now(),
+        }));
+      else
+        RETURN = (({ id, updatedAt, createdAt, ...rest }) => ({
+          id: ++lastId,
+          ...rest,
+          createdAt: Date.now(),
+        }))(data);
+
+      if (!RETURN) throw this.throwError("NO_DATA");
+
       RETURN = this.formatData(RETURN, schema);
 
       const pathesContents = this.joinPathesContents(
@@ -1426,13 +1425,11 @@ export default class Inibase {
           schema
         );
     } finally {
-      await File.unlock(join(tablePath, ".tmp"));
       if (renameList.length)
-        await Promise.all(
-          renameList.map(async ([tempPath, _]) =>
-            (await File.isExists(tempPath)) ? unlink(tempPath) : undefined
-          )
+        await Promise.allSettled(
+          renameList.map(async ([tempPath, _]) => unlink(tempPath))
         );
+      await File.unlock(join(tablePath, ".tmp"));
     }
   }
 
@@ -1477,8 +1474,6 @@ export default class Inibase {
       throw this.throwError("NO_ITEMS", tableName);
     data = this.formatData(data, schema, true);
 
-    await File.lock(join(tablePath, ".tmp"));
-
     if (!where) {
       if (Utils.isArrayOfObjects(data)) {
         if (
@@ -1517,6 +1512,8 @@ export default class Inibase {
         );
 
         try {
+          await File.lock(join(tablePath, ".tmp"));
+
           await Promise.all(
             Object.entries(pathesContents).map(async ([path, content]) =>
               renameList.push(await File.replace(path, content))
@@ -1550,10 +1547,8 @@ export default class Inibase {
             ) as any;
         } finally {
           if (renameList.length)
-            await Promise.all(
-              renameList.map(async ([tempPath, _]) =>
-                (await File.isExists(tempPath)) ? unlink(tempPath) : undefined
-              )
+            await Promise.allSettled(
+              renameList.map(async ([tempPath, _]) => unlink(tempPath))
             );
           await File.unlock(join(tablePath, ".tmp"));
         }
@@ -1605,6 +1600,8 @@ export default class Inibase {
           ])
         );
         try {
+          await File.lock(join(tablePath, ".tmp"));
+
           await Promise.all(
             Object.entries(pathesContents).map(async ([path, content]) =>
               renameList.push(await File.replace(path, content))
@@ -1639,10 +1636,8 @@ export default class Inibase {
             ) as any;
         } finally {
           if (renameList.length)
-            await Promise.all(
-              renameList.map(async ([tempPath, _]) =>
-                (await File.isExists(tempPath)) ? unlink(tempPath) : undefined
-              )
+            await Promise.allSettled(
+              renameList.map(async ([tempPath, _]) => unlink(tempPath))
             );
           await File.unlock(join(tablePath, ".tmp"));
         }
@@ -1681,30 +1676,32 @@ export default class Inibase {
 
     const tablePath = join(this.folder, this.database, tableName);
 
-    await File.lock(join(tablePath, ".tmp"));
-
     const schema = await this.getTableSchema(tableName);
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
 
     if (!(await File.isExists(join(tablePath, "id.inib"))))
       throw this.throwError("NO_ITEMS", tableName);
     if (!where) {
-      await Promise.all(
-        (await readdir(join(tablePath)))
-          ?.filter((fileName: string) => fileName.endsWith(".inib"))
-          .map(async (file) => unlink(join(tablePath, file)))
-      );
-
-      if (Config.isCacheEnabled)
+      try {
+        await File.lock(join(tablePath, ".tmp"));
         await Promise.all(
-          (await readdir(join(tablePath, ".tmp")))
-            ?.filter(
-              (fileName: string) =>
-                !["pagination.inib", "locked.inib"].includes(fileName)
-            )
-            .map(async (file) => unlink(join(tablePath, ".tmp", file)))
+          (await readdir(join(tablePath)))
+            ?.filter((fileName: string) => fileName.endsWith(".inib"))
+            .map(async (file) => unlink(join(tablePath, file)))
         );
 
+        if (Config.isCacheEnabled)
+          await Promise.all(
+            (await readdir(join(tablePath, ".tmp")))
+              ?.filter(
+                (fileName: string) =>
+                  !["pagination.inib", "locked.inib"].includes(fileName)
+              )
+              .map(async (file) => unlink(join(tablePath, ".tmp", file)))
+          );
+      } finally {
+        await File.unlock(join(tablePath, ".tmp"));
+      }
       return "*";
     } else if (
       (Array.isArray(where) &&
@@ -1750,6 +1747,8 @@ export default class Inibase {
           if (!_id.length) throw this.throwError("NO_ITEMS", tableName);
 
           try {
+            await File.lock(join(tablePath, ".tmp"));
+
             await Promise.all(
               files.map(async (file) =>
                 renameList.push(await File.remove(join(tablePath, file), where))
@@ -1796,10 +1795,8 @@ export default class Inibase {
             return Array.isArray(_id) && _id.length === 1 ? _id[0] : _id;
           } finally {
             if (renameList.length)
-              await Promise.all(
-                renameList.map(async ([tempPath, _]) =>
-                  (await File.isExists(tempPath)) ? unlink(tempPath) : undefined
-                )
+              await Promise.allSettled(
+                renameList.map(async ([tempPath, _]) => unlink(tempPath))
               );
             await File.unlock(join(tablePath, ".tmp"));
           }
