@@ -1052,6 +1052,17 @@ export default class Inibase {
       .filter((i) => i) as Schema;
   }
 
+  public async clearCache(tablePath: string) {
+    await Promise.all(
+      (await readdir(join(tablePath, ".tmp")))
+        ?.filter(
+          (fileName: string) =>
+            !["pagination.inib", "locked.inib"].includes(fileName)
+        )
+        .map(async (file) => unlink(join(tablePath, ".tmp", file)))
+    );
+  }
+
   get(
     tableName: string,
     where?: string | number | (string | number)[] | Criteria | undefined,
@@ -1153,6 +1164,7 @@ export default class Inibase {
       (Array.isArray(where) && where.every(Utils.isNumber)) ||
       (Utils.isNumber(where) && !onlyLinesNumbers)
     ) {
+      // "where" in this case, is the lineNumbers instead of IDs
       let lineNumbers = where as number | number[];
       if (!Array.isArray(lineNumbers)) lineNumbers = [lineNumbers];
 
@@ -1404,7 +1416,8 @@ export default class Inibase {
       );
       renameList = [];
 
-      if (Config.isCacheEnabled)
+      if (Config.isCacheEnabled) {
+        await this.clearCache(tablePath);
         await File.write(
           join(tablePath, ".tmp", "pagination.inib"),
           `${lastId},${
@@ -1412,13 +1425,12 @@ export default class Inibase {
           }`,
           true
         );
+      }
 
       if (returnPostedData)
         return this.get(
           tableName,
-          Utils.isArrayOfObjects(RETURN)
-            ? RETURN.map((data) => Number(data.id))
-            : (RETURN.id as number),
+          Array.isArray(RETURN) ? RETURN.map((_, index) => index + 1) : 1,
           options,
           !Utils.isArrayOfObjects(data), // return only one item if data is not array of objects
           undefined,
@@ -1527,14 +1539,7 @@ export default class Inibase {
           );
 
           if (Config.isCacheEnabled)
-            await Promise.all(
-              (await readdir(join(tablePath, ".tmp")))
-                ?.filter(
-                  (fileName: string) =>
-                    !["pagination.inib", "locked.inib"].includes(fileName)
-                )
-                .map(async (file) => unlink(join(tablePath, ".tmp", file)))
-            );
+            await this.clearCache(join(tablePath, ".tmp"));
 
           if (returnPostedData)
             return this.get(
@@ -1615,15 +1620,7 @@ export default class Inibase {
           );
           renameList = [];
 
-          if (Config.isCacheEnabled)
-            await Promise.all(
-              (await readdir(join(tablePath, ".tmp")))
-                ?.filter(
-                  (fileName: string) =>
-                    !["pagination.inib", "locked.inib"].includes(fileName)
-                )
-                .map(async (file) => unlink(join(tablePath, ".tmp", file)))
-            );
+          if (Config.isCacheEnabled) await this.clearCache(tablePath);
 
           if (returnPostedData)
             return this.get(
@@ -1690,15 +1687,7 @@ export default class Inibase {
             .map(async (file) => unlink(join(tablePath, file)))
         );
 
-        if (Config.isCacheEnabled)
-          await Promise.all(
-            (await readdir(join(tablePath, ".tmp")))
-              ?.filter(
-                (fileName: string) =>
-                  !["pagination.inib", "locked.inib"].includes(fileName)
-              )
-              .map(async (file) => unlink(join(tablePath, ".tmp", file)))
-          );
+        if (Config.isCacheEnabled) await this.clearCache(tablePath);
       } finally {
         await File.unlock(join(tablePath, ".tmp"));
       }
@@ -1762,14 +1751,7 @@ export default class Inibase {
             );
 
             if (Config.isCacheEnabled) {
-              await Promise.all(
-                (await readdir(join(tablePath, ".tmp")))
-                  ?.filter(
-                    (fileName: string) =>
-                      !["pagination.inib", "locked.inib"].includes(fileName)
-                  )
-                  .map(async (file) => unlink(join(tablePath, ".tmp", file)))
-              );
+              await this.clearCache(tablePath);
               if (
                 await File.isExists(join(tablePath, ".tmp", "pagination.inib"))
               ) {
