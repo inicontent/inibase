@@ -541,7 +541,7 @@ export const replace = async (
       >
 ): Promise<string[]> => {
   const fileTempPath = filePath.replace(/([^/]+)\/?$/, `.tmp/$1`);
-  if (await isExists(filePath)) {
+  if ((await isExists(filePath)) && (await stat(filePath)).size > 1) {
     let fileHandle, fileTempHandle, rl;
     try {
       let linesCount = 0;
@@ -608,7 +608,7 @@ export const append = async (
   data: string | number | (string | number)[]
 ): Promise<string[]> => {
   const fileTempPath = filePath.replace(/([^/]+)\/?$/, `.tmp/$1`);
-  if ((await isExists(filePath)) && (await stat(filePath)).size) {
+  if ((await isExists(filePath)) && (await stat(filePath)).size > 1) {
     let fileHandle, fileTempHandle, rl;
     try {
       fileHandle = await open(filePath, "r");
@@ -1050,7 +1050,7 @@ export const search = async (
 export const count = async (filePath: string): Promise<number> => {
   // return Number((await exec(`wc -l < ${filePath}`)).stdout.trim());
   let linesCount = 0;
-  if (await isExists(filePath)) {
+  if ((await isExists(filePath)) && (await stat(filePath)).size > 1) {
     let fileHandle, rl;
     try {
       (fileHandle = await open(filePath, "r")),
