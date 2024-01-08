@@ -6,6 +6,7 @@ import {
   readFile,
   constants as fsConstants,
   unlink,
+  stat,
 } from "node:fs/promises";
 import type { WriteStream } from "node:fs";
 import { createInterface, type Interface } from "node:readline";
@@ -607,7 +608,7 @@ export const append = async (
   data: string | number | (string | number)[]
 ): Promise<string[]> => {
   const fileTempPath = filePath.replace(/([^/]+)\/?$/, `.tmp/$1`);
-  if (await isExists(filePath)) {
+  if ((await isExists(filePath)) && (await stat(filePath)).size) {
     let fileHandle, fileTempHandle, rl;
     try {
       fileHandle = await open(filePath, "r");
@@ -658,8 +659,7 @@ export const remove = async (
   filePath: string,
   linesToDelete: number | number[]
 ): Promise<string[]> => {
-  let linesCount = 0,
-    deletedCount = 0;
+  let linesCount = 0;
 
   const fileHandle = await open(filePath, "r"),
     fileTempPath = filePath.replace(/([^/]+)\/?$/, `.tmp/$1`),
@@ -677,14 +677,8 @@ export const remove = async (
     new Transform({
       transform(line, encoding, callback) {
         linesCount++;
-        if (linesToDeleteArray.has(linesCount)) {
-          deletedCount++;
-          return callback();
-        } else return callback(null, `${line}\n`);
-      },
-      final(callback) {
-        if (deletedCount === linesCount) this.push("\n");
-        return callback();
+        if (linesToDeleteArray.has(linesCount)) return callback();
+        else return callback(null, `${line}\n`);
       },
     })
   );
