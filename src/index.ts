@@ -1823,12 +1823,7 @@ export default class Inibase {
       throw this.throwError("NO_ITEMS", tableName);
     if (!Array.isArray(columns)) columns = [columns];
     for await (const column of columns) {
-      const columnPath = join(
-        this.folder,
-        this.database,
-        tableName,
-        column + ".inib"
-      );
+      const columnPath = join(tablePath, column + ".inib");
       if (await File.isExists(columnPath)) {
         if (where) {
           const lineNumbers = await this.get(
@@ -1872,12 +1867,7 @@ export default class Inibase {
       throw this.throwError("NO_ITEMS", tableName);
     if (!Array.isArray(columns)) columns = [columns];
     for await (const column of columns) {
-      const columnPath = join(
-        this.folder,
-        this.database,
-        tableName,
-        column + ".inib"
-      );
+      const columnPath = join(tablePath, column + ".inib");
       if (await File.isExists(columnPath)) {
         if (where) {
           const lineNumbers = await this.get(
@@ -1920,12 +1910,7 @@ export default class Inibase {
       throw this.throwError("NO_ITEMS", tableName);
     if (!Array.isArray(columns)) columns = [columns];
     for await (const column of columns) {
-      const columnPath = join(
-        this.folder,
-        this.database,
-        tableName,
-        column + ".inib"
-      );
+      const columnPath = join(tablePath, column + ".inib");
       if (await File.isExists(columnPath)) {
         if (where) {
           const lineNumbers = await this.get(
