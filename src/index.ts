@@ -132,7 +132,7 @@ export default class Inibase {
 
     if (!existsSync(".env") || !process.env.INIBASE_SECRET) {
       this.salt = scryptSync(randomBytes(16), randomBytes(16), 32);
-      appendFileSync(".env", `INIBASE_SECRET=${this.salt.toString("hex")}\n`);
+      appendFileSync(".env", `\nINIBASE_SECRET=${this.salt.toString("hex")}\n`);
     } else this.salt = Buffer.from(process.env.INIBASE_SECRET, "hex");
   }
 

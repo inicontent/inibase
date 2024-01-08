@@ -541,7 +541,7 @@ export const replace = async (
       >
 ): Promise<string[]> => {
   const fileTempPath = filePath.replace(/([^/]+)\/?$/, `.tmp/$1`);
-  if ((await isExists(filePath)) && (await stat(filePath)).size > 1) {
+  if (await isExists(filePath)) {
     let fileHandle, fileTempHandle, rl;
     try {
       let linesCount = 0;
@@ -608,7 +608,7 @@ export const append = async (
   data: string | number | (string | number)[]
 ): Promise<string[]> => {
   const fileTempPath = filePath.replace(/([^/]+)\/?$/, `.tmp/$1`);
-  if ((await isExists(filePath)) && (await stat(filePath)).size > 1) {
+  if (await isExists(filePath)) {
     let fileHandle, fileTempHandle, rl;
     try {
       fileHandle = await open(filePath, "r");
@@ -625,7 +625,8 @@ export const append = async (
               isAppended = true;
               return callback(
                 null,
-                `${Array.isArray(data) ? data.join("\n") : data}\n${line}\n`
+                `${Array.isArray(data) ? data.join("\n") : data}\n` +
+                  (line.length ? `${line}\n` : "")
               );
             } else return callback(null, `${line}\n`);
           },
@@ -659,7 +660,8 @@ export const remove = async (
   filePath: string,
   linesToDelete: number | number[]
 ): Promise<string[]> => {
-  let linesCount = 0;
+  let linesCount = 0,
+    deletedCount = 0;
 
   const fileHandle = await open(filePath, "r"),
     fileTempPath = filePath.replace(/([^/]+)\/?$/, `.tmp/$1`),
@@ -677,8 +679,14 @@ export const remove = async (
     new Transform({
       transform(line, encoding, callback) {
         linesCount++;
-        if (linesToDeleteArray.has(linesCount)) return callback();
-        else return callback(null, `${line}\n`);
+        if (linesToDeleteArray.has(linesCount)) {
+          deletedCount++;
+          return callback();
+        } else return callback(null, `${line}\n`);
+      },
+      final(callback) {
+        if (deletedCount === linesCount) this.push("\n");
+        return callback();
       },
     })
   );
@@ -1050,7 +1058,7 @@ export const search = async (
 export const count = async (filePath: string): Promise<number> => {
   // return Number((await exec(`wc -l < ${filePath}`)).stdout.trim());
   let linesCount = 0;
-  if ((await isExists(filePath)) && (await stat(filePath)).size > 1) {
+  if (await isExists(filePath)) {
     let fileHandle, rl;
     try {
       (fileHandle = await open(filePath, "r")),
