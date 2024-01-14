@@ -531,24 +531,65 @@ export default class Inibase {
     }
   }
 
-  private joinPathesContents(
+  private _combineObjectsToArray = (input: any[]) =>
+    input.reduce((result, current) => {
+      for (const [key, value] of Object.entries(current))
+        if (!result[key]) result[key] = [value];
+        else result[key].push(value);
+
+      return result;
+    }, {});
+  private _CombineData = (_data: Data | Data[], prefix?: string) => {
+    let RETURN: Record<
+      string,
+      string | boolean | number | null | (string | boolean | number | null)[]
+    > = {};
+    if (Utils.isArrayOfObjects(_data))
+      RETURN = this._combineObjectsToArray(
+        _data.map((single_data) => this._CombineData(single_data))
+      );
+    else
+      for (const [key, value] of Object.entries(_data)) {
+        if (Utils.isObject(value))
+          Object.assign(RETURN, this._CombineData(value, `${key}.`));
+        else if (Utils.isArrayOfObjects(value)) {
+          Object.assign(
+            RETURN,
+            this._CombineData(
+              this._combineObjectsToArray(value),
+              (prefix ?? "") + key + "."
+            )
+          );
+        } else if (
+          Utils.isArrayOfArrays(value) &&
+          value.every(Utils.isArrayOfObjects)
+        )
+          Object.assign(
+            RETURN,
+            this._CombineData(
+              this._combineObjectsToArray(
+                value.map(this._combineObjectsToArray)
+              ),
+              (prefix ?? "") + key + "."
+            )
+          );
+        else RETURN[(prefix ?? "") + key] = File.encode(value);
+      }
+
+    return RETURN;
+  };
+  private _addPathToKeys = (obj: Record<string, any>, path: string) => {
+    const newObject: Record<string, any> = {};
+
+    for (const key in obj) newObject[join(path, key + ".inib")] = obj[key];
+
+    return newObject;
+  };
+  public joinPathesContents(
     mainPath: string,
     data: Data | Data[]
-  ): Record<string, Record<number, any> | any> {
-    return Utils.isArrayOfObjects(data)
-      ? Utils.combineObjects(
-          data.map((single_data) =>
-            this.joinPathesContents(mainPath, single_data)
-          )
-        )
-      : Object.fromEntries(
-          Object.entries(Utils.objectToDotNotation(data)).map(
-            ([key, value]) => [
-              join(mainPath, key + ".inib"),
-              File.encode(value, this.salt),
-            ]
-          )
-        );
+  ): { [key: string]: string[] } {
+    return this._addPathToKeys(this._CombineData(data), mainPath);
   }
 
   private async getItemsFromSchema(
