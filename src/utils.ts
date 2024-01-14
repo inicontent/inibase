@@ -388,49 +388,6 @@ export const validateFieldType = (
   }
 };
 
-/**
- * Converts a nested object to dot notation, flattening the object's structure.
- *
- * @param input - The input object to be converted.
- * @returns A flattened object using dot notation for keys.
- */
-export const objectToDotNotation = (input: Record<string, any>) => {
-  const result: Record<string, string | number | (string | number)[]> = {};
-  const stack: Array<{ obj: Record<string, any>; parentKey?: string }> = [
-    { obj: input },
-  ];
-
-  while (stack.length > 0) {
-    const { obj, parentKey } = stack.pop()!;
-
-    for (const key in obj) {
-      if (obj.hasOwnProperty(key)) {
-        const newKey = parentKey ? `${parentKey}.${key}` : key;
-
-        const value = obj[key];
-        const isArray = Array.isArray(value);
-        const isStringOrNumberArray =
-          isArray &&
-          value.every(
-            (item: any) => typeof item === "string" || typeof item === "number"
-          );
-
-        if (isStringOrNumberArray) {
-          // If the property is an array of strings or numbers, keep the array as is
-          result[newKey] = value as (string | number)[];
-        } else if (isObject(value)) {
-          // If the property is an object, push it onto the stack for further processing
-          stack.push({ obj: value, parentKey: newKey });
-        } else {
-          // Otherwise, assign the value to the dot notation key
-          result[newKey] = value;
-        }
-      }
-    }
-  }
-  return result;
-};
-
 export function FormatObjectCriteriaValue(
   value: string,
   isParentArray: boolean = false
@@ -511,7 +468,6 @@ export default class Utils {
   static isHTML = isHTML;
   static isIP = isIP;
   static validateFieldType = validateFieldType;
-  static objectToDotNotation = objectToDotNotation;
   static isArrayOfNulls = isArrayOfNulls;
   static FormatObjectCriteriaValue = FormatObjectCriteriaValue;
 }
