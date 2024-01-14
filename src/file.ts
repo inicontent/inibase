@@ -26,6 +26,7 @@ import {
   isArrayOfArrays,
   isNumber,
   isObject,
+  isPassword,
 } from "./utils.js";
 import { encodeID, comparePassword } from "./utils.server.js";
 import Config from "./config.js";
@@ -833,8 +834,7 @@ const isEqual = (
   switch (fieldType) {
     // Password comparison.
     case "password":
-      return typeof originalValue === "string" &&
-        typeof comparedAtValue === "string"
+      return isPassword(originalValue) && typeof comparedAtValue === "string"
         ? comparePassword(originalValue, comparedAtValue)
         : false;
 

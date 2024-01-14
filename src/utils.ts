@@ -229,7 +229,8 @@ export const isBoolean = (input: any): input is boolean =>
  *
  * Note: Specifically checks for string length to determine if it matches the defined password length criterion.
  */
-export const isPassword = (input: any): input is string => input.length === 161;
+export const isPassword = (input: any): input is string =>
+  typeof input === "string" && input.length === 97;
 
 /**
  * Checks if the input can be converted to a valid date.
