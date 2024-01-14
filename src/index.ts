@@ -182,22 +182,47 @@ export default class Inibase {
     return new Error(errorMessage);
   }
 
+  private _decodeIdFromSchema = (schema: Schema) =>
+    schema.map((field) => {
+      if (
+        (field.type === "array" || field.type === "object") &&
+        field.children &&
+        Utils.isArrayOfObjects(field.children)
+      )
+        field.children = this._decodeIdFromSchema(field.children);
+      if (field.id && !Utils.isNumber(field.id))
+        field.id = UtilsServer.decodeID(field.id, this.salt);
+      return field;
+    });
+  private _schemaToIdsPath = (schema: Schema, prefix = "") => {
+    let RETURN: any = {};
+    for (const field of schema)
+      if (
+        (field.type === "array" || field.type === "object") &&
+        field.children &&
+        Utils.isArrayOfObjects(field.children)
+      ) {
+        Utils.deepMerge(
+          RETURN,
+          this._schemaToIdsPath(
+            field.children,
+            (prefix ?? "") + field.key + "."
+          )
+        );
+      } else if (Utils.isValidID(field.id))
+        RETURN[UtilsServer.decodeID(field.id, this.salt)] =
+          (prefix ?? "") + field.key + ".inib";
+
+    return RETURN;
+  };
+
   public async setTableSchema(
     tableName: string,
     schema: Schema
   ): Promise<void> {
-    const decodeIdFromSchema = (schema: Schema) =>
-      schema.map((field) => {
-        if (
-          (field.type === "array" || field.type === "object") &&
-          field.children &&
-          Utils.isArrayOfObjects(field.children)
-        )
-          field.children = decodeIdFromSchema(field.children);
-        if (field.id && !Utils.isNumber(field.id))
-          field.id = UtilsServer.decodeID(field.id, this.salt);
-        return field;
-      });
+    const tablePath = join(this.folder, this.database, tableName),
+      tableSchemaPath = join(tablePath, "schema.json"),
+      isTablePathExists = await File.isExists(tablePath);
     // remove id from schema
     schema = schema.filter(
       ({ key }) => !["id", "createdAt", "updatedAt"].includes(key)
@@ -205,41 +230,18 @@ export default class Inibase {
     schema = UtilsServer.addIdToSchema(
       schema,
       UtilsServer.findLastIdNumber(schema, this.salt),
-      this.salt
+      this.salt,
+      isTablePathExists
     );
-    const tablePath = join(this.folder, this.database, tableName),
-      tableSchemaPath = join(tablePath, "schema.json");
-    if (!(await File.isExists(tablePath)))
-      await mkdir(tablePath, { recursive: true });
+    if (!isTablePathExists) await mkdir(tablePath, { recursive: true });
     if (!(await File.isExists(join(tablePath, ".tmp"))))
       await mkdir(join(tablePath, ".tmp"));
     if (await File.isExists(tableSchemaPath)) {
       // update columns files names based on field id
-      const schemaToIdsPath = (schema: Schema, prefix = "") => {
-          let RETURN: any = {};
-          for (const field of schema)
-            if (
-              (field.type === "array" || field.type === "object") &&
-              field.children &&
-              Utils.isArrayOfObjects(field.children)
-            ) {
-              Utils.deepMerge(
-                RETURN,
-                schemaToIdsPath(
-                  field.children,
-                  (prefix ?? "") + field.key + "."
-                )
-              );
-            } else if (Utils.isValidID(field.id))
-              RETURN[UtilsServer.decodeID(field.id, this.salt)] =
-                (prefix ?? "") + field.key + ".inib";
-
-          return RETURN;
-        },
-        replaceOldPathes = Utils.findChangedProperties(
-          schemaToIdsPath((await this.getTableSchema(tableName)) ?? []),
-          schemaToIdsPath(schema)
-        );
+      const replaceOldPathes = Utils.findChangedProperties(
+        this._schemaToIdsPath((await this.getTableSchema(tableName)) ?? []),
+        this._schemaToIdsPath(schema)
+      );
       if (replaceOldPathes)
         await Promise.all(
           Object.entries(replaceOldPathes).map(async ([oldPath, newPath]) => {
@@ -251,7 +253,11 @@ export default class Inibase {
 
     await File.write(
       join(tablePath, "schema.json"),
-      JSON.stringify(decodeIdFromSchema(schema), null, 2),
+      JSON.stringify(
+        isTablePathExists ? this._decodeIdFromSchema(schema) : schema,
+        null,
+        2
+      ),
       true
     );
   }
@@ -439,7 +445,7 @@ export default class Inibase {
         break;
       case "password":
         if (Array.isArray(value)) value = value[0];
-        return typeof value === "string" && value.length === 161
+        return Utils.isPassword(value)
           ? value
           : UtilsServer.hashPassword(String(value));
       case "number":

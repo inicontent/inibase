@@ -140,22 +140,24 @@ export const findLastIdNumber = (
  * @param schema - The schema to update, defined as an array of schema objects.
  * @param oldIndex - The starting index for generating new IDs, defaults to 0.
  * @param secretKeyOrSalt - The secret key or salt for encoding IDs, can be a string, number, or Buffer.
+ * @param encodeIDs - If true, IDs will be encoded, else they will remain as numbers.
  * @returns The updated schema with encoded IDs.
  */
 export const addIdToSchema = (
   schema: Schema,
   oldIndex: number = 0,
-  secretKeyOrSalt: string | number | Buffer
+  secretKeyOrSalt: string | number | Buffer,
+  encodeIDs?: boolean
 ) =>
   schema.map((field) => {
     if (!field.id) {
       oldIndex++;
-      field.id = encodeID(oldIndex, secretKeyOrSalt);
+      field.id = encodeIDs ? encodeID(oldIndex, secretKeyOrSalt) : oldIndex;
     } else {
       if (!isNumber(field.id)) oldIndex = decodeID(field.id, secretKeyOrSalt);
       else {
         oldIndex = field.id;
-        field.id = encodeID(field.id, secretKeyOrSalt);
+        field.id = encodeIDs ? encodeID(field.id, secretKeyOrSalt) : field.id;
       }
     }
     if (
@@ -163,9 +165,10 @@ export const addIdToSchema = (
       isArrayOfObjects(field.children)
     ) {
       field.children = addIdToSchema(
-        field.children as Schema,
+        field.children,
         oldIndex,
-        secretKeyOrSalt
+        secretKeyOrSalt,
+        encodeIDs
       );
       oldIndex += field.children.length;
     }
