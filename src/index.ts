@@ -1,4 +1,4 @@
-import { unlink, rename, mkdir, readdir, open } from "node:fs/promises";
+import { unlink, rename, mkdir, readdir } from "node:fs/promises";
 import { existsSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { cpus } from "node:os";
