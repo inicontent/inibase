@@ -6,7 +6,6 @@ import {
   readFile,
   constants as fsConstants,
   unlink,
-  stat,
 } from "node:fs/promises";
 import type { WriteStream } from "node:fs";
 import { createInterface, type Interface } from "node:readline";
