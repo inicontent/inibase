@@ -19,6 +19,8 @@ import {
 } from "node:zlib";
 import { promisify } from "node:util";
 import { join } from "node:path";
+import { Worker } from "node:worker_threads";
+
 import { ComparisonOperator, FieldType } from "./index.js";
 import {
   detectFieldType,
@@ -1193,6 +1195,32 @@ export const min = async (
   return min;
 };
 
+export function createWorker(
+  functionName:
+    | "get"
+    | "remove"
+    | "search"
+    | "replace"
+    | "sum"
+    | "min"
+    | "max"
+    | "append"
+    | "count",
+  arg: any[]
+): Promise<any> {
+  return new Promise(function (resolve, reject) {
+    const worker = new Worker("./dist/file.thread.js", {
+      workerData: { functionName, arg },
+    });
+    worker.on("message", (data) => {
+      resolve(data);
+    });
+    worker.on("error", (msg) => {
+      reject(`An error ocurred: ${msg}`);
+    });
+  });
+}
+
 /**
  * Asynchronously sorts the lines in a file in the specified direction.
  *
@@ -1231,4 +1259,6 @@ export default class File {
 
   static lock = lock;
   static unlock = unlock;
+
+  static createWorker = createWorker;
 }

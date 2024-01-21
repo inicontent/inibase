@@ -491,6 +491,33 @@ await db.min("user", ["age", ...], { isActive: false });
 
 </details>
 
+<details>
+<summary>createWorker</summary>
+
+```js
+import Inibase from "inibase";
+const db = new Inibase("/database_name");
+
+// POST 10,000 USER
+await Promise.all(
+  [...Array(10)]
+    .map((x, i) => i)
+    .map(
+      (_index) =>
+        db.createWorker("post", [
+          "user",
+          [...Array(1000)].map((_, i) => ({
+            username: `username_${i + 1}`,
+            email: `email_${i + 1}@test.com`,
+            password: `password_${i + 1}`,
+          })),
+        ])
+    )
+)
+```
+
+</details>
+
 ## Config
 
 The `.env` file supports the following parameters (make sure to run command with flag --env-file=.env)

@@ -1,14 +1,13 @@
 import { unlink, rename, mkdir, readdir } from "node:fs/promises";
 import { existsSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
-import { cpus } from "node:os";
 import { scryptSync, randomBytes } from "node:crypto";
+import { Worker } from "node:worker_threads";
+
 import File from "./file.js";
 import Utils from "./utils.js";
 import UtilsServer from "./utils.server.js";
 import Config from "./config.js";
-
-process.env.UV_THREADPOOL_SIZE = cpus().length.toString();
 
 export interface Data {
   id?: number | string;
@@ -120,15 +119,24 @@ export default class Inibase {
   public database: string;
   public table: string | null;
   public pageInfo: Record<string, pageInfo>;
+  private isThreadEnabled: boolean = false;
   private totalItems: Record<string, number>;
   public salt: Buffer;
 
-  constructor(database: string, mainFolder: string = ".") {
+  constructor(
+    database: string,
+    mainFolder: string = ".",
+    _table: string | null = null,
+    _totalItems: Record<string, number> = {},
+    _pageInfo: Record<string, pageInfo> = {},
+    _isThreadEnabled: boolean = false
+  ) {
     this.database = database;
     this.folder = mainFolder;
-    this.table = null;
-    this.totalItems = {};
-    this.pageInfo = {};
+    this.table = _table;
+    this.totalItems = _totalItems;
+    this.pageInfo = _pageInfo;
+    this.isThreadEnabled = _isThreadEnabled;
 
     if (!existsSync(".env") || !process.env.INIBASE_SECRET) {
       this.salt = scryptSync(randomBytes(16), randomBytes(16), 32);
@@ -182,6 +190,29 @@ export default class Inibase {
     return new Error(errorMessage);
   }
 
+  public async createWorker(
+    functionName: "get" | "post" | "put" | "delete" | "sum" | "min" | "max",
+    arg: any[]
+  ): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const worker = new Worker("./dist/index.thread.js", {
+        workerData: {
+          _constructor: [
+            this.database,
+            this.folder,
+            this.table,
+            this.totalItems,
+            this.pageInfo,
+            true, // enable Thread
+          ],
+          functionName,
+          arg,
+        },
+      });
+      worker.on("message", resolve);
+      worker.on("error", reject);
+    });
+  }
   private _decodeIdFromSchema = (schema: Schema) =>
     schema.map((field) => {
       if (
@@ -1449,10 +1480,13 @@ export default class Inibase {
         join(tablePath),
         Array.isArray(RETURN) ? RETURN.toReversed() : RETURN
       );
-
       await Promise.all(
         Object.entries(pathesContents).map(async ([path, content]) =>
-          renameList.push(await File.append(path, content))
+          renameList.push(
+            this.isThreadEnabled
+              ? await File.createWorker("append", [path, content])
+              : await File.append(path, content)
+          )
         )
       );
 
@@ -1575,7 +1609,11 @@ export default class Inibase {
 
           await Promise.all(
             Object.entries(pathesContents).map(async ([path, content]) =>
-              renameList.push(await File.replace(path, content))
+              renameList.push(
+                this.isThreadEnabled
+                  ? await File.createWorker("replace", [path, content])
+                  : await File.replace(path, content)
+              )
             )
           );
 
@@ -1656,7 +1694,11 @@ export default class Inibase {
 
           await Promise.all(
             Object.entries(pathesContents).map(async ([path, content]) =>
-              renameList.push(await File.replace(path, content))
+              renameList.push(
+                this.isThreadEnabled
+                  ? await File.createWorker("replace", [path, content])
+                  : await File.replace(path, content)
+              )
             )
           );
 
@@ -1787,7 +1829,14 @@ export default class Inibase {
 
             await Promise.all(
               files.map(async (file) =>
-                renameList.push(await File.remove(join(tablePath, file), where))
+                renameList.push(
+                  this.isThreadEnabled
+                    ? await File.createWorker("remove", [
+                        join(tablePath, file),
+                        where,
+                      ])
+                    : await File.remove(join(tablePath, file), where)
+                )
               )
             );
 
