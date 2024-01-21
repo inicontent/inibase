@@ -115,6 +115,16 @@ declare global {
   }
 }
 
+export type ErrorCodes =
+  | "FIELD_REQUIRED"
+  | "NO_SCHEMA"
+  | "NO_ITEMS"
+  | "NO_RESULTS"
+  | "INVALID_ID"
+  | "INVALID_TYPE"
+  | "INVALID_PARAMETERS";
+export type ErrorLang = "en";
+
 export default class Inibase {
   public folder: string;
   public database: string;
@@ -146,49 +156,36 @@ export default class Inibase {
   }
 
   private throwError(
-    code: string,
-    variable?:
-      | string
-      | number
-      | (string | number)[]
-      | Record<string, string | number>,
-    language: string = "en"
+    code: ErrorCodes,
+    variable?: string | number | (string | number)[],
+    language: ErrorLang = "en"
   ): Error {
-    const errorMessages: Record<string, Record<string, string>> = {
+    const errorMessages: Record<ErrorLang, Record<ErrorCodes, string>> = {
       en: {
-        FIELD_REQUIRED: "REQUIRED: {variable}",
-        NO_SCHEMA: "NO_SCHEMA: {variable}",
-        NO_ITEMS: "NO_ITEMS: {variable}",
-        NO_DATA: "NO_DATA: {variable}",
-        INVALID_ID: "INVALID_ID: {variable}",
-        INVALID_TYPE: "INVALID_TYPE: {variable}",
-        INVALID_OPERATOR: "INVALID_OPERATOR: {variable}",
-        INVALID_PARAMETERS: "PARAMETERS: {variable}",
+        FIELD_REQUIRED: "Field {variable} is required",
+        NO_SCHEMA: "Table {variable} does't have a schema",
+        NO_ITEMS: "Table {variable} is empty",
+        NO_RESULTS: "No results found for table {variable}",
+        INVALID_ID: "The given ID(s) is/are not valid(s)",
+        INVALID_TYPE:
+          "Expect {variable} to be {variable}, got {variable} instead",
+        INVALID_PARAMETERS: "The given parameters are not valid",
       },
       // Add more languages and error messages as needed
     };
 
-    let errorMessage = errorMessages[language][code] || code;
-    if (variable) {
-      if (
-        typeof variable === "string" ||
-        typeof variable === "number" ||
-        Array.isArray(variable)
-      )
-        errorMessage = errorMessage.replaceAll(
-          `{variable}`,
-          Array.isArray(variable) ? variable.join(", ") : (variable as string)
-        );
-      else
-        Object.keys(variable).forEach(
-          (variableKey) =>
-            (errorMessage = errorMessage.replaceAll(
-              `{${variableKey}}`,
-              variable[variableKey].toString()
-            ))
-        );
-    }
-    return new Error(errorMessage);
+    let errorMessage = errorMessages[language][code];
+    if (!errorMessage) return new Error("ERR");
+    return new Error(
+      variable
+        ? Array.isArray(variable)
+          ? errorMessage.replace(
+              /\{variable\}/g,
+              () => variable.shift()?.toString() ?? ""
+            )
+          : errorMessage.replaceAll(`{variable}`, `'${variable.toString()}'`)
+        : errorMessage.replaceAll(`{variable}`, "")
+    );
   }
 
   public async createWorker(
@@ -214,6 +211,7 @@ export default class Inibase {
       worker.on("error", reject);
     });
   }
+
   private _decodeIdFromSchema = (schema: Schema) =>
     schema.map((field) => {
       if (
@@ -378,7 +376,11 @@ export default class Inibase {
               : undefined
           )
         )
-          throw this.throwError("INVALID_TYPE", [field.key, field.type]);
+          throw this.throwError("INVALID_TYPE", [
+            field.key,
+            field.type,
+            typeof data[field.key],
+          ]);
         if (
           (field.type === "array" || field.type === "object") &&
           field.children &&
@@ -1282,11 +1284,7 @@ export default class Inibase {
         !this.totalItems[tableName + "-*"],
         this.salt
       );
-      if (!lineNumbers)
-        throw this.throwError(
-          "INVALID_ID",
-          where as number | string | (number | string)[]
-        );
+      if (!lineNumbers) throw this.throwError("NO_RESULTS", tableName);
 
       if (onlyLinesNumbers)
         return Object.keys(lineNumbers).length
@@ -1471,8 +1469,6 @@ export default class Inibase {
           ...rest,
           createdAt: Date.now(),
         }))(data);
-
-      if (!RETURN) throw this.throwError("NO_DATA");
 
       RETURN = this.formatData(RETURN, schema);
 
@@ -1738,9 +1734,9 @@ export default class Inibase {
         schema
       );
       if (!lineNumbers || !lineNumbers.length)
-        throw this.throwError("NO_ITEMS", tableName);
+        throw this.throwError("NO_RESULTS", tableName);
       return this.put(tableName, data, lineNumbers);
-    } else throw this.throwError("INVALID_PARAMETERS", tableName);
+    } else throw this.throwError("INVALID_PARAMETERS");
   }
 
   delete(
@@ -1822,7 +1818,7 @@ export default class Inibase {
               )) ?? {}
             ).map(([_key, id]) => UtilsServer.encodeID(Number(id), this.salt));
 
-          if (!_id.length) throw this.throwError("NO_ITEMS", tableName);
+          if (!_id.length) throw this.throwError("NO_RESULTS", tableName);
 
           try {
             await File.lock(join(tablePath, ".tmp"));
@@ -1890,9 +1886,9 @@ export default class Inibase {
         schema
       );
       if (!lineNumbers || !lineNumbers.length)
-        throw this.throwError("NO_ITEMS", tableName);
+        throw this.throwError("NO_RESULTS", tableName);
       return this.delete(tableName, lineNumbers);
-    } else throw this.throwError("INVALID_PARAMETERS", tableName);
+    } else throw this.throwError("INVALID_PARAMETERS");
     return null;
   }
 
