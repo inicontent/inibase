@@ -253,6 +253,25 @@ export const isValidID = (input: any): input is string => {
 };
 
 /**
+ * Checks if a given string is a valid JSON.
+ *
+ * @param {string} str - The string to be checked.
+ * @returns {boolean} Returns true if the string is valid JSON, otherwise false.
+ */
+function isJSON(str: string): boolean {
+  try {
+    // Attempt to parse the string as JSON
+    JSON.parse(str);
+
+    // If parsing succeeds, return true
+    return true;
+  } catch (error) {
+    // If an error occurs during parsing, return false
+    return false;
+  }
+}
+
+/**
  * Identifies and returns properties that have changed between two objects.
  *
  * @param obj1 - The first object for comparison, with string keys and values.
@@ -304,7 +323,8 @@ export const detectFieldType = (
     else if (availableTypes.includes("url") && isURL(input)) return "url";
     else if (availableTypes.includes("password") && isPassword(input))
       return "password";
-    else if (availableTypes.includes("date") && isDate(input)) return "date";
+    else if (availableTypes.includes("json") && isJSON(input)) return "json";
+    else if (availableTypes.includes("json") && isDate(input)) return "json";
     else if (availableTypes.includes("string") && isString(input))
       return "string";
     else if (availableTypes.includes("ip") && isIP(input)) return "ip";
@@ -384,6 +404,8 @@ export const validateFieldType = (
       else return isNumber(value) || isValidID(value);
     case "id":
       return isNumber(value) || isValidID(value);
+    case "json":
+      return isJSON(value) || Array.isArray(value) || isObject(value);
     default:
       return false;
   }

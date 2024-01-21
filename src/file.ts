@@ -204,17 +204,10 @@ const joinMultidimensionalArray = (
  * If the input is a single value, it is directly secured.
  *
  * @param input - A value or array of values (string, number, boolean, null).
- * @param secretKey - Optional secret key for encoding, can be a string or Buffer.
  * @returns The secured and/or joined string.
  */
 export const encode = (
-  input:
-    | string
-    | number
-    | boolean
-    | null
-    | (string | number | boolean | null)[],
-  secretKey?: string | Buffer
+  input: string | number | boolean | null | (string | number | boolean | null)[]
 ): string | number | boolean | null => {
   // Use the optimized secureArray and joinMultidimensionalArray functions.
   return Array.isArray(input)
@@ -316,6 +309,8 @@ const decodeHelper = (
       decodeHelper(v, fieldType, fieldChildrenType, secretKey)
     );
   switch (fieldType as FieldType) {
+    case "json":
+      return JSON.parse(value as string);
     case "number":
       return isNumber(value) ? Number(value) : null;
     case "boolean":

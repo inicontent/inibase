@@ -29,6 +29,7 @@ export type FieldType =
   | "password"
   | "html"
   | "ip"
+  | "json"
   | "id";
 
 type FieldDefault = {
@@ -377,10 +378,7 @@ export default class Inibase {
               : undefined
           )
         )
-          throw this.throwError(
-            "INVALID_TYPE",
-            field.key + " " + field.type + " " + data[field.key]
-          );
+          throw this.throwError("INVALID_TYPE", [field.key, field.type]);
         if (
           (field.type === "array" || field.type === "object") &&
           field.children &&
@@ -487,6 +485,8 @@ export default class Inibase {
         return Utils.isNumber(value)
           ? value
           : UtilsServer.decodeID(value as string, this.salt);
+      case "json":
+        return JSON.stringify(value);
       default:
         return value;
     }

@@ -105,6 +105,7 @@ Ps: Testing by default with `user` table, with username, email, password fields 
   - [x] IP
   - [x] HTML
   - [x] Id
+  - [x] JSON
 - [ ] TO-DO:
   - [x] Improve caching
   - [x] Commenting the code
