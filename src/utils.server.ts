@@ -9,6 +9,7 @@ import {
   createHash,
 } from "node:crypto";
 import { isArrayOfObjects, isNumber, isValidID } from "./utils.js";
+import { inspect } from "node:util";
 
 /**
  * Generates a hashed password using SHA-256.
@@ -175,42 +176,9 @@ export const addIdToSchema = (
     return field;
   });
 
-function sortObject(obj: Record<any, any>): Record<any, any> {
-  if (typeof obj !== "object" || obj === null) return obj;
-
-  if (Array.isArray(obj)) return obj.toSorted().map(sortObject);
-
-  const sorted: Record<any, any> = {};
-  const keys = Object.keys(obj).sort();
-  const length = keys.length;
-
-  for (let i = 0; i < length; i++) {
-    const key = keys[i];
-    sorted[key] = sortObject(obj[key]);
-  }
-
-  return sorted;
-}
-
-function stringifyObject(obj: Record<any, any>): string {
-  if (typeof obj !== "object" || obj === null) return String(obj);
-
-  if (Array.isArray(obj))
-    return "[" + obj.map((value) => stringifyObject(value)).join(",") + "]";
-
-  return (
-    "{" +
-    Object.keys(obj)
-      .toSorted()
-      .map((key) => `${key}:${stringifyObject(obj[key])}`)
-      .join(",") +
-    "}"
-  );
-}
-
 export const hashObject = (obj: any): string =>
   createHash("sha256")
-    .update(stringifyObject(sortObject(obj)))
+    .update(inspect(obj, { sorted: true }))
     .digest("hex");
 
 export default class UtilsServer {
