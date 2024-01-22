@@ -1,4 +1,4 @@
-import { type FieldType, type Data, ComparisonOperator } from "./index.js";
+import type { FieldType, Data, ComparisonOperator } from "./index.js";
 
 /**
  * Type guard function to check if the input is an array of objects.
