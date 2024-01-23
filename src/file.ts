@@ -230,7 +230,7 @@ const unSecureArray = (arr_str: any[] | any): any[] | any =>
  * @param input - Encoded string.
  * @returns Decoded string or null if input is empty.
  */
-const unSecureString = (input: string): string | null => {
+const unSecureString = (input: string): string | number | null => {
   // Define a mapping of encoded characters to their original symbols.
   const replacements: Record<string, string> = {
     "&lt;": "<",
@@ -249,12 +249,14 @@ const unSecureString = (input: string): string | null => {
   };
 
   // Replace encoded characters with their original symbols using the defined mapping.
-  return (
+  const decodedString =
     input.replace(
       /%(2C|7C|26|24|23|40|5E|3A|21|3B|\\n|\\r)/g,
       (match) => replacements[match]
-    ) || null
-  );
+    ) || null;
+
+  if (decodedString === null) return null;
+  return isNumber(decodedString) ? Number(decodedString) : decodedString;
 };
 
 /**
