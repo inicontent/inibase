@@ -6,6 +6,8 @@ import {
   readFile,
   constants as fsConstants,
   unlink,
+  copyFile,
+  appendFile,
 } from "node:fs/promises";
 import type { WriteStream } from "node:fs";
 import { createInterface, type Interface } from "node:readline";
@@ -35,25 +37,28 @@ import Config from "./config.js";
 const gzip = promisify(gzipAsync);
 const gunzip = promisify(gunzipAsync);
 
-export const lock = async (folderPath: string): Promise<void> => {
+export const lock = async (
+  folderPath: string,
+  prefix?: string
+): Promise<void> => {
   let lockFile,
-    lockFilePath = join(folderPath, "locked.inib");
+    lockFilePath = join(folderPath, `${prefix ?? ""}.locked`);
   try {
     lockFile = await open(lockFilePath, "wx");
     return;
   } catch ({ message }: any) {
     if (message.split(":")[0] === "EEXIST")
       return await new Promise<any>((resolve, reject) =>
-        setTimeout(() => resolve(lock(folderPath)), 13)
+        setTimeout(() => resolve(lock(folderPath, prefix)), 13)
       );
   } finally {
     await lockFile?.close();
   }
 };
 
-export const unlock = async (folderPath: string) => {
+export const unlock = async (folderPath: string, prefix?: string) => {
   try {
-    await unlink(join(folderPath, "locked.inib"));
+    await unlink(join(folderPath, `${prefix ?? ""}.locked`));
   } catch {}
 };
 
@@ -608,34 +613,42 @@ export const append = async (
 ): Promise<string[]> => {
   const fileTempPath = filePath.replace(/([^/]+)\/?$/, `.tmp/$1`);
   if (await isExists(filePath)) {
-    let fileHandle, fileTempHandle, rl;
-    try {
-      fileHandle = await open(filePath, "r");
-      fileTempHandle = await open(fileTempPath, "w");
-      rl = readLineInternface(fileHandle);
-      let isAppended = false;
-
-      await _pipeline(
-        rl,
-        fileTempHandle.createWriteStream(),
-        new Transform({
-          transform(line, encoding, callback) {
-            if (!isAppended) {
-              isAppended = true;
-              return callback(
-                null,
-                `${Array.isArray(data) ? data.join("\n") : data}\n` +
-                  (line.length ? `${line}\n` : "")
-              );
-            } else return callback(null, `${line}\n`);
-          },
-        })
+    if (!Config.isReverseEnabled && !Config.isCompressionEnabled) {
+      await copyFile(filePath, fileTempPath);
+      await appendFile(
+        fileTempPath,
+        `${Array.isArray(data) ? data.join("\n") : data}\n`
       );
-    } finally {
-      // Ensure that file handles are closed, even if an error occurred
-      rl?.close();
-      await fileHandle?.close();
-      await fileTempHandle?.close();
+    } else {
+      let fileHandle, fileTempHandle, rl;
+      try {
+        fileHandle = await open(filePath, "r");
+        fileTempHandle = await open(fileTempPath, "w");
+        rl = readLineInternface(fileHandle);
+        let isAppended = false;
+
+        await _pipeline(
+          rl,
+          fileTempHandle.createWriteStream(),
+          new Transform({
+            transform(line, encoding, callback) {
+              if (!isAppended) {
+                isAppended = true;
+                return callback(
+                  null,
+                  `${Array.isArray(data) ? data.join("\n") : data}\n` +
+                    (line.length ? `${line}\n` : "")
+                );
+              } else return callback(null, `${line}\n`);
+            },
+          })
+        );
+      } finally {
+        // Ensure that file handles are closed, even if an error occurred
+        rl?.close();
+        await fileHandle?.close();
+        await fileTempHandle?.close();
+      }
     }
   } else
     await write(

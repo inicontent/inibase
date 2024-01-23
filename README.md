@@ -519,9 +519,9 @@ await Promise.all(
 
 </details>
 
-## Config
+## Config (.env)
 
-The `.env` file supports the following parameters (make sure to run command with flag --env-file=.env)
+The `.env` file supports the following parameters (make sure to run commands with flag --env-file=.env)
 
 ```ini
 # Auto generated secret key, will be using for encrypting the IDs
@@ -529,6 +529,9 @@ INIBASE_SECRET=
 
 INIBASE_COMPRESSION=true
 INIBASE_CACHE=true
+
+# Prepend new items to the beginning of file 
+INIBASE_REVERSE=true
 ```
 
 ## License
