@@ -9,7 +9,6 @@ import {
   createHash,
 } from "node:crypto";
 import { isArrayOfObjects, isNumber, isValidID } from "./utils.js";
-import { inspect } from "node:util";
 
 /**
  * Generates a hashed password using SHA-256.
@@ -176,10 +175,8 @@ export const addIdToSchema = (
     return field;
   });
 
-export const hashObject = (obj: any): string =>
-  createHash("sha256")
-    .update(inspect(obj, { sorted: true }))
-    .digest("hex");
+export const hashString = (str: string): string =>
+  createHash("sha256").update(str).digest("hex");
 
 export default class UtilsServer {
   static encodeID = encodeID;
@@ -189,5 +186,5 @@ export default class UtilsServer {
   static findLastIdNumber = findLastIdNumber;
   static addIdToSchema = addIdToSchema;
 
-  static hashObject = hashObject;
+  static hashString = hashString;
 }
