@@ -8,6 +8,7 @@ import File from "./file.js";
 import Utils from "./utils.js";
 import UtilsServer from "./utils.server.js";
 import Config from "./config.js";
+import { inspect } from "node:util";
 
 export interface Data {
   id?: number | string;
@@ -266,6 +267,8 @@ export default class Inibase {
     if (!isTablePathExists) await mkdir(tablePath, { recursive: true });
     if (!(await File.isExists(join(tablePath, ".tmp"))))
       await mkdir(join(tablePath, ".tmp"));
+    if (!(await File.isExists(join(tablePath, ".cache"))))
+      await mkdir(join(tablePath, ".cache"));
     if (await File.isExists(tableSchemaPath)) {
       // update columns files names based on field id
       const replaceOldPathes = Utils.findChangedProperties(
@@ -1054,7 +1057,6 @@ export default class Inibase {
           searchOperator = "=";
           searchComparedAtValue = value as number | boolean;
         }
-
         const [searchResult, totalLines, linesNumbers] = await File.search(
           join(tablePath, key + ".inib"),
           searchOperator ?? "=",
@@ -1134,12 +1136,9 @@ export default class Inibase {
 
   public async clearCache(tablePath: string) {
     await Promise.all(
-      (await readdir(join(tablePath, ".tmp")))
-        ?.filter(
-          (fileName: string) =>
-            !["pagination.inib", "locked.inib"].includes(fileName)
-        )
-        .map(async (file) => unlink(join(tablePath, ".tmp", file)))
+      (await readdir(join(tablePath, ".cache")))
+        ?.filter((fileName: string) => fileName !== "pagination.inib")
+        .map(async (file) => unlink(join(tablePath, ".cache", file)))
     );
   }
 
@@ -1213,11 +1212,11 @@ export default class Inibase {
       );
       if (
         Config.isCacheEnabled &&
-        (await File.isExists(join(tablePath, ".tmp", "pagination.inib")))
+        (await File.isExists(join(tablePath, ".cache", "pagination.inib")))
       )
         this.totalItems[tableName + "-*"] = Number(
           (
-            await File.read(join(tablePath, ".tmp", "pagination.inib"), true)
+            await File.read(join(tablePath, ".cache", "pagination.inib"), true)
           ).split(",")[1]
         );
       else {
@@ -1235,7 +1234,7 @@ export default class Inibase {
 
         if (Config.isCacheEnabled)
           await File.write(
-            join(tablePath, ".tmp", "pagination.inib"),
+            join(tablePath, ".cache", "pagination.inib"),
             `${lastId},${totalItems}`,
             true
           );
@@ -1311,8 +1310,8 @@ export default class Inibase {
       if (Config.isCacheEnabled)
         cachedFilePath = join(
           tablePath,
-          ".tmp",
-          `${UtilsServer.hashObject(where as Criteria)}.inib`
+          ".cache",
+          `${UtilsServer.hashString(inspect(where, { sorted: true }))}.inib`
         );
 
       if (Config.isCacheEnabled && (await File.isExists(cachedFilePath))) {
@@ -1427,19 +1426,23 @@ export default class Inibase {
     let RETURN: Data | Data[] | null | undefined;
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
 
+    const keys = UtilsServer.hashString(
+      Object.keys(Array.isArray(data) ? data[0] : data).join(".")
+    );
+
     let lastId = 0,
       totalItems = 0,
       renameList: string[][] = [];
     try {
-      await File.lock(join(tablePath, ".tmp"));
+      await File.lock(join(tablePath, ".tmp"), keys);
 
       if (await File.isExists(join(tablePath, "id.inib"))) {
         if (
           Config.isCacheEnabled &&
-          (await File.isExists(join(tablePath, ".tmp", "pagination.inib")))
+          (await File.isExists(join(tablePath, ".cache", "pagination.inib")))
         )
           [lastId, totalItems] = (
-            await File.read(join(tablePath, ".tmp", "pagination.inib"), true)
+            await File.read(join(tablePath, ".cache", "pagination.inib"), true)
           )
             .split(",")
             .map(Number);
@@ -1473,8 +1476,12 @@ export default class Inibase {
       RETURN = this.formatData(RETURN, schema);
 
       const pathesContents = this.joinPathesContents(
-        join(tablePath),
-        Array.isArray(RETURN) ? RETURN.toReversed() : RETURN
+        tablePath,
+        Config.isReverseEnabled
+          ? Array.isArray(RETURN)
+            ? RETURN.toReversed()
+            : RETURN
+          : RETURN
       );
       await Promise.all(
         Object.entries(pathesContents).map(async ([path, content]) =>
@@ -1496,7 +1503,7 @@ export default class Inibase {
       if (Config.isCacheEnabled) {
         await this.clearCache(tablePath);
         await File.write(
-          join(tablePath, ".tmp", "pagination.inib"),
+          join(tablePath, ".cache", "pagination.inib"),
           `${lastId},${
             totalItems + (Array.isArray(RETURN) ? RETURN.length : 1)
           }`,
@@ -1518,7 +1525,7 @@ export default class Inibase {
         await Promise.allSettled(
           renameList.map(async ([tempPath, _]) => unlink(tempPath))
         );
-      await File.unlock(join(tablePath, ".tmp"));
+      await File.unlock(join(tablePath, ".tmp"), keys);
     }
   }
 
@@ -1587,18 +1594,22 @@ export default class Inibase {
           UtilsServer.decodeID((data as Data).id as string, this.salt)
         );
       } else {
-        const pathesContents = this.joinPathesContents(
-          join(tablePath),
-          Utils.isArrayOfObjects(data)
-            ? data.map((item: any) => ({
-                ...(({ id, ...restOfData }) => restOfData)(item),
-                updatedAt: Date.now(),
-              }))
-            : {
-                ...(({ id, ...restOfData }) => restOfData)(data as Data),
-                updatedAt: Date.now(),
-              }
-        );
+        let totalItems: number;
+        if (
+          Config.isCacheEnabled &&
+          (await File.isExists(join(tablePath, ".cache", "pagination.inib")))
+        )
+          totalItems = (
+            await File.read(join(tablePath, ".cache", "pagination.inib"), true)
+          )
+            .split(",")
+            .map(Number)[1];
+        else totalItems = await File.count(join(tablePath, "id.inib"));
+
+        const pathesContents = this.joinPathesContents(tablePath, {
+          ...(({ id, ...restOfData }) => restOfData)(data as Data),
+          updatedAt: Date.now(),
+        });
 
         try {
           await File.lock(join(tablePath, ".tmp"));
@@ -1607,8 +1618,22 @@ export default class Inibase {
             Object.entries(pathesContents).map(async ([path, content]) =>
               renameList.push(
                 this.isThreadEnabled
-                  ? await File.createWorker("replace", [path, content])
-                  : await File.replace(path, content)
+                  ? await File.createWorker("replace", [
+                      path,
+                      Utils.combineObjects(
+                        [...Array(totalItems)].map((_, i) => ({
+                          [`${i + 1}`]: content,
+                        }))
+                      ),
+                    ])
+                  : await File.replace(
+                      path,
+                      Utils.combineObjects(
+                        [...Array(totalItems)].map((_, i) => ({
+                          [`${i + 1}`]: content,
+                        }))
+                      )
+                    )
               )
             )
           );
@@ -1620,7 +1645,7 @@ export default class Inibase {
           );
 
           if (Config.isCacheEnabled)
-            await this.clearCache(join(tablePath, ".tmp"));
+            await this.clearCache(join(tablePath, ".cache"));
 
           if (returnPostedData)
             return this.get(
@@ -1666,7 +1691,7 @@ export default class Inibase {
         const pathesContents = Object.fromEntries(
           Object.entries(
             this.joinPathesContents(
-              join(tablePath),
+              tablePath,
               Utils.isArrayOfObjects(data)
                 ? data.map((item: any) => ({
                     ...item,
@@ -1685,8 +1710,15 @@ export default class Inibase {
             ),
           ])
         );
+
+        const keys = UtilsServer.hashString(
+          Object.keys(pathesContents)
+            .map((path) => path.replaceAll(".inib", ""))
+            .join(".")
+        );
+
         try {
-          await File.lock(join(tablePath, ".tmp"));
+          await File.lock(join(tablePath, ".tmp"), keys);
 
           await Promise.all(
             Object.entries(pathesContents).map(async ([path, content]) =>
@@ -1721,7 +1753,7 @@ export default class Inibase {
             await Promise.allSettled(
               renameList.map(async ([tempPath, _]) => unlink(tempPath))
             );
-          await File.unlock(join(tablePath, ".tmp"));
+          await File.unlock(join(tablePath, ".tmp"), keys);
         }
       }
     } else if (Utils.isObject(where)) {
@@ -1767,7 +1799,7 @@ export default class Inibase {
       try {
         await File.lock(join(tablePath, ".tmp"));
         await Promise.all(
-          (await readdir(join(tablePath)))
+          (await readdir(tablePath))
             ?.filter((fileName: string) => fileName.endsWith(".inib"))
             .map(async (file) => unlink(join(tablePath, file)))
         );
@@ -1802,8 +1834,8 @@ export default class Inibase {
         Utils.isNumber(where)
       ) {
         // "where" in this case, is the line(s) number(s) and not id(s)
-        const files = (await readdir(join(tablePath)))?.filter(
-          (fileName: string) => fileName.endsWith(".inib")
+        const files = (await readdir(tablePath))?.filter((fileName: string) =>
+          fileName.endsWith(".inib")
         );
 
         if (files.length) {
@@ -1845,11 +1877,13 @@ export default class Inibase {
             if (Config.isCacheEnabled) {
               await this.clearCache(tablePath);
               if (
-                await File.isExists(join(tablePath, ".tmp", "pagination.inib"))
+                await File.isExists(
+                  join(tablePath, ".cache", "pagination.inib")
+                )
               ) {
                 let [lastId, totalItems] = (
                   await File.read(
-                    join(tablePath, ".tmp", "pagination.inib"),
+                    join(tablePath, ".cache", "pagination.inib"),
                     true
                   )
                 )
@@ -1857,7 +1891,7 @@ export default class Inibase {
                   .map(Number);
 
                 await File.write(
-                  join(tablePath, ".tmp", "pagination.inib"),
+                  join(tablePath, ".cache", "pagination.inib"),
                   `${lastId},${
                     totalItems - (Array.isArray(where) ? where.length : 1)
                   }`,
