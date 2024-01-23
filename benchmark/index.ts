@@ -8,7 +8,7 @@ const bench = new Bench();
 if (await isExists("test")) await rm("test", { recursive: true });
 
 const db = new Inibase("test");
-let i = 0;
+let i;
 await db.setTableSchema("user", [
   {
     key: "username",
@@ -23,18 +23,51 @@ await db.setTableSchema("user", [
 ]);
 
 bench
-  .add("POST", async () => {
-    await db.post("user", {
-      username: `username`,
-      email: `email@test.com`,
-    });
-  })
-  .add("PUT", async () => {
-    await db.put("user", { username: "edited" }, 1);
-  })
-  .add("GET", async () => {
-    await db.get("user", 1);
-  })
+  .add(
+    "POST",
+    async () => {
+      await db.post("user", {
+        username: `username_${i}`,
+        email: `email_${i}@test.com`,
+      });
+    },
+    {
+      beforeAll() {
+        i = 0;
+      },
+      beforeEach() {
+        i++;
+      },
+    }
+  )
+  .add(
+    "PUT",
+    async () => {
+      await db.put("user", { username: `edited_${i}` }, i);
+    },
+    {
+      beforeAll() {
+        i = 0;
+      },
+      beforeEach() {
+        i++;
+      },
+    }
+  )
+  .add(
+    "GET",
+    async () => {
+      await db.get("user", i);
+    },
+    {
+      beforeAll() {
+        i = 0;
+      },
+      beforeEach() {
+        i++;
+      },
+    }
+  )
   .add("DELETE", async () => {
     await db.delete("user", 1);
   });
