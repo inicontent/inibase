@@ -43,21 +43,21 @@ type FieldStringType = {
   children?: never;
 };
 type FieldStringArrayType = {
-  type: Array<Exclude<FieldType, "array" | "object">>;
+  type: Array<Exclude<FieldType, "object">>;
   children?: never;
 };
 type FieldArrayType = {
   type: "array";
   children:
     | Exclude<FieldType, "array">
-    | Exclude<FieldType, "array">[]
+    | Array<Exclude<FieldType, "array">>
     | Schema;
 };
 type FieldArrayArrayType = {
   type: Array<"array" | Exclude<FieldType, "array" | "object">>;
   children:
     | Exclude<FieldType, "array" | "object">
-    | Exclude<FieldType, "array" | "object">[];
+    | Array<Exclude<FieldType, "array" | "object">>;
 };
 type FieldObjectType = {
   type: "object";
@@ -67,7 +67,8 @@ type FieldObjectType = {
 export type Field = FieldDefault &
   (
     | FieldStringType
-    | (FieldStringArrayType & FieldArrayArrayType)
+    | FieldStringArrayType
+    | FieldArrayArrayType
     | FieldObjectType
     | FieldArrayType
   );
@@ -381,7 +382,7 @@ export default class Inibase {
         )
           throw this.throwError("INVALID_TYPE", [
             field.key,
-            field.type,
+            Array.isArray(field.type) ? field.type.join(", ") : field.type,
             typeof data[field.key],
           ]);
         if (
