@@ -110,6 +110,7 @@ Ps: Testing by default with `user` table, with username, email, password fields 
   - [x] Improve caching
   - [x] Commenting the code
   - [ ] Add Backup feature (generate a tar.gz)
+  - [ ] Add Custom field validation property to schema (using RegEx?)
 - [ ] Features:
   - [ ] Encryption
   - [x] Data Compression
