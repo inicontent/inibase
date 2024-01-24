@@ -109,6 +109,7 @@ Ps: Testing by default with `user` table, with username, email, password fields 
 - [ ] TO-DO:
   - [x] Improve caching
   - [x] Commenting the code
+  - [ ] Add Backup feature (generate a tar.gz)
 - [ ] Features:
   - [ ] Encryption
   - [x] Data Compression
