@@ -13,13 +13,7 @@ import type { WriteStream } from "node:fs";
 import { createInterface, type Interface } from "node:readline";
 import { Transform, type Transform as TransformType } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import {
-  createGzip,
-  createGunzip,
-  gzip as gzipAsync,
-  gunzip as gunzipAsync,
-} from "node:zlib";
-import { promisify } from "node:util";
+import { createGzip, createGunzip, gunzipSync, gzipSync } from "node:zlib";
 import { join } from "node:path";
 import { Worker } from "node:worker_threads";
 
@@ -33,9 +27,6 @@ import {
 } from "./utils.js";
 import { encodeID, comparePassword } from "./utils.server.js";
 import Config from "./config.js";
-
-const gzip = promisify(gzipAsync);
-const gunzip = promisify(gunzipAsync);
 
 export const lock = async (
   folderPath: string,
@@ -70,7 +61,7 @@ export const write = async (
   await writeFile(
     filePath,
     Config.isCompressionEnabled && !disableCompression
-      ? await gzip(String(data))
+      ? gzipSync(String(data))
       : String(data)
   );
 };
@@ -80,7 +71,7 @@ export const read = async (
   disableCompression: boolean = false
 ) => {
   return Config.isCompressionEnabled && !disableCompression
-    ? (await gunzip(await readFile(filePath))).toString()
+    ? gunzipSync(await readFile(filePath)).toString()
     : (await readFile(filePath)).toString();
 };
 
@@ -1247,7 +1238,9 @@ export const sort = async (
   sortDirection: 1 | -1 | "asc" | "desc",
   lineNumbers?: number | number[],
   _lineNumbersPerChunk: number = 100000
-): Promise<void> => {};
+): Promise<void> => {
+  // return Number((await exec(`wc -l < ${filePath}`)).stdout.trim());
+};
 
 export default class File {
   static get = get;
