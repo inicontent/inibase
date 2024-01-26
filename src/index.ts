@@ -2134,12 +2134,14 @@ export default class Inibase {
     // Construct the sort command dynamically based on the number of files for sorting
     let index = 2;
     const sortColumns = sortArray
-      .map(
-        ([key, ascending], i) =>
-          `-k${i + index},${i + index}${
-            this.getField(key, schema)?.type === "number" ? "n" : ""
-          }${!ascending ? "r" : ""}`
-      )
+      .map(([key, ascending], i) => {
+        const field = this.getField(key, schema);
+        if (field)
+          return `-k${i + index},${i + index}${
+            field.type === "number" ? "n" : ""
+          }${!ascending ? "r" : ""}`;
+        else return "";
+      })
       .join(" ");
     const sortCommand = `sort ${sortColumns}`;
 
