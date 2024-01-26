@@ -9,6 +9,10 @@ import {
   createHash,
 } from "node:crypto";
 import { isArrayOfObjects, isNumber, isValidID } from "./utils.js";
+import { promisify } from "node:util";
+import { exec as execAsync } from "node:child_process";
+
+export const exec = promisify(execAsync);
 
 /**
  * Generates a hashed password using SHA-256.
@@ -187,4 +191,6 @@ export default class UtilsServer {
   static addIdToSchema = addIdToSchema;
 
   static hashString = hashString;
+
+  static exec = exec;
 }
