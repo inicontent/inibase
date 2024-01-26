@@ -84,7 +84,7 @@ Ps: Testing by default with `user` table, with username, email, password fields 
     - [x] Pagination
     - [x] Criteria
     - [x] Columns
-    - [ ] Order By
+    - [x] Order By (using UNIX commands)
   - [x] POST
   - [x] PUT
   - [x] DELETE
