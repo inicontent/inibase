@@ -472,6 +472,15 @@ export function FormatObjectCriteriaValue(
   }
 }
 
+type ValidKey = number | string;
+export const swapKeyValue = <K extends ValidKey, V extends ValidKey>(
+  object: Record<K, V>
+): Record<V, K> =>
+  Object.entries(object).reduce(
+    (swapped, [key, value]) => ({ ...swapped, [value as ValidKey]: key }),
+    {} as Record<V, K>
+  );
+
 export default class Utils {
   static isNumber = isNumber;
   static isObject = isObject;
@@ -493,4 +502,5 @@ export default class Utils {
   static validateFieldType = validateFieldType;
   static isArrayOfNulls = isArrayOfNulls;
   static FormatObjectCriteriaValue = FormatObjectCriteriaValue;
+  static swapKeyValue = swapKeyValue;
 }
