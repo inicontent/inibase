@@ -24,6 +24,7 @@ import {
   isNumber,
   isObject,
   isPassword,
+  swapKeyValue,
 } from "./utils.js";
 import { encodeID, comparePassword } from "./utils.server.js";
 import Config from "./config.js";
@@ -119,7 +120,29 @@ export const isExists = async (path: string) => {
   }
 };
 
-const delimiters = [",", "|", "&", "$", "#", "@", "^", ":", "!", ";"];
+const delimiters = {
+  ",": "%2C",
+  "|": "%7C",
+  "&": "%26",
+  $: "%24",
+  "#": "%23",
+  "@": "%40",
+  "^": "%5E",
+  ":": "%3A",
+  "!": "%21",
+  ";": "%3B",
+  "`": "%60",
+  "=": "%3D",
+  ">": "%3E",
+  "<": "%3C",
+  "+": "%2B",
+};
+
+const replacements: Record<string, string> = {
+  ...delimiters,
+  "\n": "\\n",
+  "\r": "\\r",
+};
 
 /**
  * Secures input by encoding/escaping characters.
@@ -141,22 +164,6 @@ const secureString = (
       input.replace(/%(?![0-9][0-9a-fA-F]+)/g, "")
     );
   }
-  const replacements: Record<string, string> = {
-    "<": "&lt;",
-    ">": "&gt;",
-    ",": "%2C",
-    "|": "%7C",
-    "&": "%26",
-    $: "%24",
-    "#": "%23",
-    "@": "%40",
-    "^": "%5E",
-    ":": "%3A",
-    "!": "%21",
-    ";": "%3B",
-    "\n": "\\n",
-    "\r": "\\r",
-  };
 
   // Replace characters using a single regular expression.
   return decodedInput.replace(
@@ -191,7 +198,7 @@ const joinMultidimensionalArray = (
       joinMultidimensionalArray(ar, delimiter_index)
     );
   delimiter_index--;
-  return arr.join(delimiters[delimiter_index]);
+  return arr.join(Object.keys(delimiters)[delimiter_index]);
 };
 
 /**
@@ -228,26 +235,11 @@ const unSecureArray = (arr_str: any[] | any): any[] | any =>
  */
 const unSecureString = (input: string): string | number | null => {
   // Define a mapping of encoded characters to their original symbols.
-  const replacements: Record<string, string> = {
-    "&lt;": "<",
-    "%2C": ",",
-    "%7C": "|",
-    "%26": "&",
-    "%24": "$",
-    "%23": "#",
-    "%40": "@",
-    "%5E": "^",
-    "%3A": ":",
-    "%21": "!",
-    "%3B": ";",
-    "\\n": "\n",
-    "\\r": "\r",
-  };
 
   // Replace encoded characters with their original symbols using the defined mapping.
   const decodedString =
     input.replace(
-      /%(2C|7C|26|24|23|40|5E|3A|21|3B|\\n|\\r)/g,
+      RegExp(Object.keys(swapKeyValue(replacements)).join("|"), "g"),
       (match) => replacements[match]
     ) || null;
 
@@ -275,7 +267,7 @@ const reverseJoinMultidimensionalArray = (
       : arr.split(delimiter);
 
   // Identify available delimiters in the input.
-  const availableDelimiters = delimiters.filter((delimiter) =>
+  const availableDelimiters = Object.keys(delimiters).filter((delimiter) =>
     joinedString.includes(delimiter)
   );
 
