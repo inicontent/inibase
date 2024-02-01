@@ -23,10 +23,9 @@ import {
   isArrayOfArrays,
   isNumber,
   isObject,
-  isPassword,
   swapKeyValue,
 } from "./utils.js";
-import { encodeID, comparePassword } from "./utils.server.js";
+import { encodeID, compare } from "./utils.server.js";
 import Config from "./config.js";
 
 export const lock = async (
@@ -692,222 +691,6 @@ export const remove = async (
 };
 
 /**
- * Evaluates a comparison between two values based on a specified operator and field types.
- *
- * @param operator - The comparison operator (e.g., '=', '!=', '>', '<', '>=', '<=', '[]', '![]', '*', '!*').
- * @param originalValue - The value to compare, can be a single value or an array of values.
- * @param comparedAtValue - The value or values to compare against.
- * @param fieldType - Optional type of the field to guide comparison (e.g., 'password', 'boolean').
- * @param fieldChildrenType - Optional type for child elements in array inputs.
- * @returns boolean - Result of the comparison operation.
- *
- * Note: Handles various data types and comparison logic, including special handling for passwords and regex patterns.
- */
-const handleComparisonOperator = (
-  operator: ComparisonOperator,
-  originalValue:
-    | string
-    | number
-    | boolean
-    | null
-    | (string | number | boolean | null)[],
-  comparedAtValue:
-    | string
-    | number
-    | boolean
-    | null
-    | (string | number | boolean | null)[],
-  fieldType?: FieldType | FieldType[],
-  fieldChildrenType?: FieldType | FieldType[]
-): boolean => {
-  // Determine the field type if it's an array of potential types.
-  if (Array.isArray(fieldType)) {
-    fieldType = detectFieldType(String(originalValue), fieldType);
-  }
-
-  // Handle comparisons involving arrays.
-  if (Array.isArray(comparedAtValue) && !["[]", "![]"].includes(operator)) {
-    return comparedAtValue.some((comparedAtValueSingle) =>
-      handleComparisonOperator(
-        operator,
-        originalValue,
-        comparedAtValueSingle,
-        fieldType
-      )
-    );
-  }
-
-  // Switch statement for different comparison operators.
-  switch (operator) {
-    // Equal (Case Insensitive for strings, specific handling for passwords and booleans).
-    case "=":
-      return isEqual(originalValue, comparedAtValue, fieldType);
-
-    // Not Equal.
-    case "!=":
-      return !isEqual(originalValue, comparedAtValue, fieldType);
-
-    // Greater Than.
-    case ">":
-      return (
-        originalValue !== null &&
-        comparedAtValue !== null &&
-        originalValue > comparedAtValue
-      );
-
-    // Less Than.
-    case "<":
-      return (
-        originalValue !== null &&
-        comparedAtValue !== null &&
-        originalValue < comparedAtValue
-      );
-
-    // Greater Than or Equal.
-    case ">=":
-      return (
-        originalValue !== null &&
-        comparedAtValue !== null &&
-        originalValue >= comparedAtValue
-      );
-
-    // Less Than or Equal.
-    case "<=":
-      return (
-        originalValue !== null &&
-        comparedAtValue !== null &&
-        originalValue <= comparedAtValue
-      );
-
-    // Array Contains (equality check for arrays).
-    case "[]":
-      return isArrayEqual(originalValue, comparedAtValue);
-
-    // Array Does Not Contain.
-    case "![]":
-      return !isArrayEqual(originalValue, comparedAtValue);
-
-    // Wildcard Match (using regex pattern).
-    case "*":
-      return isWildcardMatch(originalValue, comparedAtValue);
-
-    // Not Wildcard Match.
-    case "!*":
-      return !isWildcardMatch(originalValue, comparedAtValue);
-
-    // Unsupported operator.
-    default:
-      throw new Error(`Unsupported operator: ${operator}`);
-  }
-};
-
-/**
- * Helper function to check equality based on the field type.
- *
- * @param originalValue - The original value.
- * @param comparedAtValue - The value to compare against.
- * @param fieldType - Type of the field.
- * @returns boolean - Result of the equality check.
- */
-const isEqual = (
-  originalValue:
-    | string
-    | number
-    | boolean
-    | null
-    | (string | number | boolean | null)[],
-  comparedAtValue:
-    | string
-    | number
-    | boolean
-    | null
-    | (string | number | boolean | null)[],
-  fieldType?: FieldType | FieldType[]
-): boolean => {
-  // Switch based on the field type for specific handling.
-  switch (fieldType) {
-    // Password comparison.
-    case "password":
-      return isPassword(originalValue) && typeof comparedAtValue === "string"
-        ? comparePassword(originalValue, comparedAtValue)
-        : false;
-
-    // Boolean comparison.
-    case "boolean":
-      return Number(originalValue) === Number(comparedAtValue);
-
-    // Default comparison.
-    default:
-      return originalValue === comparedAtValue;
-  }
-};
-
-/**
- * Helper function to check array equality.
- *
- * @param originalValue - The original value.
- * @param comparedAtValue - The value to compare against.
- * @returns boolean - Result of the array equality check.
- */
-const isArrayEqual = (
-  originalValue:
-    | string
-    | number
-    | boolean
-    | null
-    | (string | number | boolean | null)[],
-  comparedAtValue:
-    | string
-    | number
-    | boolean
-    | null
-    | (string | number | boolean | null)[]
-): boolean => {
-  return (
-    (Array.isArray(originalValue) &&
-      Array.isArray(comparedAtValue) &&
-      originalValue.some((v) => comparedAtValue.includes(v))) ||
-    (Array.isArray(originalValue) &&
-      !Array.isArray(comparedAtValue) &&
-      originalValue.includes(comparedAtValue)) ||
-    (!Array.isArray(originalValue) &&
-      Array.isArray(comparedAtValue) &&
-      comparedAtValue.includes(originalValue)) ||
-    (!Array.isArray(originalValue) &&
-      !Array.isArray(comparedAtValue) &&
-      comparedAtValue === originalValue)
-  );
-};
-
-/**
- * Helper function to check wildcard pattern matching using regex.
- *
- * @param originalValue - The original value.
- * @param comparedAtValue - The value with wildcard pattern.
- * @returns boolean - Result of the wildcard pattern matching.
- */
-const isWildcardMatch = (
-  originalValue:
-    | string
-    | number
-    | boolean
-    | null
-    | (string | number | boolean | null)[],
-  comparedAtValue:
-    | string
-    | number
-    | boolean
-    | null
-    | (string | number | boolean | null)[]
-): boolean => {
-  const wildcardPattern = `^${(String(comparedAtValue).includes("%")
-    ? String(comparedAtValue)
-    : "%" + String(comparedAtValue) + "%"
-  ).replace(/%/g, ".*")}$`;
-  return new RegExp(wildcardPattern, "i").test(String(originalValue));
-};
-
-/**
  * Asynchronously searches a file for lines matching specified criteria, using comparison and logical operators.
  *
  * @param filePath - Path of the file to search.
@@ -985,7 +768,7 @@ export const search = async (
           Array.isArray(comparedAtValue) &&
           ((logicalOperator === "or" &&
             operator.some((single_operator, index) =>
-              handleComparisonOperator(
+              compare(
                 single_operator,
                 decodedLine,
                 comparedAtValue[index],
@@ -993,7 +776,7 @@ export const search = async (
               )
             )) ||
             operator.every((single_operator, index) =>
-              handleComparisonOperator(
+              compare(
                 single_operator,
                 decodedLine,
                 comparedAtValue[index],
@@ -1001,12 +784,7 @@ export const search = async (
               )
             ))) ||
         (!Array.isArray(operator) &&
-          handleComparisonOperator(
-            operator,
-            decodedLine,
-            comparedAtValue,
-            fieldType
-          ));
+          compare(operator, decodedLine, comparedAtValue, fieldType));
 
       // If the line meets the conditions, process it.
       if (meetsConditions) {
