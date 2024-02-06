@@ -258,18 +258,8 @@ export const isValidID = (input: any): input is string => {
  * @param {string} str - The string to be checked.
  * @returns {boolean} Returns true if the string is valid JSON, otherwise false.
  */
-function isJSON(str: string): boolean {
-  try {
-    // Attempt to parse the string as JSON
-    JSON.parse(str);
-
-    // If parsing succeeds, return true
-    return true;
-  } catch (error) {
-    // If an error occurs during parsing, return false
-    return false;
-  }
-}
+export const isJSON = (str: string): boolean =>
+  str[0] === "{" || str[0] === "[";
 
 /**
  * Identifies and returns properties that have changed between two objects.
@@ -350,7 +340,7 @@ export const validateFieldType = (
   if (Array.isArray(fieldType))
     return detectFieldType(value, fieldType) !== undefined;
   if (fieldType === "array" && fieldChildrenType && Array.isArray(value))
-    return value.some(
+    return value.every(
       (v) =>
         detectFieldType(
           v,

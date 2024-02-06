@@ -18,15 +18,10 @@ import { join } from "node:path";
 import { Worker } from "node:worker_threads";
 
 import { ComparisonOperator, FieldType } from "./index.js";
-import {
-  detectFieldType,
-  isArrayOfArrays,
-  isNumber,
-  isObject,
-  swapKeyValue,
-} from "./utils.js";
+import { detectFieldType, isJSON, isNumber, isObject } from "./utils.js";
 import { encodeID, compare } from "./utils.server.js";
 import Config from "./config.js";
+import Inison from "inison";
 
 export const lock = async (
   folderPath: string,
@@ -119,30 +114,6 @@ export const isExists = async (path: string) => {
   }
 };
 
-const delimiters = {
-  ",": "%2C",
-  "|": "%7C",
-  "&": "%26",
-  $: "%24",
-  "#": "%23",
-  "@": "%40",
-  "^": "%5E",
-  ":": "%3A",
-  "!": "%21",
-  ";": "%3B",
-  "`": "%60",
-  "=": "%3D",
-  ">": "%3E",
-  "<": "%3C",
-  "+": "%2B",
-};
-
-const replacements: Record<string, string> = {
-  ...delimiters,
-  "\n": "\\n",
-  "\r": "\\r",
-};
-
 /**
  * Secures input by encoding/escaping characters.
  *
@@ -165,10 +136,7 @@ const secureString = (
   }
 
   // Replace characters using a single regular expression.
-  return decodedInput.replace(
-    /[<>,|&$#@^:!\n\r]/g,
-    (match) => replacements[match]
-  );
+  return decodedInput.replace(/\\n/g, "\n").replace(/\n/g, "\\n");
 };
 
 /**
@@ -181,27 +149,7 @@ const secureArray = (arr_str: any[] | any): any[] | any =>
   Array.isArray(arr_str) ? arr_str.map(secureArray) : secureString(arr_str);
 
 /**
- * Joins elements of a multidimensional array into a string.
- *
- * @param arr - A multidimensional array or a single level array.
- * @param delimiter_index - Index for selecting delimiter, defaults to 0.
- * @returns Joined string of array elements with appropriate delimiters.
- */
-const joinMultidimensionalArray = (
-  arr: any[] | any[][],
-  delimiter_index = 0
-): string => {
-  delimiter_index++;
-  if (isArrayOfArrays(arr))
-    arr = arr.map((ar: any[]) =>
-      joinMultidimensionalArray(ar, delimiter_index)
-    );
-  delimiter_index--;
-  return arr.join(Object.keys(delimiters)[delimiter_index]);
-};
-
-/**
- * Encodes the input using 'secureString' and 'joinMultidimensionalArray' functions.
+ * Encodes the input using 'secureString' and 'Inison.stringify' functions.
  * If the input is an array, it is first secured and then joined into a string.
  * If the input is a single value, it is directly secured.
  *
@@ -210,12 +158,10 @@ const joinMultidimensionalArray = (
  */
 export const encode = (
   input: string | number | boolean | null | (string | number | boolean | null)[]
-): string | number | boolean | null => {
-  // Use the optimized secureArray and joinMultidimensionalArray functions.
-  return Array.isArray(input)
-    ? joinMultidimensionalArray(secureArray(input))
+): string | number | boolean | null =>
+  Array.isArray(input)
+    ? Inison.stringify(secureArray(input))
     : secureString(input);
-};
 
 /**
  * Decodes each element in an array or a single value using unSecureString.
@@ -233,48 +179,11 @@ const unSecureArray = (arr_str: any[] | any): any[] | any =>
  * @returns Decoded string or null if input is empty.
  */
 const unSecureString = (input: string): string | number | null => {
-  // Define a mapping of encoded characters to their original symbols.
+  if (isNumber(input)) return Number(input);
 
-  // Replace encoded characters with their original symbols using the defined mapping.
-  const decodedString =
-    input.replace(
-      RegExp(Object.keys(swapKeyValue(replacements)).join("|"), "g"),
-      (match) => replacements[match]
-    ) || null;
+  if (typeof input === "string") return input.replace(/\n/g, "\\n") || null;
 
-  if (decodedString === null) return null;
-  return isNumber(decodedString) ? Number(decodedString) : decodedString;
-};
-
-/**
- * Reverses the process of 'joinMultidimensionalArray', splitting a string back into a multidimensional array.
- * It identifies delimiters used in the joined string and applies them recursively to reconstruct the original array structure.
- *
- * @param joinedString - A string, array, or multidimensional array.
- * @returns Original array structure before joining, or the input if no delimiters are found.
- */
-const reverseJoinMultidimensionalArray = (
-  joinedString: string | any[] | any[][]
-): any | any[] | any[][] => {
-  // Helper function for recursive array splitting based on delimiters.
-  const reverseJoinMultidimensionalArrayHelper = (
-    arr: any | any[] | any[][],
-    delimiter: string
-  ): any =>
-    Array.isArray(arr)
-      ? arr.map((ar) => reverseJoinMultidimensionalArrayHelper(ar, delimiter))
-      : arr.split(delimiter);
-
-  // Identify available delimiters in the input.
-  const availableDelimiters = Object.keys(delimiters).filter((delimiter) =>
-    joinedString.includes(delimiter)
-  );
-
-  // Apply delimiters recursively to reconstruct the original array structure.
-  return availableDelimiters.reduce(
-    (acc, delimiter) => reverseJoinMultidimensionalArrayHelper(acc, delimiter),
-    joinedString
-  );
+  return null;
 };
 
 /**
@@ -298,8 +207,6 @@ const decodeHelper = (
       decodeHelper(v, fieldType, fieldChildrenType, secretKey)
     );
   switch (fieldType as FieldType) {
-    case "json":
-      return JSON.parse(value as string);
     case "number":
       return isNumber(value) ? Number(value) : null;
     case "boolean":
@@ -357,8 +264,8 @@ export const decode = (
   // Decode the input using the decodeHelper function.
   return decodeHelper(
     typeof input === "string"
-      ? input.includes(",")
-        ? unSecureArray(reverseJoinMultidimensionalArray(input))
+      ? isJSON(input)
+        ? Inison.unstringify(input)
         : unSecureString(input)
       : input,
     fieldType,

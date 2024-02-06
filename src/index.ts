@@ -9,6 +9,7 @@ import Utils from "./utils.js";
 import UtilsServer from "./utils.server.js";
 import Config from "./config.js";
 import { inspect } from "node:util";
+import Inison from "inison";
 
 export interface Data {
   id?: number | string;
@@ -512,7 +513,7 @@ export default class Inibase {
           ? value
           : UtilsServer.decodeID(value as string, this.salt);
       case "json":
-        return JSON.stringify(value);
+        return Inison.stringify(value);
       default:
         return value;
     }
