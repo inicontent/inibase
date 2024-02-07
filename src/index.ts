@@ -761,20 +761,24 @@ export default class Inibase {
             ).forEach(([index, item]) => {
               if (!RETURN[index]) RETURN[index] = {};
               if (Utils.isObject(item)) {
-                if (!Object.values(item).every((i) => i === null)) {
-                  if (RETURN[index][field.key]) {
+                if (!Utils.isArrayOfNulls(Object.values(item))) {
+                  if (RETURN[index][field.key])
                     Object.entries(item).forEach(([key, value], _index) => {
-                      RETURN[index][field.key] = RETURN[index][field.key].map(
-                        (_obj: any, _i: string | number) => ({
-                          ..._obj,
-                          [key]: value[_i],
-                        })
-                      );
+                      for (let _index = 0; _index < value.length; _index++)
+                        if (RETURN[index][field.key][_index])
+                          Object.assign(RETURN[index][field.key][_index], {
+                            [key]: value[_index],
+                          });
+                        else
+                          RETURN[index][field.key][_index] = {
+                            [key]: value[_index],
+                          };
                     });
-                  } else if (
+                  else if (
                     Object.values(item).every(
                       (_i) => Utils.isArrayOfArrays(_i) || Array.isArray(_i)
-                    )
+                    ) &&
+                    prefix
                   )
                     RETURN[index][field.key] = item;
                   else {
@@ -784,9 +788,10 @@ export default class Inibase {
                         if (
                           value[_i] === null ||
                           (Array.isArray(value[_i]) &&
-                            value[_i].every((_item: any) => _item === null))
+                            Utils.isArrayOfNulls(value[_i]))
                         )
                           continue;
+
                         if (!RETURN[index][field.key][_i])
                           RETURN[index][field.key][_i] = {};
                         RETURN[index][field.key][_i][key] = value[_i];
