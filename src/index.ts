@@ -327,7 +327,7 @@ export default class Inibase {
         type: "id",
         required: true,
       },
-      ...UtilsServer.addIdToSchema(schema, lastIdNumber, this.salt),
+      ...UtilsServer.addIdToSchema(schema, lastIdNumber, this.salt, true),
       {
         id: UtilsServer.encodeID(lastIdNumber + 1, this.salt),
         key: "createdAt",
@@ -581,7 +581,7 @@ export default class Inibase {
                 children: field.children as Schema,
               }),
             ]
-          : [];
+          : null;
       case "object":
         return Utils.combineObjects(
           field.children.map((f: Field) => ({
@@ -656,6 +656,61 @@ export default class Inibase {
     return this._addPathToKeys(this._CombineData(data), mainPath);
   }
 
+  private _getItemsFromSchemaHelper(
+    RETURN: Record<number, Data>,
+    item: Data,
+    index: number,
+    field: Field
+  ) {
+    if (Utils.isObject(item)) {
+      if (!RETURN[index]) RETURN[index] = {};
+      if (!RETURN[index][field.key]) RETURN[index][field.key] = [];
+      for (const child_field of (field.children as Schema).filter(
+        (children) =>
+          children.type === "array" && Utils.isArrayOfObjects(children.children)
+      )) {
+        if (Utils.isObject(item[child_field.key])) {
+          Object.entries(item[child_field.key]).forEach(([key, value]) => {
+            for (let _i = 0; _i < value.length; _i++) {
+              if (
+                (Array.isArray(value[_i]) && Utils.isArrayOfNulls(value[_i])) ||
+                value[_i] === null
+              )
+                continue;
+
+              if (!RETURN[index][field.key][_i])
+                RETURN[index][field.key][_i] = {};
+              if (!RETURN[index][field.key][_i][child_field.key])
+                RETURN[index][field.key][_i][child_field.key] = [];
+
+              if (!Array.isArray(value[_i])) {
+                if (!RETURN[index][field.key][_i][child_field.key][0])
+                  RETURN[index][field.key][_i][child_field.key][0] = {};
+                RETURN[index][field.key][_i][child_field.key][0][key] =
+                  value[_i];
+              } else {
+                value[_i].forEach((_element: any, _index: number) => {
+                  // Recursive call
+                  this._getItemsFromSchemaHelper(
+                    RETURN[index][field.key][_i][child_field.key][_index],
+                    _element,
+                    _index,
+                    child_field
+                  );
+
+                  // Perform property assignments
+                  if (!RETURN[index][field.key][_i][child_field.key][_index])
+                    RETURN[index][field.key][_i][child_field.key][_index] = {};
+                  RETURN[index][field.key][_i][child_field.key][_index][key] =
+                    _element;
+                });
+              }
+            }
+          });
+        }
+      }
+    }
+  }
   private async getItemsFromSchema(
     tableName: string,
     schema: Schema,
@@ -694,53 +749,7 @@ export default class Inibase {
                   (prefix ?? "") + field.key + "."
                 )) ?? {}
               ).forEach(([index, item]) => {
-                if (Utils.isObject(item)) {
-                  if (!RETURN[index]) RETURN[index] = {};
-                  if (!RETURN[index][field.key]) RETURN[index][field.key] = [];
-                  for (const child_field of (field.children as Schema).filter(
-                    (children) =>
-                      children.type === "array" &&
-                      Utils.isArrayOfObjects(children.children)
-                  )) {
-                    if (Utils.isObject(item[child_field.key])) {
-                      Object.entries(item[child_field.key]).forEach(
-                        ([key, value]) => {
-                          if (!Utils.isArrayOfArrays(value))
-                            value = value.map((_value: any) =>
-                              child_field.type === "array"
-                                ? [[_value]]
-                                : [_value]
-                            );
-
-                          for (let _i = 0; _i < value.length; _i++) {
-                            if (Utils.isArrayOfNulls(value[_i])) continue;
-
-                            if (!RETURN[index][field.key][_i])
-                              RETURN[index][field.key][_i] = {};
-                            if (!RETURN[index][field.key][_i][child_field.key])
-                              RETURN[index][field.key][_i][child_field.key] =
-                                [];
-                            value[_i].forEach(
-                              (_element: any, _index: string | number) => {
-                                if (
-                                  !RETURN[index][field.key][_i][
-                                    child_field.key
-                                  ][_index]
-                                )
-                                  RETURN[index][field.key][_i][child_field.key][
-                                    _index
-                                  ] = {};
-                                RETURN[index][field.key][_i][child_field.key][
-                                  _index
-                                ][key] = _element;
-                              }
-                            );
-                          }
-                        }
-                      );
-                    }
-                  }
-                }
+                this._getItemsFromSchemaHelper(RETURN, item, index, field);
               });
 
               field.children = field.children.filter(
