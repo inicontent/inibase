@@ -355,7 +355,7 @@ export default class Inibase {
     return schema;
   }
 
-  public getField(keyPath: string, schema: Schema) {
+  static getField(keyPath: string, schema: Schema) {
     let RETURN: Field | Schema | null = null;
     const keyPathSplited = keyPath.split(".");
     for (const [index, key] of keyPathSplited.entries()) {
@@ -990,7 +990,7 @@ export default class Inibase {
 
       let index = -1;
       for await (const [key, value] of Object.entries(criteria)) {
-        const field = this.getField(key, schema);
+        const field = Inibase.getField(key, schema);
         index++;
         let searchOperator:
             | ComparisonOperator
@@ -2150,7 +2150,7 @@ export default class Inibase {
     let index = 2;
     const sortColumns = sortArray
       .map(([key, ascending], i) => {
-        const field = this.getField(key, schema);
+        const field = Inibase.getField(key, schema);
         if (field)
           return `-k${i + index},${i + index}${
             field.type === "number" ? "n" : ""
@@ -2199,7 +2199,7 @@ export default class Inibase {
 
         // Extract values for each file, including "id.inib"
         filesPathes.forEach((fileName, index) => {
-          const Field = this.getField(parse(fileName).name, schema);
+          const Field = Inibase.getField(parse(fileName).name, schema);
           if (Field)
             outputObject[Field.key as string] = File.decode(
               splitedFileColumns[index],
