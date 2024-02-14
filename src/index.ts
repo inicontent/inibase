@@ -815,27 +815,37 @@ export default class Inibase {
             (Array.isArray(field.type) && field.type.includes("table")) ||
             (Array.isArray(field.children) && field.children.includes("table"))
           ) {
-            if (options.columns)
-              options.columns = (options.columns as string[])
-                .filter((column) => column.includes(`${field.key}.`))
-                .map((column) => column.replace(`${field.key}.`, ""));
-            const items = await File.get(
-              join(tablePath, (prefix ?? "") + field.key + ".inib"),
-              linesNumber,
-              field.type,
-              field.children,
-              this.salt
-            );
+            if (
+              (await File.isExists(
+                join(this.folder, this.database, field.key)
+              )) &&
+              (await File.isExists(
+                join(tablePath, (prefix ?? "") + field.key + ".inib")
+              ))
+            ) {
+              if (options.columns)
+                options.columns = (options.columns as string[])
+                  .filter((column) => column.includes(`${field.key}.`))
+                  .map((column) => column.replace(`${field.key}.`, ""));
 
-            if (items)
-              await Promise.all(
-                Object.entries(items).map(async ([index, item]) => {
-                  if (!RETURN[index]) RETURN[index] = {};
-                  RETURN[index][field.key] = item
-                    ? await this.get(field.key, item as number, options)
-                    : this.getDefaultValue(field);
-                })
+              const items = await File.get(
+                join(tablePath, (prefix ?? "") + field.key + ".inib"),
+                linesNumber,
+                field.type,
+                field.children,
+                this.salt
               );
+
+              if (items)
+                await Promise.allSettled(
+                  Object.entries(items).map(async ([index, item]) => {
+                    if (!RETURN[index]) RETURN[index] = {};
+                    RETURN[index][field.key] = item
+                      ? await this.get(field.key, item as number, options)
+                      : this.getDefaultValue(field);
+                  })
+                );
+            }
           } else if (
             await File.isExists(
               join(tablePath, (prefix ?? "") + field.key + ".inib")
