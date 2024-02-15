@@ -388,17 +388,15 @@ export default class Inibase {
     else if (Utils.isObject(data)) {
       for (const field of schema) {
         if (
-          !Object.hasOwn(data, field.key) &&
-          field.required &&
-          !skipRequiredField
-        )
-          throw this.throwError("FIELD_REQUIRED", field.key);
-        if (
-          Object.hasOwn(data, field.key) &&
-          !field.required &&
-          (data[field.key] === null || data[field.key] === undefined)
-        )
-          return;
+          !Object.hasOwn(data, field.key) ||
+          data[field.key] === null ||
+          data[field.key] === undefined
+        ) {
+          if (field.required && !skipRequiredField)
+            throw this.throwError("FIELD_REQUIRED", field.key);
+          else return;
+        }
+
         if (
           Object.hasOwn(data, field.key) &&
           !Utils.validateFieldType(

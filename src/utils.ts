@@ -259,7 +259,7 @@ export const isValidID = (input: any): input is string => {
  * @returns {boolean} Returns true if the string is valid JSON, otherwise false.
  */
 export const isJSON = (str: string): boolean =>
-  str[0] === "{" || str[0] === "[";
+  str === "null" || str === "undefined" || str[0] === "{" || str[0] === "[";
 
 /**
  * Identifies and returns properties that have changed between two objects.
