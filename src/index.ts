@@ -343,9 +343,13 @@ export default class Inibase {
     ];
   }
 
-  public async isTableEmpty(tableName: string): Promise<never | Schema> {
-    const schema = await this.getTableSchema(tableName),
-      tablePath = join(this.folder, this.database, tableName);
+  public async getSchemaWhenTableNotEmpty(
+    tableName: string,
+    schema?: Schema
+  ): Promise<never | Schema> {
+    const tablePath = join(this.folder, this.database, tableName);
+
+    if (!schema) schema = await this.getTableSchema(tableName);
 
     if (!schema) throw this.throwError("NO_SCHEMA", tableName);
 
@@ -389,6 +393,12 @@ export default class Inibase {
           !skipRequiredField
         )
           throw this.throwError("FIELD_REQUIRED", field.key);
+        if (
+          data.hasOwnProperty(field.key) &&
+          !field.required &&
+          (data[field.key] === null || data[field.key] === undefined)
+        )
+          return;
         if (
           data.hasOwnProperty(field.key) &&
           !Utils.validateFieldType(
@@ -906,13 +916,16 @@ export default class Inibase {
               undefined,
               this.salt
             );
+
             if (items)
-              for await (const [index, item] of Object.entries(items)) {
-                if (!RETURN[index]) RETURN[index] = {};
-                RETURN[index][field.key] = item
-                  ? await this.get(field.key, item as number, options)
-                  : this.getDefaultValue(field);
-              }
+              await Promise.allSettled(
+                Object.entries(items).map(async ([index, item]) => {
+                  if (!RETURN[index]) RETURN[index] = {};
+                  RETURN[index][field.key] = item
+                    ? await this.get(field.key, item as number, options)
+                    : this.getDefaultValue(field);
+                })
+              );
           }
         } else if (
           await File.isExists(
@@ -1239,7 +1252,7 @@ export default class Inibase {
     options.perPage = options.perPage || 15;
 
     let RETURN!: Data | Data[] | null;
-    let schema = tableSchema ?? (await this.isTableEmpty(tableName));
+    let schema = await this.getSchemaWhenTableNotEmpty(tableName, tableSchema);
 
     if (options.columns && options.columns.length)
       schema = this._filterSchemaByColumns(schema, options.columns as string[]);
@@ -1620,7 +1633,7 @@ export default class Inibase {
   ): Promise<Data | Data[] | void | null> {
     let renameList: string[][] = [];
     const tablePath = join(this.folder, this.database, tableName),
-      schema = await this.isTableEmpty(tableName);
+      schema = await this.getSchemaWhenTableNotEmpty(tableName);
 
     data = this.formatData(data, schema, true);
 
@@ -1830,7 +1843,7 @@ export default class Inibase {
     let renameList: string[][] = [];
 
     const tablePath = join(this.folder, this.database, tableName),
-      schema = await this.isTableEmpty(tableName);
+      schema = await this.getSchemaWhenTableNotEmpty(tableName);
 
     if (!where) {
       try {
@@ -1968,7 +1981,7 @@ export default class Inibase {
   ): Promise<number | Record<string, number>> {
     let RETURN: Record<string, number> = {};
     const tablePath = join(this.folder, this.database, tableName),
-      schema = await this.isTableEmpty(tableName);
+      schema = await this.getSchemaWhenTableNotEmpty(tableName);
 
     if (!Array.isArray(columns)) columns = [columns];
     for await (const column of columns) {
@@ -2010,7 +2023,7 @@ export default class Inibase {
   ): Promise<number | Record<string, number>> {
     let RETURN: Record<string, number> = {};
     const tablePath = join(this.folder, this.database, tableName),
-      schema = await this.isTableEmpty(tableName);
+      schema = await this.getSchemaWhenTableNotEmpty(tableName);
 
     if (!Array.isArray(columns)) columns = [columns];
     for await (const column of columns) {
@@ -2051,7 +2064,7 @@ export default class Inibase {
   ): Promise<number | Record<string, number>> {
     let RETURN: Record<string, number> = {};
     const tablePath = join(this.folder, this.database, tableName),
-      schema = await this.isTableEmpty(tableName);
+      schema = await this.getSchemaWhenTableNotEmpty(tableName);
 
     if (!Array.isArray(columns)) columns = [columns];
     for await (const column of columns) {
@@ -2089,7 +2102,7 @@ export default class Inibase {
   ) {
     // TO-DO: Cache Results based on "Columns and Sort Direction"
     const tablePath = join(this.folder, this.database, tableName),
-      schema = await this.isTableEmpty(tableName);
+      schema = await this.getSchemaWhenTableNotEmpty(tableName);
 
     // Default values for page and perPage
     options.page = options.page || 1;
