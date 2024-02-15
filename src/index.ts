@@ -388,19 +388,19 @@ export default class Inibase {
     else if (Utils.isObject(data)) {
       for (const field of schema) {
         if (
-          !data.hasOwnProperty(field.key) &&
+          !Object.hasOwn(data, field.key) &&
           field.required &&
           !skipRequiredField
         )
           throw this.throwError("FIELD_REQUIRED", field.key);
         if (
-          data.hasOwnProperty(field.key) &&
+          Object.hasOwn(data, field.key) &&
           !field.required &&
           (data[field.key] === null || data[field.key] === undefined)
         )
           return;
         if (
-          data.hasOwnProperty(field.key) &&
+          Object.hasOwn(data, field.key) &&
           !Utils.validateFieldType(
             data[field.key],
             field.type,
@@ -452,7 +452,7 @@ export default class Inibase {
                 if (
                   value.every(
                     (item: any): item is Data =>
-                      item.hasOwnProperty("id") &&
+                      Object.hasOwn(item, "id") &&
                       (Utils.isValidID(item.id) || Utils.isNumber(item.id))
                   )
                 )
@@ -497,7 +497,7 @@ export default class Inibase {
         if (Array.isArray(value)) value = value[0];
         if (Utils.isObject(value)) {
           if (
-            (value as Data).hasOwnProperty("id") &&
+            Object.hasOwn(value, "id") &&
             (Utils.isValidID((value as Data).id) ||
               Utils.isNumber((value as Data).id))
           )
@@ -554,7 +554,7 @@ export default class Inibase {
     else if (Utils.isObject(data)) {
       let RETURN: Data = {};
       for (const field of schema) {
-        if (!data.hasOwnProperty(field.key)) {
+        if (!Object.hasOwn(data, field.key)) {
           if (formatOnlyAvailiableKeys || !field.required) continue;
           RETURN[field.key] = this.getDefaultValue(field);
           continue;
@@ -1641,7 +1641,7 @@ export default class Inibase {
       if (Utils.isArrayOfObjects(data)) {
         if (
           !data.every(
-            (item) => item.hasOwnProperty("id") && Utils.isValidID(item.id)
+            (item) => Object.hasOwn(item, "id") && Utils.isValidID(item.id)
           )
         )
           throw this.throwError("INVALID_ID");
@@ -1652,7 +1652,7 @@ export default class Inibase {
             .filter(({ id }) => id !== undefined)
             .map(({ id }) => id as string)
         );
-      } else if (data.hasOwnProperty("id")) {
+      } else if (Object.hasOwn(data, "id")) {
         if (!Utils.isValidID(data.id))
           throw this.throwError("INVALID_ID", data.id);
         return this.put(tableName, data, data.id);
