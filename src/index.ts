@@ -1255,6 +1255,13 @@ export default class Inibase {
     if (options.columns && options.columns.length)
       schema = this._filterSchemaByColumns(schema, options.columns as string[]);
 
+    if (
+      where &&
+      ((Array.isArray(where) && !where.length) ||
+        (Utils.isObject(where) && !Object.keys(where).length))
+    )
+      where = undefined;
+
     if (!where) {
       // Display all data
       RETURN = Object.values(
