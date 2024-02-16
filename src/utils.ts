@@ -292,33 +292,35 @@ export const detectFieldType = (
   input: any,
   availableTypes: FieldType[]
 ): FieldType | undefined => {
-  if (!Array.isArray(input)) {
-    if (
-      (input === "0" ||
-        input === "1" ||
-        input === "true" ||
-        input === "false") &&
-      availableTypes.includes("boolean")
-    )
-      return "boolean";
-    else if (isNumber(input)) {
-      if (availableTypes.includes("table")) return "table";
-      else if (availableTypes.includes("date")) return "date";
-      else if (availableTypes.includes("number")) return "number";
-    } else if (availableTypes.includes("table") && isValidID(input))
-      return "table";
-    else if (input.includes(",") && availableTypes.includes("array"))
-      return "array";
-    else if (availableTypes.includes("email") && isEmail(input)) return "email";
-    else if (availableTypes.includes("url") && isURL(input)) return "url";
-    else if (availableTypes.includes("password") && isPassword(input))
-      return "password";
-    else if (availableTypes.includes("json") && isJSON(input)) return "json";
-    else if (availableTypes.includes("json") && isDate(input)) return "json";
-    else if (availableTypes.includes("string") && isString(input))
-      return "string";
-    else if (availableTypes.includes("ip") && isIP(input)) return "ip";
-  } else return "array";
+  if (input !== null && input !== undefined)
+    if (!Array.isArray(input)) {
+      if (
+        (input === "0" ||
+          input === "1" ||
+          input === "true" ||
+          input === "false") &&
+        availableTypes.includes("boolean")
+      )
+        return "boolean";
+      else if (isNumber(input)) {
+        if (availableTypes.includes("table")) return "table";
+        else if (availableTypes.includes("date")) return "date";
+        else if (availableTypes.includes("number")) return "number";
+      } else if (availableTypes.includes("table") && isValidID(input))
+        return "table";
+      else if (input.startsWith("[") && availableTypes.includes("array"))
+        return "array";
+      else if (availableTypes.includes("email") && isEmail(input))
+        return "email";
+      else if (availableTypes.includes("url") && isURL(input)) return "url";
+      else if (availableTypes.includes("password") && isPassword(input))
+        return "password";
+      else if (availableTypes.includes("json") && isJSON(input)) return "json";
+      else if (availableTypes.includes("json") && isDate(input)) return "json";
+      else if (availableTypes.includes("string") && isString(input))
+        return "string";
+      else if (availableTypes.includes("ip") && isIP(input)) return "ip";
+    } else return "array";
 
   return undefined;
 };
