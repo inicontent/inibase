@@ -359,24 +359,6 @@ export default class Inibase {
     return schema;
   }
 
-  static getField(keyPath: string, schema: Schema) {
-    let RETURN: Field | Schema | null = null;
-    const keyPathSplited = keyPath.split(".");
-    for (const [index, key] of keyPathSplited.entries()) {
-      const foundItem = schema.find((item) => item.key === key);
-      if (!foundItem) return null;
-      if (index === keyPathSplited.length - 1) RETURN = foundItem;
-      if (
-        (foundItem.type === "array" || foundItem.type === "object") &&
-        foundItem.children &&
-        Utils.isArrayOfObjects(foundItem.children)
-      )
-        RETURN = foundItem.children;
-    }
-    if (!RETURN) return null;
-    return Utils.isArrayOfObjects(RETURN) ? RETURN[0] : RETURN;
-  }
-
   private validateData(
     data: Data | Data[],
     schema: Schema,
@@ -440,7 +422,8 @@ export default class Inibase {
     formatOnlyAvailiableKeys?: boolean
   ): Data | Data[] | number | string | null {
     if (Array.isArray(field.type))
-      field.type = Utils.detectFieldType(value, field.type) ?? field.type[0];
+      field.type = (Utils.detectFieldType(value, field.type) ??
+        field.type[0]) as any;
     switch (field.type) {
       case "array":
         if (typeof field.children === "string") {
@@ -1011,7 +994,7 @@ export default class Inibase {
 
       let index = -1;
       for await (const [key, value] of Object.entries(criteria)) {
-        const field = Inibase.getField(key, schema);
+        const field = Utils.getField(key, schema);
         index++;
         let searchOperator:
             | ComparisonOperator
@@ -1569,14 +1552,13 @@ export default class Inibase {
         )
       );
       renameList = [];
+      totalItems += Array.isArray(RETURN) ? RETURN.length : 1;
 
       if (Config.isCacheEnabled) {
         await this.clearCache(tablePath);
         await File.write(
           join(tablePath, ".cache", "pagination.inib"),
-          `${lastId},${
-            totalItems + (Array.isArray(RETURN) ? RETURN.length : 1)
-          }`,
+          `${lastId},${totalItems}`,
           true
         );
       }
@@ -2178,7 +2160,7 @@ export default class Inibase {
     let index = 2;
     const sortColumns = sortArray
       .map(([key, ascending], i) => {
-        const field = Inibase.getField(key, schema);
+        const field = Utils.getField(key, schema);
         if (field)
           return `-k${i + index},${i + index}${
             field.type === "number" ? "n" : ""
@@ -2227,7 +2209,7 @@ export default class Inibase {
 
         // Extract values for each file, including "id.inib"
         filesPathes.forEach((fileName, index) => {
-          const Field = Inibase.getField(parse(fileName).name, schema);
+          const Field = Utils.getField(parse(fileName).name, schema);
           if (Field)
             outputObject[Field.key as string] = File.decode(
               splitedFileColumns[index],

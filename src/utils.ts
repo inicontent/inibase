@@ -1,4 +1,10 @@
-import type { FieldType, Data, ComparisonOperator } from "./index.js";
+import type {
+  FieldType,
+  Data,
+  ComparisonOperator,
+  Field,
+  Schema,
+} from "./index.js";
 
 /**
  * Type guard function to check if the input is an array of objects.
@@ -473,6 +479,24 @@ export const swapKeyValue = <K extends ValidKey, V extends ValidKey>(
     {} as Record<V, K>
   );
 
+export function getField(keyPath: string, schema: Schema) {
+  let RETURN: Field | Schema | null = null;
+  const keyPathSplited = keyPath.split(".");
+  for (const [index, key] of keyPathSplited.entries()) {
+    const foundItem = schema.find((item) => item.key === key);
+    if (!foundItem) return null;
+    if (index === keyPathSplited.length - 1) RETURN = foundItem;
+    if (
+      (foundItem.type === "array" || foundItem.type === "object") &&
+      foundItem.children &&
+      isArrayOfObjects(foundItem.children)
+    )
+      RETURN = foundItem.children;
+  }
+  if (!RETURN) return null;
+  return isArrayOfObjects(RETURN) ? RETURN[0] : RETURN;
+}
+
 export default class Utils {
   static isNumber = isNumber;
   static isObject = isObject;
@@ -495,4 +519,5 @@ export default class Utils {
   static isArrayOfNulls = isArrayOfNulls;
   static FormatObjectCriteriaValue = FormatObjectCriteriaValue;
   static swapKeyValue = swapKeyValue;
+  static getField = getField;
 }
