@@ -503,8 +503,6 @@ export default class Inibase {
         return Utils.isNumber(value)
           ? value
           : UtilsServer.decodeID(value as string, this.salt);
-      case "json":
-        return Inison.stringify(value);
       default:
         return value;
     }

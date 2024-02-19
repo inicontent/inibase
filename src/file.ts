@@ -140,15 +140,6 @@ const secureString = (
 };
 
 /**
- * Secures each element in an array or a single value using secureString.
- *
- * @param arr_str - An array or a single value of any type.
- * @returns An array with each element secured, or a single secured value.
- */
-const secureArray = (arr_str: any[] | any): any[] | any =>
-  Array.isArray(arr_str) ? arr_str.map(secureArray) : secureString(arr_str);
-
-/**
  * Encodes the input using 'secureString' and 'Inison.stringify' functions.
  * If the input is an array, it is first secured and then joined into a string.
  * If the input is a single value, it is directly secured.
@@ -159,18 +150,7 @@ const secureArray = (arr_str: any[] | any): any[] | any =>
 export const encode = (
   input: string | number | boolean | null | (string | number | boolean | null)[]
 ): string | number | boolean | null =>
-  Array.isArray(input)
-    ? Inison.stringify(secureArray(input))
-    : secureString(input);
-
-/**
- * Decodes each element in an array or a single value using unSecureString.
- *
- * @param arr_str - An array or a single value of any type.
- * @returns An array with each element decoded, or a single decoded value.
- */
-const unSecureArray = (arr_str: any[] | any): any[] | any =>
-  Array.isArray(arr_str) ? arr_str.map(unSecureArray) : unSecureString(arr_str);
+  Array.isArray(input) ? Inison.stringify(input) : secureString(input);
 
 /**
  * Reverses the encoding done by 'secureString'. Replaces encoded characters with their original symbols.
