@@ -1592,21 +1592,21 @@ export default class Inibase {
     data: Data | Data[],
     where?: number | string | (number | string)[] | Criteria,
     options?: Options,
-    returnPostedData?: false
+    returnUpdatedData?: false
   ): Promise<void | null>;
   put(
     tableName: string,
     data: Data,
     where: number | string | (number | string)[] | Criteria | undefined,
     options: Options | undefined,
-    returnPostedData: true
+    returnUpdatedData: true
   ): Promise<Data | null>;
   put(
     tableName: string,
     data: Data[],
     where: number | string | (number | string)[] | Criteria | undefined,
     options: Options | undefined,
-    returnPostedData: true
+    returnUpdatedData: true
   ): Promise<Data[] | null>;
   public async put(
     tableName: string,
@@ -1616,7 +1616,7 @@ export default class Inibase {
       page: 1,
       perPage: 15,
     },
-    returnPostedData?: boolean
+    returnUpdatedData?: boolean
   ): Promise<Data | Data[] | void | null> {
     let renameList: string[][] = [];
     const tablePath = join(this.folder, this.database, tableName),
@@ -1697,8 +1697,8 @@ export default class Inibase {
           if (Config.isCacheEnabled)
             await this.clearCache(join(tablePath, ".cache"));
 
-          if (returnPostedData)
-            return this.get(
+          if (returnUpdatedData)
+            return await this.get(
               tableName,
               where as undefined,
               options,
@@ -1783,7 +1783,7 @@ export default class Inibase {
 
         if (Config.isCacheEnabled) await this.clearCache(tablePath);
 
-        if (returnPostedData)
+        if (returnUpdatedData)
           return this.get(
             tableName,
             where,
@@ -1791,7 +1791,7 @@ export default class Inibase {
             !Array.isArray(where),
             undefined,
             schema
-          ) as any;
+          );
       } finally {
         if (renameList.length)
           await Promise.allSettled(
@@ -1808,7 +1808,22 @@ export default class Inibase {
         true,
         schema
       );
-      return this.put(tableName, data, lineNumbers);
+      if (returnUpdatedData)
+        return this.put(
+          tableName,
+          data,
+          lineNumbers,
+          options,
+          returnUpdatedData
+        );
+      else
+        await this.put(
+          tableName,
+          data,
+          lineNumbers,
+          options,
+          returnUpdatedData
+        );
     } else throw this.throwError("INVALID_PARAMETERS");
   }
 
