@@ -503,6 +503,10 @@ export default class Inibase {
         return Utils.isNumber(value)
           ? value
           : UtilsServer.decodeID(value as string, this.salt);
+      case "json":
+        return typeof value !== "string" || !Utils.isJSON(value)
+          ? Inison.stringify(value)
+          : value;
       default:
         return value;
     }
@@ -592,17 +596,17 @@ export default class Inibase {
 
       return result;
     }, {});
-  private _CombineData = (_data: Data | Data[], prefix?: string) => {
+  private _CombineData = (data: Data | Data[], prefix?: string) => {
     let RETURN: Record<
       string,
       string | boolean | number | null | (string | boolean | number | null)[]
     > = {};
-    if (Utils.isArrayOfObjects(_data))
+    if (Utils.isArrayOfObjects(data))
       RETURN = this._combineObjectsToArray(
-        _data.map((single_data) => this._CombineData(single_data))
+        data.map((single_data) => this._CombineData(single_data))
       );
     else
-      for (const [key, value] of Object.entries(_data)) {
+      for (const [key, value] of Object.entries(data)) {
         if (Utils.isObject(value))
           Object.assign(RETURN, this._CombineData(value, `${key}.`));
         else if (Utils.isArrayOfObjects(value)) {
@@ -781,19 +785,23 @@ export default class Inibase {
                     RETURN[index][field.key] = item;
                   else {
                     RETURN[index][field.key] = [];
-                    Object.entries(item).forEach(([key, value]) => {
-                      for (let _i = 0; _i < value.length; _i++) {
-                        if (
-                          value[_i] === null ||
-                          (Array.isArray(value[_i]) &&
-                            Utils.isArrayOfNulls(value[_i]))
-                        )
-                          continue;
+                    Object.entries(item).forEach(([key, value], _ind) => {
+                      if (!Array.isArray(value)) {
+                        RETURN[index][field.key][_ind] = {};
+                        RETURN[index][field.key][_ind][key] = value;
+                      } else
+                        for (let _i = 0; _i < value.length; _i++) {
+                          if (
+                            value[_i] === null ||
+                            (Array.isArray(value[_i]) &&
+                              Utils.isArrayOfNulls(value[_i]))
+                          )
+                            continue;
 
-                        if (!RETURN[index][field.key][_i])
-                          RETURN[index][field.key][_i] = {};
-                        RETURN[index][field.key][_i][key] = value[_i];
-                      }
+                          if (!RETURN[index][field.key][_i])
+                            RETURN[index][field.key][_i] = {};
+                          RETURN[index][field.key][_i][key] = value[_i];
+                        }
                     });
                   }
                 } else RETURN[index][field.key] = null;

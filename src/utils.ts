@@ -520,4 +520,5 @@ export default class Utils {
   static FormatObjectCriteriaValue = FormatObjectCriteriaValue;
   static swapKeyValue = swapKeyValue;
   static getField = getField;
+  static isJSON = isJSON;
 }

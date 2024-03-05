@@ -150,7 +150,11 @@ const secureString = (
 export const encode = (
   input: string | number | boolean | null | (string | number | boolean | null)[]
 ): string | number | boolean | null =>
-  Array.isArray(input) ? Inison.stringify(input) : secureString(input);
+  Array.isArray(input)
+    ? input.every((_input) => typeof _input === "string" && isJSON(_input))
+      ? `[${input.join(",")}]`
+      : Inison.stringify(input)
+    : secureString(input);
 
 /**
  * Reverses the encoding done by 'secureString'. Replaces encoded characters with their original symbols.
