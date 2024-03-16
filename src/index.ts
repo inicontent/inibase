@@ -34,45 +34,15 @@ export type FieldType =
   | "json"
   | "id";
 
-type FieldDefault = {
+export type Field = {
   id?: string | number;
   key: string;
+  type: FieldType | FieldType[];
   required?: boolean;
+  table?: string;
+  unique?: boolean;
+  children?: FieldType | FieldType[] | Schema;
 };
-type FieldStringType = {
-  type: Exclude<FieldType, "array" | "object">;
-  children?: never;
-};
-type FieldStringArrayType = {
-  type: Array<Exclude<FieldType, "object">>;
-  children?: never;
-};
-type FieldArrayType = {
-  type: "array";
-  children:
-    | Exclude<FieldType, "array">
-    | Array<Exclude<FieldType, "array">>
-    | Schema;
-};
-type FieldArrayArrayType = {
-  type: Array<"array" | Exclude<FieldType, "array" | "object">>;
-  children:
-    | Exclude<FieldType, "array" | "object">
-    | Array<Exclude<FieldType, "array" | "object">>;
-};
-type FieldObjectType = {
-  type: "object";
-  children: Schema;
-};
-
-export type Field = FieldDefault &
-  (
-    | FieldStringType
-    | FieldStringArrayType
-    | FieldArrayArrayType
-    | FieldObjectType
-    | FieldArrayType
-  );
 
 export type Schema = Field[];
 
@@ -119,6 +89,7 @@ declare global {
 }
 
 export type ErrorCodes =
+  | "FIELD_UNIQUE"
   | "FIELD_REQUIRED"
   | "NO_SCHEMA"
   | "NO_ITEMS"
@@ -133,6 +104,7 @@ export default class Inibase {
   public database: string;
   public table: string | null;
   public pageInfo: Record<string, pageInfo>;
+  private checkIFunique: Record<string, (string | number)[]>;
   private isThreadEnabled: boolean = false;
   private totalItems: Record<string, number>;
   public salt: Buffer;
@@ -151,6 +123,7 @@ export default class Inibase {
     this.totalItems = _totalItems;
     this.pageInfo = _pageInfo;
     this.isThreadEnabled = _isThreadEnabled;
+    this.checkIFunique = {};
 
     if (!existsSync(".env") || !process.env.INIBASE_SECRET) {
       this.salt = scryptSync(randomBytes(16), randomBytes(16), 32);
@@ -165,6 +138,8 @@ export default class Inibase {
   ): Error {
     const errorMessages: Record<ErrorLang, Record<ErrorCodes, string>> = {
       en: {
+        FIELD_UNIQUE:
+          "Field {variable} should be unique, got {variable} instead",
         FIELD_REQUIRED: "Field {variable} is required",
         NO_SCHEMA: "Table {variable} does't have a schema",
         NO_ITEMS: "Table {variable} is empty",
@@ -223,18 +198,6 @@ export default class Inibase {
     });
   }
 
-  private _decodeIdFromSchema = (schema: Schema) =>
-    schema.map((field) => {
-      if (
-        (field.type === "array" || field.type === "object") &&
-        field.children &&
-        Utils.isArrayOfObjects(field.children)
-      )
-        field.children = this._decodeIdFromSchema(field.children);
-      if (field.id && !Utils.isNumber(field.id))
-        field.id = UtilsServer.decodeID(field.id, this.salt);
-      return field;
-    });
   private _schemaToIdsPath = (schema: Schema, prefix = "") => {
     let RETURN: any = {};
     for (const field of schema)
@@ -250,9 +213,8 @@ export default class Inibase {
             (prefix ?? "") + field.key + "."
           )
         );
-      } else if (Utils.isValidID(field.id))
-        RETURN[UtilsServer.decodeID(field.id, this.salt)] =
-          (prefix ?? "") + field.key + ".inib";
+      } else if (field.id)
+        RETURN[field.id] = (prefix ?? "") + field.key + ".inib";
 
     return RETURN;
   };
@@ -268,12 +230,6 @@ export default class Inibase {
     schema = schema.filter(
       ({ key }) => !["id", "createdAt", "updatedAt"].includes(key)
     );
-    schema = UtilsServer.addIdToSchema(
-      schema,
-      UtilsServer.findLastIdNumber(schema, this.salt),
-      this.salt,
-      isTablePathExists
-    );
     if (!isTablePathExists) await mkdir(tablePath, { recursive: true });
     if (!(await File.isExists(join(tablePath, ".tmp"))))
       await mkdir(join(tablePath, ".tmp"));
@@ -281,31 +237,45 @@ export default class Inibase {
       await mkdir(join(tablePath, ".cache"));
     if (await File.isExists(tableSchemaPath)) {
       // update columns files names based on field id
-      const replaceOldPathes = Utils.findChangedProperties(
-        this._schemaToIdsPath((await this.getTableSchema(tableName)) ?? []),
-        this._schemaToIdsPath(schema)
+      const currentSchema = await this.getTableSchema(tableName, false);
+      schema = UtilsServer.addIdToSchema(
+        schema,
+        currentSchema && currentSchema.length
+          ? UtilsServer.findLastIdNumber(currentSchema, this.salt)
+          : undefined,
+        this.salt,
+        false
       );
-      if (replaceOldPathes)
-        await Promise.all(
-          Object.entries(replaceOldPathes).map(async ([oldPath, newPath]) => {
-            if (await File.isExists(join(tablePath, oldPath)))
-              await rename(join(tablePath, oldPath), join(tablePath, newPath));
-          })
+      if (currentSchema && currentSchema.length) {
+        const replaceOldPathes = Utils.findChangedProperties(
+          this._schemaToIdsPath(currentSchema),
+          this._schemaToIdsPath(schema)
         );
-    }
+        if (replaceOldPathes)
+          await Promise.all(
+            Object.entries(replaceOldPathes).map(async ([oldPath, newPath]) => {
+              if (await File.isExists(join(tablePath, oldPath)))
+                await rename(
+                  join(tablePath, oldPath),
+                  join(tablePath, newPath)
+                );
+            })
+          );
+      }
+    } else
+      schema = UtilsServer.addIdToSchema(schema, undefined, this.salt, false);
 
     await File.write(
       join(tablePath, "schema.json"),
-      JSON.stringify(
-        isTablePathExists ? this._decodeIdFromSchema(schema) : schema,
-        null,
-        2
-      ),
+      JSON.stringify(schema, null, 2),
       true
     );
   }
 
-  public async getTableSchema(tableName: string): Promise<Schema | undefined> {
+  public async getTableSchema(
+    tableName: string,
+    encodeIDs: boolean = true
+  ): Promise<Schema | undefined> {
     const tableSchemaPath = join(
       this.folder,
       this.database,
@@ -320,27 +290,29 @@ export default class Inibase {
     const schema = JSON.parse(schemaFile),
       lastIdNumber = UtilsServer.findLastIdNumber(schema, this.salt);
 
-    return [
-      {
-        id: UtilsServer.encodeID(0, this.salt),
-        key: "id",
-        type: "id",
-        required: true,
-      },
-      ...UtilsServer.addIdToSchema(schema, lastIdNumber, this.salt, true),
-      {
-        id: UtilsServer.encodeID(lastIdNumber + 1, this.salt),
-        key: "createdAt",
-        type: "date",
-        required: true,
-      },
-      {
-        id: UtilsServer.encodeID(lastIdNumber + 2, this.salt),
-        key: "updatedAt",
-        type: "date",
-        required: false,
-      },
-    ];
+    if (!encodeIDs) return schema;
+    else
+      return [
+        {
+          id: UtilsServer.encodeID(0, this.salt),
+          key: "id",
+          type: "id",
+          required: true,
+        },
+        ...UtilsServer.encodeSchemaID(schema, this.salt),
+        {
+          id: UtilsServer.encodeID(lastIdNumber + 1, this.salt),
+          key: "createdAt",
+          type: "date",
+          required: true,
+        },
+        {
+          id: UtilsServer.encodeID(lastIdNumber + 2, this.salt),
+          key: "updatedAt",
+          type: "date",
+          required: false,
+        },
+      ];
   }
 
   public async getSchemaWhenTableNotEmpty(
@@ -402,6 +374,11 @@ export default class Inibase {
           Utils.isArrayOfObjects(field.children)
         )
           this.validateData(data[field.key], field.children, skipRequiredField);
+        else if (field.unique) {
+          if (!this.checkIFunique[field.key])
+            this.checkIFunique[field.key] = [];
+          this.checkIFunique[`${field.key}`].push(data[field.key]);
+        }
       }
     }
   }
@@ -513,6 +490,33 @@ export default class Inibase {
     return null;
   }
 
+  private async checkUnique(tableName: string, schema: Schema) {
+    const tablePath = join(this.folder, this.database, tableName);
+    for await (const [key, values] of Object.entries(this.checkIFunique)) {
+      const field = Utils.getField(key, schema);
+      if (!field) continue;
+      const [searchResult, totalLines] = await File.search(
+        join(tablePath, key + ".inib"),
+        Array.isArray(values) ? "=" : "[]",
+        values,
+        undefined,
+        field.type,
+        field.children,
+        1,
+        undefined,
+        false,
+        this.salt
+      );
+
+      if (searchResult && totalLines > 0)
+        throw this.throwError("FIELD_UNIQUE", [
+          field.key,
+          Array.isArray(values) ? values.join(", ") : values,
+        ]);
+    }
+    this.checkIFunique = {};
+  }
+
   private formatData(
     data: Data,
     schema: Schema,
@@ -528,8 +532,6 @@ export default class Inibase {
     schema: Schema,
     formatOnlyAvailiableKeys?: boolean
   ): Data | Data[] {
-    this.validateData(data, schema, formatOnlyAvailiableKeys);
-
     if (Utils.isArrayOfObjects(data))
       return data.map((single_data: Data) =>
         this.formatData(single_data, schema, formatOnlyAvailiableKeys)
@@ -576,6 +578,9 @@ export default class Inibase {
             ]
           : null;
       case "object":
+        if (!field.children || !Utils.isArrayOfObjects(field.children))
+          return null;
+
         return Utils.combineObjects(
           field.children.map((f: Field) => ({
             [f.key]: this.getDefaultValue(f),
@@ -813,8 +818,9 @@ export default class Inibase {
             (Array.isArray(field.children) && field.children.includes("table"))
           ) {
             if (
+              field.table &&
               (await File.isExists(
-                join(this.folder, this.database, field.key)
+                join(this.folder, this.database, field.table)
               )) &&
               (await File.isExists(
                 join(tablePath, (prefix ?? "") + field.key + ".inib")
@@ -838,7 +844,11 @@ export default class Inibase {
                   Object.entries(items).map(async ([index, item]) => {
                     if (!RETURN[index]) RETURN[index] = {};
                     RETURN[index][field.key] = item
-                      ? await this.get(field.key, item as number, options)
+                      ? await this.get(
+                          field.table as string,
+                          item as number,
+                          options
+                        )
                       : this.getDefaultValue(field);
                   })
                 );
@@ -852,7 +862,7 @@ export default class Inibase {
               join(tablePath, (prefix ?? "") + field.key + ".inib"),
               linesNumber,
               field.type,
-              (field as any)?.children,
+              field.children,
               this.salt
             );
 
@@ -890,12 +900,9 @@ export default class Inibase {
           ) {
             if (options.columns)
               options.columns = (options.columns as string[])
-                .filter(
-                  (column) =>
-                    column.includes(`${field.key}.`) &&
-                    !column.includes(`${field.key}.`)
-                )
+                .filter((column) => column.includes(`${field.key}.`))
                 .map((column) => column.replace(`${field.key}.`, ""));
+
             const items = await File.get(
               join(tablePath, (prefix ?? "") + field.key + ".inib"),
               linesNumber,
@@ -923,7 +930,7 @@ export default class Inibase {
             join(tablePath, (prefix ?? "") + field.key + ".inib"),
             linesNumber,
             field.type,
-            (field as any)?.children,
+            field.children,
             this.salt
           );
 
@@ -1109,7 +1116,7 @@ export default class Inibase {
           searchComparedAtValue ?? null,
           searchLogicalOperator,
           field?.type,
-          (field as any)?.children,
+          field?.children,
           options.perPage,
           (options.page as number) - 1 * (options.perPage as number) + 1,
           true,
@@ -1532,6 +1539,8 @@ export default class Inibase {
           createdAt: Date.now(),
         }))(data);
 
+      this.validateData(RETURN, schema);
+      await this.checkUnique(tableName, schema);
       RETURN = this.formatData(RETURN, schema);
 
       const pathesContents = this.joinPathesContents(
@@ -1628,6 +1637,8 @@ export default class Inibase {
     const tablePath = join(this.folder, this.database, tableName),
       schema = await this.getSchemaWhenTableNotEmpty(tableName);
 
+    this.validateData(data, schema, true);
+    await this.checkUnique(tableName, schema);
     data = this.formatData(data, schema, true);
 
     if (!where) {

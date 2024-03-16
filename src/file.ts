@@ -17,8 +17,14 @@ import { createGzip, createGunzip, gunzipSync, gzipSync } from "node:zlib";
 import { join } from "node:path";
 import { Worker } from "node:worker_threads";
 
-import { ComparisonOperator, FieldType } from "./index.js";
-import { detectFieldType, isJSON, isNumber, isObject } from "./utils.js";
+import { ComparisonOperator, FieldType, Schema } from "./index.js";
+import {
+  detectFieldType,
+  isArrayOfObjects,
+  isJSON,
+  isNumber,
+  isObject,
+} from "./utils.js";
 import { encodeID, compare } from "./utils.server.js";
 import Config from "./config.js";
 import Inison from "inison";
@@ -165,7 +171,7 @@ export const encode = (
 const unSecureString = (input: string): string | number | null => {
   if (isNumber(input)) return Number(input);
 
-  if (typeof input === "string") return input.replace(/\n/g, "\\n") || null;
+  if (typeof input === "string") return input.replace(/\\n/g, "\n") || null;
 
   return null;
 };
@@ -183,7 +189,7 @@ const unSecureString = (input: string): string | number | null => {
 const decodeHelper = (
   value: string | number | any[],
   fieldType?: FieldType | FieldType[],
-  fieldChildrenType?: FieldType | FieldType[],
+  fieldChildrenType?: FieldType | FieldType[] | Schema,
   secretKey?: string | Buffer
 ): any => {
   if (Array.isArray(value) && fieldType !== "array")
@@ -198,7 +204,7 @@ const decodeHelper = (
     case "array":
       if (!Array.isArray(value)) return [value];
 
-      if (fieldChildrenType)
+      if (fieldChildrenType && !isArrayOfObjects(fieldChildrenType))
         return fieldChildrenType
           ? value.map(
               (v) =>
@@ -235,7 +241,7 @@ const decodeHelper = (
 export const decode = (
   input: string | null | number,
   fieldType?: FieldType | FieldType[],
-  fieldChildrenType?: FieldType | FieldType[],
+  fieldChildrenType?: FieldType | FieldType[] | Schema,
   secretKey?: string | Buffer
 ): string | number | boolean | null | (string | number | null | boolean)[] => {
   if (!fieldType) return null;
@@ -275,7 +281,7 @@ export function get(
   filePath: string,
   lineNumbers?: number | number[],
   fieldType?: FieldType | FieldType[],
-  fieldChildrenType?: FieldType | FieldType[],
+  fieldChildrenType?: FieldType | FieldType[] | Schema,
   secretKey?: string | Buffer,
   readWholeFile?: false
 ): Promise<Record<
@@ -310,7 +316,7 @@ export async function get(
   filePath: string,
   lineNumbers?: number | number[],
   fieldType?: FieldType | FieldType[],
-  fieldChildrenType?: FieldType | FieldType[],
+  fieldChildrenType?: FieldType | FieldType[] | Schema,
   secretKey?: string | Buffer,
   readWholeFile: boolean = false
 ): Promise<
@@ -611,7 +617,7 @@ export const search = async (
     | (string | number | boolean | null)[],
   logicalOperator?: "and" | "or",
   fieldType?: FieldType | FieldType[],
-  fieldChildrenType?: FieldType | FieldType[],
+  fieldChildrenType?: FieldType | FieldType[] | Schema,
   limit?: number,
   offset?: number,
   readWholeFile?: boolean,
@@ -697,11 +703,7 @@ export const search = async (
 
     // Convert the Map to an object using Object.fromEntries and return the result.
     return foundItems
-      ? [
-          matchingLines,
-          readWholeFile ? foundItems : foundItems - 1,
-          linesNumbers.size ? linesNumbers : null,
-        ]
+      ? [matchingLines, foundItems, linesNumbers.size ? linesNumbers : null]
       : [null, 0, null];
   } finally {
     // Close the file handle in the finally block to ensure it is closed even if an error occurs.

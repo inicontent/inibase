@@ -117,6 +117,28 @@ export const decodeID = (
   );
 };
 
+// Function to recursively flatten an array of objects and their nested children
+const _flattenSchema = (
+  schema: Schema,
+  secretKeyOrSalt: string | number | Buffer
+): number[] => {
+  const result: number[] = [];
+
+  for (const field of schema) {
+    if (field.id)
+      result.push(
+        typeof field.id === "number"
+          ? field.id
+          : decodeID(field.id, secretKeyOrSalt)
+      );
+
+    if (field.children && isArrayOfObjects(field.children))
+      result.push(..._flattenSchema(field.children, secretKeyOrSalt));
+  }
+
+  return result;
+};
+
 /**
  * Finds the last ID number in a schema, potentially decoding it if encrypted.
  *
@@ -124,25 +146,10 @@ export const decodeID = (
  * @param secretKeyOrSalt - The secret key or salt for decoding an encrypted ID, can be a string, number, or Buffer.
  * @returns The last ID number in the schema, decoded if necessary.
  */
-
 export const findLastIdNumber = (
   schema: Schema,
   secretKeyOrSalt: string | number | Buffer
-): number => {
-  const lastField = schema[schema.length - 1];
-  if (lastField) {
-    if (
-      (lastField.type === "array" || lastField.type === "object") &&
-      isArrayOfObjects(lastField.children)
-    )
-      return findLastIdNumber(lastField.children as Schema, secretKeyOrSalt);
-    else if (lastField.id)
-      return isValidID(lastField.id)
-        ? decodeID(lastField.id as string, secretKeyOrSalt)
-        : lastField.id;
-  }
-  return 0;
-};
+): number => Math.max(..._flattenSchema(schema, secretKeyOrSalt));
 
 /**
  * Adds or updates IDs in a schema, encoding them using a provided secret key or salt.
@@ -164,10 +171,12 @@ export const addIdToSchema = (
       oldIndex++;
       field.id = encodeIDs ? encodeID(oldIndex, secretKeyOrSalt) : oldIndex;
     } else {
-      if (!isNumber(field.id)) oldIndex = decodeID(field.id, secretKeyOrSalt);
-      else {
+      if (isValidID(field.id)) {
+        oldIndex = decodeID(field.id, secretKeyOrSalt);
+        if (!encodeIDs) field.id = oldIndex;
+      } else {
         oldIndex = field.id;
-        field.id = encodeIDs ? encodeID(field.id, secretKeyOrSalt) : field.id;
+        if (encodeIDs) field.id = encodeID(field.id, secretKeyOrSalt);
       }
     }
     if (
@@ -184,6 +193,22 @@ export const addIdToSchema = (
     }
     return field;
   });
+
+export const encodeSchemaID = (
+  schema: Schema,
+  secretKeyOrSalt: string | number | Buffer
+): Schema =>
+  schema.map((field) => ({
+    ...field,
+    id: isNumber(field.id) ? encodeID(field.id, secretKeyOrSalt) : field.id,
+    ...(field.children
+      ? isArrayOfObjects(field.children)
+        ? {
+            children: encodeSchemaID(field.children as Schema, secretKeyOrSalt),
+          }
+        : { children: field.children as any }
+      : {}),
+  }));
 
 export const hashString = (str: string): string =>
   createHash("sha256").update(str).digest("hex");
@@ -412,4 +437,5 @@ export default class UtilsServer {
   static isEqual = isEqual;
   static isArrayEqual = isArrayEqual;
   static isWildcardMatch = isWildcardMatch;
+  static encodeSchemaID = encodeSchemaID;
 }
