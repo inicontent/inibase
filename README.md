@@ -284,8 +284,9 @@ const product_schema = [
     type: "number",
   },
   {
-    key: "user",
+    key: "createdBy",
     type: "table",
+    table: "user",
     required: true,
   },
 ];
@@ -294,12 +295,12 @@ const product_data = [
   {
     title: "Product 1",
     price: 16,
-    user: "1d88385d4b1581f8fb059334dec30f4c",
+    createdBy: "1d88385d4b1581f8fb059334dec30f4c",
   },
   {
     title: "Product 2",
     price: 10,
-    user: "5011c230aa44481bf7e8dcfe0710474f",
+    createdBy: "5011c230aa44481bf7e8dcfe0710474f",
   },
 ];
 
@@ -309,7 +310,7 @@ const product = await db.post("product", product_data);
 //     "id": "1d88385d4b1581f8fb059334dec30f4c",
 //     "title": "Product 1",
 //     "price": 16,
-//     "user": {
+//     "createdBy": {
 //       "id": "1d88385d4b1581f8fb059334dec30f4c",
 //       "username": "user1",
 //       "email": "user1@example.com",
@@ -320,7 +321,7 @@ const product = await db.post("product", product_data);
 //     "id": "5011c230aa44481bf7e8dcfe0710474f",
 //     "title": "Product 2",
 //     "price": 10,
-//     "user": {
+//     "createdBy": {
 //       "id": "5011c230aa44481bf7e8dcfe0710474f",
 //       "username": "user2",
 //       ...
