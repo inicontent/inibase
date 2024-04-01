@@ -983,7 +983,7 @@ export default class Inibase {
 						),
 					),
 				);
-				criteria.and = undefined;
+				delete criteria.and;
 				RETURN_LineNumbers = lineNumbers;
 			} else return [null, null];
 		}
@@ -996,7 +996,7 @@ export default class Inibase {
 				criteria.or as Criteria,
 				false,
 			);
-			criteria.or = undefined;
+			delete criteria.or;
 			if (searchResult) {
 				RETURN = Utils.deepMerge(RETURN, searchResult);
 				RETURN_LineNumbers = lineNumbers;
@@ -1049,7 +1049,7 @@ export default class Inibase {
 							);
 							searchLogicalOperator = "or";
 						}
-						value.or = undefined;
+						delete value.or;
 					}
 					if (
 						(value as Criteria)?.and &&
@@ -1079,7 +1079,7 @@ export default class Inibase {
 							);
 							searchLogicalOperator = "and";
 						}
-						value.and = undefined;
+						delete value.and;
 					}
 				} else if (Array.isArray(value)) {
 					const searchCriteria = value
