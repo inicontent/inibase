@@ -1,5 +1,3 @@
-export default class Config {
-  static isCompressionEnabled = process.env.INIBASE_COMPRESSION === "true";
-  static isCacheEnabled = process.env.INIBASE_CACHE === "true";
-  static isReverseEnabled = process.env.INIBASE_REVERSE === "true";
-}
+export const isCompressionEnabled = process.env.INIBASE_COMPRESSION === "true";
+export const isCacheEnabled = process.env.INIBASE_CACHE === "true";
+export const isReverseEnabled = process.env.INIBASE_REVERSE === "true";

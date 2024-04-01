@@ -1,9 +1,9 @@
 import type {
-  FieldType,
-  Data,
-  ComparisonOperator,
-  Field,
-  Schema,
+	FieldType,
+	Data,
+	ComparisonOperator,
+	Field,
+	Schema,
 } from "./index.js";
 
 /**
@@ -15,7 +15,7 @@ import type {
  * Note: Considers empty arrays and arrays where every element is an object.
  */
 export const isArrayOfObjects = (input: any): input is Record<any, any>[] =>
-  Array.isArray(input) && (input.length === 0 || input.every(isObject));
+	Array.isArray(input) && (input.length === 0 || input.every(isObject));
 
 /**
  * Type guard function to check if the input is an array of arrays.
@@ -26,7 +26,7 @@ export const isArrayOfObjects = (input: any): input is Record<any, any>[] =>
  * Note: Considers empty arrays and arrays where every element is also an array.
  */
 export const isArrayOfArrays = (input: any): input is any[][] =>
-  Array.isArray(input) && (input.length === 0 || input.every(Array.isArray));
+	Array.isArray(input) && (input.length === 0 || input.every(Array.isArray));
 
 /**
  * Type guard function to check if the input is an array of nulls or an array of arrays of nulls.
@@ -37,9 +37,9 @@ export const isArrayOfArrays = (input: any): input is any[][] =>
  * Note: Recursively checks each element, allowing for nested arrays of nulls.
  */
 export const isArrayOfNulls = (input: any): input is null[] | null[][] =>
-  input.every((_input: null) =>
-    Array.isArray(_input) ? isArrayOfNulls(_input) : _input === null
-  );
+	input.every((_input: null) =>
+		Array.isArray(_input) ? isArrayOfNulls(_input) : _input === null,
+	);
 
 /**
  * Type guard function to check if the input is an object.
@@ -50,9 +50,9 @@ export const isArrayOfNulls = (input: any): input is null[] | null[][] =>
  * Note: Checks if the input is non-null and either has 'Object' as its constructor name or is of type 'object' without being an array.
  */
 export const isObject = (obj: any): obj is Record<any, any> =>
-  obj != null &&
-  (obj.constructor.name === "Object" ||
-    (typeof obj === "object" && !Array.isArray(obj)));
+	obj != null &&
+	(obj.constructor.name === "Object" ||
+		(typeof obj === "object" && !Array.isArray(obj)));
 
 /**
  * Recursively merges properties from a source object into a target object. If a property exists in both, the source's value overwrites the target's.
@@ -64,14 +64,14 @@ export const isObject = (obj: any): obj is Record<any, any> =>
  * Note: Performs a deep merge for nested objects. Non-object properties are directly overwritten.
  */
 export const deepMerge = (target: any, source: any): any => {
-  for (const key in source) {
-    if (source.hasOwnProperty(key)) {
-      if (isObject(source[key]) && isObject(target[key]))
-        target[key] = deepMerge(target[key], source[key]);
-      else target[key] = source[key];
-    }
-  }
-  return target;
+	for (const key in source) {
+		if (Object.hasOwn(source, key)) {
+			if (isObject(source[key]) && isObject(target[key]))
+				target[key] = deepMerge(target[key], source[key]);
+			else target[key] = source[key];
+		}
+	}
+	return target;
 };
 
 /**
@@ -83,44 +83,44 @@ export const deepMerge = (target: any, source: any): any => {
  * Note: Handles nested objects by recursively combining them. Non-object values with the same key are merged into arrays.
  */
 export const combineObjects = (
-  arr: Record<string, any>[]
+	arr: Record<string, any>[],
 ): Record<string, any> => {
-  const result: Record<string, any> = {};
+	const result: Record<string, any> = {};
 
-  for (const obj of arr) {
-    for (const key in obj) {
-      if (obj.hasOwnProperty(key)) {
-        const existingValue = result[key];
-        const newValue = obj[key];
+	for (const obj of arr) {
+		for (const key in obj) {
+			if (Object.hasOwn(obj, key)) {
+				const existingValue = result[key];
+				const newValue = obj[key];
 
-        if (
-          isObject(existingValue) &&
-          isObject(newValue) &&
-          existingValue !== null &&
-          existingValue !== undefined &&
-          newValue !== null &&
-          newValue !== undefined
-        ) {
-          // If both values are objects, recursively combine them
-          result[key] = combineObjects([existingValue, newValue]);
-        } else {
-          // If one or both values are not objects, overwrite the existing value
-          result[key] =
-            existingValue !== null && existingValue !== undefined
-              ? Array.isArray(existingValue)
-                ? Array.isArray(newValue)
-                  ? [...existingValue, ...newValue]
-                  : [...existingValue, newValue]
-                : Array.isArray(newValue)
-                ? [existingValue, ...newValue]
-                : [existingValue, newValue]
-              : newValue;
-        }
-      }
-    }
-  }
+				if (
+					isObject(existingValue) &&
+					isObject(newValue) &&
+					existingValue !== null &&
+					existingValue !== undefined &&
+					newValue !== null &&
+					newValue !== undefined
+				) {
+					// If both values are objects, recursively combine them
+					result[key] = combineObjects([existingValue, newValue]);
+				} else {
+					// If one or both values are not objects, overwrite the existing value
+					result[key] =
+						existingValue !== null && existingValue !== undefined
+							? Array.isArray(existingValue)
+								? Array.isArray(newValue)
+									? [...existingValue, ...newValue]
+									: [...existingValue, newValue]
+								: Array.isArray(newValue)
+									? [existingValue, ...newValue]
+									: [existingValue, newValue]
+							: newValue;
+				}
+			}
+		}
+	}
 
-  return result;
+	return result;
 };
 
 /**
@@ -132,7 +132,7 @@ export const combineObjects = (
  * Note: Validates that the input can be parsed as a float and that subtracting zero results in a number, ensuring it's a numeric value.
  */
 export const isNumber = (input: any): input is number =>
-  !isNaN(parseFloat(input)) && !isNaN(input - 0);
+	!Number.isNaN(Number.parseFloat(input)) && !Number.isNaN(input - 0);
 
 /**
  * Checks if the input is a valid email format.
@@ -143,7 +143,7 @@ export const isNumber = (input: any): input is number =>
  * Note: Uses a regular expression to validate the email format, ensuring it has parts separated by '@' and contains a domain with a period.
  */
 export const isEmail = (input: any) =>
-  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(input));
+	/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(input));
 
 /**
  * Checks if the input is a valid URL format.
@@ -155,26 +155,25 @@ export const isEmail = (input: any) =>
  *       Also recognizes 'tel:' and 'mailto:' as valid URL formats, as well as strings starting with '#' without spaces.
  */
 export const isURL = (input: any) => {
-  if (typeof input !== "string") return false;
-  if (
-    (input[0] === "#" && !input.includes(" ")) ||
-    input.startsWith("tel:") ||
-    input.startsWith("mailto:")
-  )
-    return true;
-  else {
-    var pattern = new RegExp(
-      "^(https?:\\/\\/)?" + // protocol
-        "((([a-z\\d]([a-z\\d-]*[a-z\\d])*)\\.)+[a-z]{2,}|" + // domain name
-        "localhost|" + // OR localhost
-        "((\\d{1,3}\\.){3}\\d{1,3}))" + // OR ip (v4) address
-        "(\\:\\d+)?(\\/[-a-z\\d%_.~+]*)*" + // port and path
-        "(\\?[;&a-z\\d%_.~+=-]*)?" + // query string
-        "(\\#[-a-z\\d_]*)?$",
-      "i"
-    ); // fragment locator
-    return !!pattern.test(input);
-  }
+	if (typeof input !== "string") return false;
+	if (
+		(input[0] === "#" && !input.includes(" ")) ||
+		input.startsWith("tel:") ||
+		input.startsWith("mailto:")
+	)
+		return true;
+
+	const pattern = new RegExp(
+		"^(https?:\\/\\/)?" + // protocol
+			"((([a-z\\d]([a-z\\d-]*[a-z\\d])*)\\.)+[a-z]{2,}|" + // domain name
+			"localhost|" + // OR localhost
+			"((\\d{1,3}\\.){3}\\d{1,3}))" + // OR ip (v4) address
+			"(\\:\\d+)?(\\/[-a-z\\d%_.~+]*)*" + // port and path
+			"(\\?[;&a-z\\d%_.~+=-]*)?" + // query string
+			"(\\#[-a-z\\d_]*)?$",
+		"i",
+	); // fragment locator
+	return !!pattern.test(input);
 };
 
 /**
@@ -187,7 +186,7 @@ export const isURL = (input: any) => {
  *       Recognizes both opening and closing tags, as well as self-closing tags.
  */
 export const isHTML = (input: any) =>
-  /<\/?\s*[a-z-][^>]*\s*>|(\&(?:[\w\d]+|#\d+|#x[a-f\d]+);)/g.test(input);
+	/<\/?\s*[a-z-][^>]*\s*>|(\&(?:[\w\d]+|#\d+|#x[a-f\d]+);)/g.test(input);
 
 /**
  * Type guard function to check if the input is a string, excluding strings that match specific formats (number, boolean, email, URL, IP).
@@ -198,8 +197,8 @@ export const isHTML = (input: any) =>
  * Note: Validates the input against being a number, boolean, email, URL, or IP address to ensure it's a general string.
  */
 export const isString = (input: any): input is string =>
-  Object.prototype.toString.call(input) === "[object String]" &&
-  [isNumber, isBoolean, isEmail, isURL, isIP].every((fn) => !fn(input));
+	Object.prototype.toString.call(input) === "[object String]" &&
+	[isNumber, isBoolean, isEmail, isURL, isIP].every((fn) => !fn(input));
 
 /**
  * Checks if the input is a valid IP address format.
@@ -210,7 +209,7 @@ export const isString = (input: any): input is string =>
  * Note: Uses a regular expression to validate IP addresses, ensuring they consist of four octets, each ranging from 0 to 255.
  */
 export const isIP = (input: any) =>
-  /^(?:(?:^|\.)(?:2(?:5[0-5]|[0-4]\d)|1?\d?\d)){4}$/.test(input);
+	/^(?:(?:^|\.)(?:2(?:5[0-5]|[0-4]\d)|1?\d?\d)){4}$/.test(input);
 
 /**
  * Type guard function to check if the input is a boolean or a string representation of a boolean.
@@ -221,11 +220,11 @@ export const isIP = (input: any) =>
  * Note: Recognizes both boolean literals (true, false) and their string representations ("true", "false").
  */
 export const isBoolean = (input: any): input is boolean =>
-  typeof input === "boolean" ||
-  input === "true" ||
-  input === "false" ||
-  input === true ||
-  input === false;
+	typeof input === "boolean" ||
+	input === "true" ||
+	input === "false" ||
+	input === true ||
+	input === false;
 
 /**
  * Type guard function to check if the input is a password based on a specific length criterion.
@@ -236,7 +235,7 @@ export const isBoolean = (input: any): input is boolean =>
  * Note: Specifically checks for string length to determine if it matches the defined password length criterion.
  */
 export const isPassword = (input: any): input is string =>
-  typeof input === "string" && input.length === 97;
+	typeof input === "string" && input.length === 97;
 
 /**
  * Checks if the input can be converted to a valid date.
@@ -245,7 +244,7 @@ export const isPassword = (input: any): input is string =>
  * @returns A boolean indicating whether the input is a valid date.
  */
 export const isDate = (input: any) =>
-  !isNaN(new Date(input).getTime()) || !isNaN(Date.parse(input));
+	!Number.isNaN(new Date(input).getTime()) || !Number.isNaN(Date.parse(input));
 
 /**
  * Checks if the input is a valid ID.
@@ -255,7 +254,7 @@ export const isDate = (input: any) =>
  */
 
 export const isValidID = (input: any): input is string => {
-  return typeof input === "string" && input.length === 32;
+	return typeof input === "string" && input.length === 32;
 };
 
 /**
@@ -265,7 +264,7 @@ export const isValidID = (input: any): input is string => {
  * @returns {boolean} Returns true if the string is valid JSON, otherwise false.
  */
 export const isJSON = (str: string): boolean =>
-  str === "null" || str === "undefined" || str[0] === "{" || str[0] === "[";
+	str === "null" || str === "undefined" || str[0] === "{" || str[0] === "[";
 
 /**
  * Identifies and returns properties that have changed between two objects.
@@ -275,16 +274,16 @@ export const isJSON = (str: string): boolean =>
  * @returns A record of changed properties with original values from obj1 and new values from obj2, or null if no changes are found.
  */
 export const findChangedProperties = (
-  obj1: Record<string, string>,
-  obj2: Record<string, string>
+	obj1: Record<string, string>,
+	obj2: Record<string, string>,
 ): Record<string, string> | null => {
-  const result: Record<string, string> = {};
+	const result: Record<string, string> = {};
 
-  for (const key1 in obj1)
-    if (obj2.hasOwnProperty(key1) && obj1[key1] !== obj2[key1])
-      result[obj1[key1]] = obj2[key1];
+	for (const key1 in obj1)
+		if (Object.hasOwn(obj2, key1) && obj1[key1] !== obj2[key1])
+			result[obj1[key1]] = obj2[key1];
 
-  return Object.keys(result).length ? result : null;
+	return Object.keys(result).length ? result : null;
 };
 
 /**
@@ -295,40 +294,40 @@ export const findChangedProperties = (
  * @returns The detected field type as a string, or undefined if no matching type is found.
  */
 export const detectFieldType = (
-  input: any,
-  availableTypes: FieldType[]
+	input: any,
+	availableTypes: FieldType[],
 ): FieldType | undefined => {
-  if (input !== null && input !== undefined)
-    if (!Array.isArray(input)) {
-      if (
-        (input === "0" ||
-          input === "1" ||
-          input === "true" ||
-          input === "false") &&
-        availableTypes.includes("boolean")
-      )
-        return "boolean";
-      else if (isNumber(input)) {
-        if (availableTypes.includes("table")) return "table";
-        else if (availableTypes.includes("date")) return "date";
-        else if (availableTypes.includes("number")) return "number";
-      } else if (availableTypes.includes("table") && isValidID(input))
-        return "table";
-      else if (input.startsWith("[") && availableTypes.includes("array"))
-        return "array";
-      else if (availableTypes.includes("email") && isEmail(input))
-        return "email";
-      else if (availableTypes.includes("url") && isURL(input)) return "url";
-      else if (availableTypes.includes("password") && isPassword(input))
-        return "password";
-      else if (availableTypes.includes("json") && isJSON(input)) return "json";
-      else if (availableTypes.includes("json") && isDate(input)) return "json";
-      else if (availableTypes.includes("string") && isString(input))
-        return "string";
-      else if (availableTypes.includes("ip") && isIP(input)) return "ip";
-    } else return "array";
+	if (input !== null && input !== undefined)
+		if (!Array.isArray(input)) {
+			if (
+				(input === "0" ||
+					input === "1" ||
+					input === "true" ||
+					input === "false") &&
+				availableTypes.includes("boolean")
+			)
+				return "boolean";
+			if (isNumber(input)) {
+				if (availableTypes.includes("table")) return "table";
+				if (availableTypes.includes("date")) return "date";
+				if (availableTypes.includes("number")) return "number";
+			} else if (availableTypes.includes("table") && isValidID(input))
+				return "table";
+			else if (input.startsWith("[") && availableTypes.includes("array"))
+				return "array";
+			else if (availableTypes.includes("email") && isEmail(input))
+				return "email";
+			else if (availableTypes.includes("url") && isURL(input)) return "url";
+			else if (availableTypes.includes("password") && isPassword(input))
+				return "password";
+			else if (availableTypes.includes("json") && isJSON(input)) return "json";
+			else if (availableTypes.includes("json") && isDate(input)) return "json";
+			else if (availableTypes.includes("string") && isString(input))
+				return "string";
+			else if (availableTypes.includes("ip") && isIP(input)) return "ip";
+		} else return "array";
 
-  return undefined;
+	return undefined;
 };
 
 /**
@@ -340,185 +339,160 @@ export const detectFieldType = (
  * @returns A boolean indicating whether the value matches the specified field type(s).
  */
 export const validateFieldType = (
-  value: any,
-  fieldType: FieldType | FieldType[],
-  fieldChildrenType?: FieldType | FieldType[]
+	value: any,
+	fieldType: FieldType | FieldType[],
+	fieldChildrenType?: FieldType | FieldType[],
 ): boolean => {
-  if (value === null) return true;
-  if (Array.isArray(fieldType))
-    return detectFieldType(value, fieldType) !== undefined;
-  if (fieldType === "array" && fieldChildrenType && Array.isArray(value))
-    return value.every(
-      (v) =>
-        detectFieldType(
-          v,
-          Array.isArray(fieldChildrenType)
-            ? fieldChildrenType
-            : [fieldChildrenType]
-        ) !== undefined
-    );
+	if (value === null) return true;
+	if (Array.isArray(fieldType))
+		return detectFieldType(value, fieldType) !== undefined;
+	if (fieldType === "array" && fieldChildrenType && Array.isArray(value))
+		return value.every(
+			(v) =>
+				detectFieldType(
+					v,
+					Array.isArray(fieldChildrenType)
+						? fieldChildrenType
+						: [fieldChildrenType],
+				) !== undefined,
+		);
 
-  switch (fieldType) {
-    case "string":
-      return isString(value);
-    case "password":
-      return isNumber(value) || isPassword(value) || isString(value);
-    case "number":
-      return isNumber(value);
-    case "html":
-      return isHTML(value);
-    case "ip":
-      return isIP(value);
-    case "boolean":
-      return isBoolean(value);
-    case "date":
-      return isDate(value);
-    case "object":
-      return isObject(value);
-    case "array":
-      return Array.isArray(value);
-    case "email":
-      return isEmail(value);
-    case "url":
-      return isURL(value);
-    case "table":
-      // feat: check if id exists
-      if (Array.isArray(value))
-        return (
-          (isArrayOfObjects(value) &&
-            value.every(
-              (element: Data) =>
-                element.hasOwnProperty("id") &&
-                (isValidID(element.id) || isNumber(element.id))
-            )) ||
-          value.every(isNumber) ||
-          isValidID(value)
-        );
-      else if (isObject(value))
-        return (
-          value.hasOwnProperty("id") &&
-          (isValidID((value as Data).id) || isNumber((value as Data).id))
-        );
-      else return isNumber(value) || isValidID(value);
-    case "id":
-      return isNumber(value) || isValidID(value);
-    case "json":
-      return isJSON(value) || Array.isArray(value) || isObject(value);
-    default:
-      return false;
-  }
+	switch (fieldType) {
+		case "string":
+			return isString(value);
+		case "password":
+			return isNumber(value) || isPassword(value) || isString(value);
+		case "number":
+			return isNumber(value);
+		case "html":
+			return isHTML(value);
+		case "ip":
+			return isIP(value);
+		case "boolean":
+			return isBoolean(value);
+		case "date":
+			return isDate(value);
+		case "object":
+			return isObject(value);
+		case "array":
+			return Array.isArray(value);
+		case "email":
+			return isEmail(value);
+		case "url":
+			return isURL(value);
+		case "table":
+			// feat: check if id exists
+			if (Array.isArray(value))
+				return (
+					(isArrayOfObjects(value) &&
+						value.every(
+							(element: Data) =>
+								Object.hasOwn(element, "id") &&
+								(isValidID(element.id) || isNumber(element.id)),
+						)) ||
+					value.every(isNumber) ||
+					isValidID(value)
+				);
+			if (isObject(value))
+				return (
+					Object.hasOwn(value, "id") &&
+					(isValidID((value as Data).id) || isNumber((value as Data).id))
+				);
+			return isNumber(value) || isValidID(value);
+		case "id":
+			return isNumber(value) || isValidID(value);
+		case "json":
+			return isJSON(value) || Array.isArray(value) || isObject(value);
+		default:
+			return false;
+	}
 };
 
 export function FormatObjectCriteriaValue(
-  value: string,
-  isParentArray: boolean = false
+	value: string,
+	isParentArray = false,
 ): [
-  ComparisonOperator,
-  string | number | boolean | null | (string | number | null)[]
+	ComparisonOperator,
+	string | number | boolean | null | (string | number | null)[],
 ] {
-  switch (value[0]) {
-    case ">":
-    case "<":
-      return value[1] === "="
-        ? [
-            value.slice(0, 2) as ComparisonOperator,
-            value.slice(2) as string | number,
-          ]
-        : [
-            value.slice(0, 1) as ComparisonOperator,
-            value.slice(1) as string | number,
-          ];
-    case "[":
-      return value[1] === "]"
-        ? [
-            value.slice(0, 2) as ComparisonOperator,
-            (value.slice(2) as string | number).toString().split(","),
-          ]
-        : ["[]", value.slice(1) as string | number];
-    case "!":
-      return ["=", "*"].includes(value[1])
-        ? [
-            value.slice(0, 2) as ComparisonOperator,
-            value.slice(2) as string | number,
-          ]
-        : value[1] === "["
-        ? [
-            value.slice(0, 3) as ComparisonOperator,
-            value.slice(3) as string | number,
-          ]
-        : [
-            (value.slice(0, 1) + "=") as ComparisonOperator,
-            value.slice(1) as string | number,
-          ];
-    case "=":
-      return isParentArray
-        ? [
-            value.slice(0, 1) as ComparisonOperator,
-            value.slice(1) as string | number,
-          ]
-        : [
-            value.slice(0, 1) as ComparisonOperator,
-            (value.slice(1) + ",") as string,
-          ];
-    case "*":
-      return [
-        value.slice(0, 1) as ComparisonOperator,
-        value.slice(1) as string | number,
-      ];
-    default:
-      return ["=", value];
-  }
+	switch (value[0]) {
+		case ">":
+		case "<":
+			return value[1] === "="
+				? [
+						value.slice(0, 2) as ComparisonOperator,
+						value.slice(2) as string | number,
+					]
+				: [
+						value.slice(0, 1) as ComparisonOperator,
+						value.slice(1) as string | number,
+					];
+		case "[":
+			return value[1] === "]"
+				? [
+						value.slice(0, 2) as ComparisonOperator,
+						(value.slice(2) as string | number).toString().split(","),
+					]
+				: ["[]", value.slice(1) as string | number];
+		case "!":
+			return ["=", "*"].includes(value[1])
+				? [
+						value.slice(0, 2) as ComparisonOperator,
+						value.slice(2) as string | number,
+					]
+				: value[1] === "["
+					? [
+							value.slice(0, 3) as ComparisonOperator,
+							value.slice(3) as string | number,
+						]
+					: [
+							`${value.slice(0, 1)}=` as ComparisonOperator,
+							value.slice(1) as string | number,
+						];
+		case "=":
+			return isParentArray
+				? [
+						value.slice(0, 1) as ComparisonOperator,
+						value.slice(1) as string | number,
+					]
+				: [
+						value.slice(0, 1) as ComparisonOperator,
+						`${value.slice(1)},` as string,
+					];
+		case "*":
+			return [
+				value.slice(0, 1) as ComparisonOperator,
+				value.slice(1) as string | number,
+			];
+		default:
+			return ["=", value];
+	}
 }
 
 type ValidKey = number | string;
 export const swapKeyValue = <K extends ValidKey, V extends ValidKey>(
-  object: Record<K, V>
+	object: Record<K, V>,
 ): Record<V, K> =>
-  Object.entries(object).reduce(
-    (swapped, [key, value]) => ({ ...swapped, [value as ValidKey]: key }),
-    {} as Record<V, K>
-  );
+	Object.entries(object).reduce(
+		(swapped, [key, value]) =>
+			Object.assign(swapped, { [value as ValidKey]: key }),
+		{} as Record<V, K>,
+	);
 
 export function getField(keyPath: string, schema: Schema) {
-  let RETURN: Field | Schema | null = null;
-  const keyPathSplited = keyPath.split(".");
-  for (const [index, key] of keyPathSplited.entries()) {
-    const foundItem = schema.find((item) => item.key === key);
-    if (!foundItem) return null;
-    if (index === keyPathSplited.length - 1) RETURN = foundItem;
-    if (
-      (foundItem.type === "array" || foundItem.type === "object") &&
-      foundItem.children &&
-      isArrayOfObjects(foundItem.children)
-    )
-      RETURN = foundItem.children;
-  }
-  if (!RETURN) return null;
-  return isArrayOfObjects(RETURN) ? RETURN[0] : RETURN;
-}
-
-export default class Utils {
-  static isNumber = isNumber;
-  static isObject = isObject;
-  static isEmail = isEmail;
-  static isDate = isDate;
-  static isURL = isURL;
-  static isValidID = isValidID;
-  static isPassword = isPassword;
-  static deepMerge = deepMerge;
-  static combineObjects = combineObjects;
-  static isArrayOfObjects = isArrayOfObjects;
-  static findChangedProperties = findChangedProperties;
-  static detectFieldType = detectFieldType;
-  static isArrayOfArrays = isArrayOfArrays;
-  static isBoolean = isBoolean;
-  static isString = isString;
-  static isHTML = isHTML;
-  static isIP = isIP;
-  static validateFieldType = validateFieldType;
-  static isArrayOfNulls = isArrayOfNulls;
-  static FormatObjectCriteriaValue = FormatObjectCriteriaValue;
-  static swapKeyValue = swapKeyValue;
-  static getField = getField;
-  static isJSON = isJSON;
+	let RETURN: Field | Schema | null = null;
+	const keyPathSplited = keyPath.split(".");
+	for (const [index, key] of keyPathSplited.entries()) {
+		const foundItem = schema.find((item) => item.key === key);
+		if (!foundItem) return null;
+		if (index === keyPathSplited.length - 1) RETURN = foundItem;
+		if (
+			(foundItem.type === "array" || foundItem.type === "object") &&
+			foundItem.children &&
+			isArrayOfObjects(foundItem.children)
+		)
+			RETURN = foundItem.children;
+	}
+	if (!RETURN) return null;
+	return isArrayOfObjects(RETURN) ? RETURN[0] : RETURN;
 }

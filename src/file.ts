@@ -1,13 +1,13 @@
 import {
-  FileHandle,
-  open,
-  access,
-  writeFile,
-  readFile,
-  constants as fsConstants,
-  unlink,
-  copyFile,
-  appendFile,
+	type FileHandle,
+	open,
+	access,
+	writeFile,
+	readFile,
+	constants as fsConstants,
+	unlink,
+	copyFile,
+	appendFile,
 } from "node:fs/promises";
 import type { WriteStream } from "node:fs";
 import { createInterface, type Interface } from "node:readline";
@@ -17,73 +17,70 @@ import { createGzip, createGunzip, gunzipSync, gzipSync } from "node:zlib";
 import { join } from "node:path";
 import { Worker } from "node:worker_threads";
 
-import { ComparisonOperator, FieldType, Schema } from "./index.js";
+import type { ComparisonOperator, FieldType, Schema } from "./index.js";
 import {
-  detectFieldType,
-  isArrayOfObjects,
-  isJSON,
-  isNumber,
-  isObject,
+	detectFieldType,
+	isArrayOfObjects,
+	isJSON,
+	isNumber,
+	isObject,
 } from "./utils.js";
 import { encodeID, compare } from "./utils.server.js";
-import Config from "./config.js";
+import * as Config from "./config.js";
 import Inison from "inison";
 
 export const lock = async (
-  folderPath: string,
-  prefix?: string
+	folderPath: string,
+	prefix?: string,
 ): Promise<void> => {
-  let lockFile,
-    lockFilePath = join(folderPath, `${prefix ?? ""}.locked`);
-  try {
-    lockFile = await open(lockFilePath, "wx");
-    return;
-  } catch ({ message }: any) {
-    if (message.split(":")[0] === "EEXIST")
-      return await new Promise<any>((resolve, reject) =>
-        setTimeout(() => resolve(lock(folderPath, prefix)), 13)
-      );
-  } finally {
-    await lockFile?.close();
-  }
+	let lockFile = null;
+	const lockFilePath = join(folderPath, `${prefix ?? ""}.locked`);
+	try {
+		lockFile = await open(lockFilePath, "wx");
+		return;
+	} catch ({ message }: any) {
+		if (message.split(":")[0] === "EEXIST")
+			return await new Promise<void>((resolve, reject) =>
+				setTimeout(() => resolve(lock(folderPath, prefix)), 13),
+			);
+	} finally {
+		await lockFile?.close();
+	}
 };
 
 export const unlock = async (folderPath: string, prefix?: string) => {
-  try {
-    await unlink(join(folderPath, `${prefix ?? ""}.locked`));
-  } catch {}
+	try {
+		await unlink(join(folderPath, `${prefix ?? ""}.locked`));
+	} catch {}
 };
 
 export const write = async (
-  filePath: string,
-  data: any,
-  disableCompression: boolean = false
+	filePath: string,
+	data: any,
+	disableCompression = false,
 ) => {
-  await writeFile(
-    filePath,
-    Config.isCompressionEnabled && !disableCompression
-      ? gzipSync(String(data))
-      : String(data)
-  );
+	await writeFile(
+		filePath,
+		Config.isCompressionEnabled && !disableCompression
+			? gzipSync(String(data))
+			: String(data),
+	);
 };
 
-export const read = async (
-  filePath: string,
-  disableCompression: boolean = false
-) => {
-  return Config.isCompressionEnabled && !disableCompression
-    ? gunzipSync(await readFile(filePath)).toString()
-    : (await readFile(filePath)).toString();
+export const read = async (filePath: string, disableCompression = false) => {
+	return Config.isCompressionEnabled && !disableCompression
+		? gunzipSync(await readFile(filePath)).toString()
+		: (await readFile(filePath)).toString();
 };
 
 const _pipeline = async (
-  rl: Interface,
-  writeStream: WriteStream,
-  transform: TransformType
+	rl: Interface,
+	writeStream: WriteStream,
+	transform: TransformType,
 ): Promise<void> => {
-  if (Config.isCompressionEnabled)
-    await pipeline(rl, transform, createGzip(), writeStream);
-  else await pipeline(rl, transform, writeStream);
+	if (Config.isCompressionEnabled)
+		await pipeline(rl, transform, createGzip(), writeStream);
+	else await pipeline(rl, transform, writeStream);
 };
 
 /**
@@ -93,16 +90,16 @@ const _pipeline = async (
  * @returns A readline.Interface instance configured with the provided file stream.
  */
 const readLineInternface = (fileHandle: FileHandle) => {
-  const [major, minor, patch] = process.versions.node.split(".").map(Number);
-  return major > 18 ||
-    (major === 18 && minor >= 11 && !Config.isCompressionEnabled)
-    ? fileHandle.readLines()
-    : createInterface({
-        input: Config.isCompressionEnabled
-          ? fileHandle.createReadStream().pipe(createGunzip())
-          : fileHandle.createReadStream(),
-        crlfDelay: Infinity,
-      });
+	const [major, minor, patch] = process.versions.node.split(".").map(Number);
+	return major > 18 ||
+		(major === 18 && minor >= 11 && !Config.isCompressionEnabled)
+		? fileHandle.readLines()
+		: createInterface({
+				input: Config.isCompressionEnabled
+					? fileHandle.createReadStream().pipe(createGunzip())
+					: fileHandle.createReadStream(),
+				crlfDelay: Number.POSITIVE_INFINITY,
+			});
 };
 
 /**
@@ -112,12 +109,12 @@ const readLineInternface = (fileHandle: FileHandle) => {
  * @returns A Promise that resolves to true if the file/directory exists, false otherwise.
  */
 export const isExists = async (path: string) => {
-  try {
-    await access(path, fsConstants.R_OK | fsConstants.W_OK);
-    return true;
-  } catch {
-    return false;
-  }
+	try {
+		await access(path, fsConstants.R_OK | fsConstants.W_OK);
+		return true;
+	} catch {
+		return false;
+	}
 };
 
 /**
@@ -127,22 +124,22 @@ export const isExists = async (path: string) => {
  * @returns Encoded string for true/false, special characters in strings, or original input.
  */
 const secureString = (
-  input: string | number | boolean | null
+	input: string | number | boolean | null,
 ): string | number | boolean | null => {
-  if (["true", "false"].includes(String(input))) return input ? 1 : 0;
+	if (["true", "false"].includes(String(input))) return input ? 1 : 0;
 
-  if (typeof input !== "string") return input;
-  let decodedInput = null;
-  try {
-    decodedInput = decodeURIComponent(input);
-  } catch (_error) {
-    decodedInput = decodeURIComponent(
-      input.replace(/%(?![0-9][0-9a-fA-F]+)/g, "")
-    );
-  }
+	if (typeof input !== "string") return input;
+	let decodedInput = null;
+	try {
+		decodedInput = decodeURIComponent(input);
+	} catch (_error) {
+		decodedInput = decodeURIComponent(
+			input.replace(/%(?![0-9][0-9a-fA-F]+)/g, ""),
+		);
+	}
 
-  // Replace characters using a single regular expression.
-  return decodedInput.replace(/\\n/g, "\n").replace(/\n/g, "\\n");
+	// Replace characters using a single regular expression.
+	return decodedInput.replace(/\\n/g, "\n").replace(/\n/g, "\\n");
 };
 
 /**
@@ -154,13 +151,18 @@ const secureString = (
  * @returns The secured and/or joined string.
  */
 export const encode = (
-  input: string | number | boolean | null | (string | number | boolean | null)[]
+	input:
+		| string
+		| number
+		| boolean
+		| null
+		| (string | number | boolean | null)[],
 ): string | number | boolean | null =>
-  Array.isArray(input)
-    ? input.every((_input) => typeof _input === "string" && isJSON(_input))
-      ? `[${input.join(",")}]`
-      : Inison.stringify(input)
-    : secureString(input);
+	Array.isArray(input)
+		? input.every((_input) => typeof _input === "string" && isJSON(_input))
+			? `[${input.join(",")}]`
+			: Inison.stringify(input)
+		: secureString(input);
 
 /**
  * Reverses the encoding done by 'secureString'. Replaces encoded characters with their original symbols.
@@ -169,11 +171,11 @@ export const encode = (
  * @returns Decoded string or null if input is empty.
  */
 const unSecureString = (input: string): string | number | null => {
-  if (isNumber(input)) return Number(input);
+	if (isNumber(input)) return Number(input);
 
-  if (typeof input === "string") return input.replace(/\\n/g, "\n") || null;
+	if (typeof input === "string") return input.replace(/\\n/g, "\n") || null;
 
-  return null;
+	return null;
 };
 
 /**
@@ -187,45 +189,46 @@ const unSecureString = (input: string): string | number | null => {
  * @returns Decoded value, transformed according to the specified field type(s).
  */
 const decodeHelper = (
-  value: string | number | any[],
-  fieldType?: FieldType | FieldType[],
-  fieldChildrenType?: FieldType | FieldType[] | Schema,
-  secretKey?: string | Buffer
+	value: string | number | any[],
+	fieldType?: FieldType | FieldType[],
+	fieldChildrenType?: FieldType | FieldType[] | Schema,
+	secretKey?: string | Buffer,
 ): any => {
-  if (Array.isArray(value) && fieldType !== "array")
-    return value.map((v) =>
-      decodeHelper(v, fieldType, fieldChildrenType, secretKey)
-    );
-  switch (fieldType as FieldType) {
-    case "number":
-      return isNumber(value) ? Number(value) : null;
-    case "boolean":
-      return typeof value === "string" ? value === "true" : Boolean(value);
-    case "array":
-      if (!Array.isArray(value)) return [value];
+	if (Array.isArray(value) && fieldType !== "array")
+		return value.map((v) =>
+			decodeHelper(v, fieldType, fieldChildrenType, secretKey),
+		);
+	switch (fieldType as FieldType) {
+		case "number":
+			return isNumber(value) ? Number(value) : null;
+		case "boolean":
+			return typeof value === "string" ? value === "true" : Boolean(value);
+		case "array":
+			if (!Array.isArray(value)) return [value];
 
-      if (fieldChildrenType && !isArrayOfObjects(fieldChildrenType))
-        return fieldChildrenType
-          ? value.map(
-              (v) =>
-                decode(
-                  v,
-                  Array.isArray(fieldChildrenType)
-                    ? detectFieldType(v, fieldChildrenType)
-                    : fieldChildrenType,
-                  undefined,
-                  secretKey
-                ) as string | number | boolean | null
-            )
-          : value;
-    case "table":
-    case "id":
-      return isNumber(value) && secretKey
-        ? encodeID(value as number, secretKey)
-        : value;
-    default:
-      return value;
-  }
+			if (fieldChildrenType && !isArrayOfObjects(fieldChildrenType))
+				return fieldChildrenType
+					? value.map(
+							(v) =>
+								decode(
+									v,
+									Array.isArray(fieldChildrenType)
+										? detectFieldType(v, fieldChildrenType)
+										: fieldChildrenType,
+									undefined,
+									secretKey,
+								) as string | number | boolean | null,
+						)
+					: value;
+			break;
+		case "table":
+		case "id":
+			return isNumber(value) && secretKey
+				? encodeID(value as number, secretKey)
+				: value;
+		default:
+			return value;
+	}
 };
 
 /**
@@ -239,29 +242,29 @@ const decodeHelper = (
  * @returns Decoded value as a string, number, boolean, or array of these, or null if no fieldType or input is null/empty.
  */
 export const decode = (
-  input: string | null | number,
-  fieldType?: FieldType | FieldType[],
-  fieldChildrenType?: FieldType | FieldType[] | Schema,
-  secretKey?: string | Buffer
+	input: string | null | number,
+	fieldType?: FieldType | FieldType[],
+	fieldChildrenType?: FieldType | FieldType[] | Schema,
+	secretKey?: string | Buffer,
 ): string | number | boolean | null | (string | number | null | boolean)[] => {
-  if (!fieldType) return null;
-  if (input === null || input === "") return null;
+	if (!fieldType) return null;
+	if (input === null || input === "") return null;
 
-  // Detect the fieldType based on the input and the provided array of possible types.
-  if (Array.isArray(fieldType))
-    fieldType = detectFieldType(String(input), fieldType);
+	// Detect the fieldType based on the input and the provided array of possible types.
+	if (Array.isArray(fieldType))
+		fieldType = detectFieldType(String(input), fieldType);
 
-  // Decode the input using the decodeHelper function.
-  return decodeHelper(
-    typeof input === "string"
-      ? isJSON(input)
-        ? Inison.unstringify(input)
-        : unSecureString(input)
-      : input,
-    fieldType,
-    fieldChildrenType,
-    secretKey
-  );
+	// Decode the input using the decodeHelper function.
+	return decodeHelper(
+		typeof input === "string"
+			? isJSON(input)
+				? Inison.unstringify(input)
+				: unSecureString(input)
+			: input,
+		fieldType,
+		fieldChildrenType,
+		secretKey,
+	);
 };
 
 /**
@@ -278,126 +281,131 @@ export const decode = (
  *   2. Total count of lines processed.
  */
 export function get(
-  filePath: string,
-  lineNumbers?: number | number[],
-  fieldType?: FieldType | FieldType[],
-  fieldChildrenType?: FieldType | FieldType[] | Schema,
-  secretKey?: string | Buffer,
-  readWholeFile?: false
+	filePath: string,
+	lineNumbers?: number | number[],
+	fieldType?: FieldType | FieldType[],
+	fieldChildrenType?: FieldType | FieldType[] | Schema,
+	secretKey?: string | Buffer,
+	readWholeFile?: false,
 ): Promise<Record<
-  number,
-  | string
-  | number
-  | boolean
-  | null
-  | (string | number | boolean | (string | number | boolean)[] | null)[]
+	number,
+	| string
+	| number
+	| boolean
+	| null
+	| (string | number | boolean | (string | number | boolean)[] | null)[]
 > | null>;
 export function get(
-  filePath: string,
-  lineNumbers: undefined | number | number[],
-  fieldType: undefined | FieldType | FieldType[],
-  fieldChildrenType: undefined | FieldType | FieldType[],
-  secretKey: undefined | string | Buffer,
-  readWholeFile: true
+	filePath: string,
+	lineNumbers: undefined | number | number[],
+	fieldType: undefined | FieldType | FieldType[],
+	fieldChildrenType: undefined | FieldType | FieldType[],
+	secretKey: undefined | string | Buffer,
+	readWholeFile: true,
 ): Promise<
-  [
-    Record<
-      number,
-      | string
-      | number
-      | boolean
-      | null
-      | (string | number | boolean | (string | number | boolean)[] | null)[]
-    > | null,
-    number
-  ]
+	[
+		Record<
+			number,
+			| string
+			| number
+			| boolean
+			| null
+			| (string | number | boolean | (string | number | boolean)[] | null)[]
+		> | null,
+		number,
+	]
 >;
 export async function get(
-  filePath: string,
-  lineNumbers?: number | number[],
-  fieldType?: FieldType | FieldType[],
-  fieldChildrenType?: FieldType | FieldType[] | Schema,
-  secretKey?: string | Buffer,
-  readWholeFile: boolean = false
+	filePath: string,
+	lineNumbers?: number | number[],
+	fieldType?: FieldType | FieldType[],
+	fieldChildrenType?: FieldType | FieldType[] | Schema,
+	secretKey?: string | Buffer,
+	readWholeFile = false,
 ): Promise<
-  | Record<
-      number,
-      | string
-      | number
-      | boolean
-      | null
-      | (string | number | boolean | (string | number | boolean)[] | null)[]
-    >
-  | null
-  | [
-      Record<
-        number,
-        | string
-        | number
-        | boolean
-        | null
-        | (string | number | boolean | (string | number | boolean)[] | null)[]
-      > | null,
-      number
-    ]
+	| Record<
+			number,
+			| string
+			| number
+			| boolean
+			| null
+			| (string | number | boolean | (string | number | boolean)[] | null)[]
+	  >
+	| null
+	| [
+			Record<
+				number,
+				| string
+				| number
+				| boolean
+				| null
+				| (string | number | boolean | (string | number | boolean)[] | null)[]
+			> | null,
+			number,
+	  ]
 > {
-  let fileHandle, rl;
+	let fileHandle = null;
+	let rl = null;
 
-  try {
-    fileHandle = await open(filePath, "r");
-    rl = readLineInternface(fileHandle);
-    let lines: Record<
-        number,
-        | string
-        | number
-        | boolean
-        | null
-        | (string | number | boolean | (string | number | boolean)[] | null)[]
-      > = {},
-      linesCount = 0;
+	try {
+		fileHandle = await open(filePath, "r");
+		rl = readLineInternface(fileHandle);
+		const lines: Record<
+			number,
+			| string
+			| number
+			| boolean
+			| null
+			| (string | number | boolean | (string | number | boolean)[] | null)[]
+		> = {};
+		let linesCount = 0;
 
-    if (!lineNumbers) {
-      for await (const line of rl)
-        linesCount++,
-          (lines[linesCount] = decode(
-            line,
-            fieldType,
-            fieldChildrenType,
-            secretKey
-          ));
-    } else if (lineNumbers === -1) {
-      let lastLine: string | null = null;
-      for await (const line of rl) linesCount++, (lastLine = line);
-      if (lastLine)
-        lines[linesCount] = decode(
-          lastLine,
-          fieldType,
-          fieldChildrenType,
-          secretKey
-        );
-    } else {
-      let lineNumbersArray = new Set(
-        Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers]
-      );
-      for await (const line of rl) {
-        linesCount++;
-        if (!lineNumbersArray.has(linesCount)) continue;
-        lines[linesCount] = decode(
-          line,
-          fieldType,
-          fieldChildrenType,
-          secretKey
-        );
-        lineNumbersArray.delete(linesCount);
-        if (!lineNumbersArray.size && !readWholeFile) break;
-      }
-    }
-    return readWholeFile ? [lines, linesCount] : lines;
-  } finally {
-    // Ensure that file handles are closed, even if an error occurred
-    rl?.close();
-    await fileHandle?.close();
-  }
+		if (!lineNumbers) {
+			for await (const line of rl) {
+				linesCount++;
+				lines[linesCount] = decode(
+					line,
+					fieldType,
+					fieldChildrenType,
+					secretKey,
+				);
+			}
+		} else if (lineNumbers === -1) {
+			let lastLine: string | null = null;
+			for await (const line of rl) {
+				linesCount++;
+				lastLine = line;
+			}
+			if (lastLine)
+				lines[linesCount] = decode(
+					lastLine,
+					fieldType,
+					fieldChildrenType,
+					secretKey,
+				);
+		} else {
+			const lineNumbersArray = new Set(
+				Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers],
+			);
+			for await (const line of rl) {
+				linesCount++;
+				if (!lineNumbersArray.has(linesCount)) continue;
+				lines[linesCount] = decode(
+					line,
+					fieldType,
+					fieldChildrenType,
+					secretKey,
+				);
+				lineNumbersArray.delete(linesCount);
+				if (!lineNumbersArray.size && !readWholeFile) break;
+			}
+		}
+		return readWholeFile ? [lines, linesCount] : lines;
+	} finally {
+		// Ensure that file handles are closed, even if an error occurred
+		rl?.close();
+		await fileHandle?.close();
+	}
 }
 
 /**
@@ -411,71 +419,74 @@ export async function get(
  * Note: If the file doesn't exist and replacements is an object, it creates a new file with the specified replacements.
  */
 export const replace = async (
-  filePath: string,
-  replacements:
-    | string
-    | number
-    | boolean
-    | null
-    | (string | number | boolean | null)[]
-    | Record<
-        number,
-        string | boolean | number | null | (string | boolean | number | null)[]
-      >
+	filePath: string,
+	replacements:
+		| string
+		| number
+		| boolean
+		| null
+		| (string | number | boolean | null)[]
+		| Record<
+				number,
+				string | boolean | number | null | (string | boolean | number | null)[]
+		  >,
 ): Promise<string[]> => {
-  const fileTempPath = filePath.replace(/([^/]+)\/?$/, `.tmp/$1`);
-  if (await isExists(filePath)) {
-    let fileHandle, fileTempHandle, rl;
-    try {
-      let linesCount = 0;
-      fileHandle = await open(filePath, "r");
-      fileTempHandle = await open(fileTempPath, "w");
-      rl = readLineInternface(fileHandle);
+	const fileTempPath = filePath.replace(/([^/]+)\/?$/, ".tmp/$1");
+	if (await isExists(filePath)) {
+		let fileHandle = null;
+		let fileTempHandle = null;
+		let rl = null;
+		try {
+			let linesCount = 0;
+			fileHandle = await open(filePath, "r");
+			fileTempHandle = await open(fileTempPath, "w");
+			rl = readLineInternface(fileHandle);
 
-      await _pipeline(
-        rl,
-        fileTempHandle.createWriteStream(),
-        new Transform({
-          transform(line, encoding, callback) {
-            linesCount++;
-            const replacement = isObject(replacements)
-              ? replacements.hasOwnProperty(linesCount)
-                ? replacements[linesCount]
-                : line
-              : replacements;
-            return callback(null, replacement + "\n");
-          },
-        })
-      );
+			await _pipeline(
+				rl,
+				fileTempHandle.createWriteStream(),
+				new Transform({
+					transform(line, encoding, callback) {
+						linesCount++;
+						const replacement = isObject(replacements)
+							? Object.hasOwn(replacements, linesCount)
+								? replacements[linesCount]
+								: line
+							: replacements;
+						return callback(null, `${replacement}\n`);
+					},
+				}),
+			);
 
-      return [fileTempPath, filePath];
-    } finally {
-      // Ensure that file handles are closed, even if an error occurred
-      rl?.close();
-      await fileHandle?.close();
-      await fileTempHandle?.close();
-    }
-  } else if (isObject(replacements)) {
-    let replacementsKeys = Object.keys(replacements)
-      .map(Number)
-      .toSorted((a, b) => a - b);
+			return [fileTempPath, filePath];
+		} finally {
+			// Ensure that file handles are closed, even if an error occurred
+			rl?.close();
+			await fileHandle?.close();
+			await fileTempHandle?.close();
+		}
+	} else if (isObject(replacements)) {
+		const replacementsKeys = Object.keys(replacements)
+			.map(Number)
+			.toSorted((a, b) => a - b);
 
-    await write(
-      fileTempPath,
-      "\n".repeat(replacementsKeys[0] - 1) +
-        replacementsKeys
-          .map((lineNumber, index) =>
-            index === 0 || lineNumber - replacementsKeys[index - 1] - 1 === 0
-              ? replacements[lineNumber]
-              : "\n".repeat(lineNumber - replacementsKeys[index - 1] - 1) +
-                replacements[lineNumber]
-          )
-          .join("\n") +
-        "\n"
-    );
-    return [fileTempPath, filePath];
-  }
-  return [];
+		await write(
+			fileTempPath,
+			`${
+				"\n".repeat(replacementsKeys[0] - 1) +
+				replacementsKeys
+					.map((lineNumber, index) =>
+						index === 0 || lineNumber - replacementsKeys[index - 1] - 1 === 0
+							? replacements[lineNumber]
+							: "\n".repeat(lineNumber - replacementsKeys[index - 1] - 1) +
+								replacements[lineNumber],
+					)
+					.join("\n")
+			}\n`,
+		);
+		return [fileTempPath, filePath];
+	}
+	return [];
 };
 
 /**
@@ -487,55 +498,59 @@ export const replace = async (
  *
  */
 export const append = async (
-  filePath: string,
-  data: string | number | (string | number)[]
+	filePath: string,
+	data: string | number | (string | number)[],
 ): Promise<string[]> => {
-  const fileTempPath = filePath.replace(/([^/]+)\/?$/, `.tmp/$1`);
-  if (await isExists(filePath)) {
-    if (!Config.isReverseEnabled && !Config.isCompressionEnabled) {
-      await copyFile(filePath, fileTempPath);
-      await appendFile(
-        fileTempPath,
-        `${Array.isArray(data) ? data.join("\n") : data}\n`
-      );
-    } else {
-      let fileHandle, fileTempHandle, rl;
-      try {
-        fileHandle = await open(filePath, "r");
-        fileTempHandle = await open(fileTempPath, "w");
-        rl = readLineInternface(fileHandle);
-        let isAppended = false;
+	const fileTempPath = filePath.replace(/([^/]+)\/?$/, ".tmp/$1");
+	if (await isExists(filePath)) {
+		if (!Config.isReverseEnabled && !Config.isCompressionEnabled) {
+			await copyFile(filePath, fileTempPath);
+			await appendFile(
+				fileTempPath,
+				`${Array.isArray(data) ? data.join("\n") : data}\n`,
+			);
+		} else {
+			let fileHandle = null;
+			let fileTempHandle = null;
+			let rl = null;
+			try {
+				fileHandle = await open(filePath, "r");
+				fileTempHandle = await open(fileTempPath, "w");
+				rl = readLineInternface(fileHandle);
+				let isAppended = false;
 
-        await _pipeline(
-          rl,
-          fileTempHandle.createWriteStream(),
-          new Transform({
-            transform(line, encoding, callback) {
-              if (!isAppended) {
-                isAppended = true;
-                return callback(
-                  null,
-                  `${Array.isArray(data) ? data.join("\n") : data}\n` +
-                    (line.length ? `${line}\n` : "")
-                );
-              } else return callback(null, `${line}\n`);
-            },
-          })
-        );
-      } finally {
-        // Ensure that file handles are closed, even if an error occurred
-        rl?.close();
-        await fileHandle?.close();
-        await fileTempHandle?.close();
-      }
-    }
-  } else
-    await write(
-      fileTempPath,
-      `${Array.isArray(data) ? data.join("\n") : data}\n`,
-      undefined
-    );
-  return [fileTempPath, filePath];
+				await _pipeline(
+					rl,
+					fileTempHandle.createWriteStream(),
+					new Transform({
+						transform(line, encoding, callback) {
+							if (!isAppended) {
+								isAppended = true;
+								return callback(
+									null,
+									`${Array.isArray(data) ? data.join("\n") : data}\n${
+										line.length ? `${line}\n` : ""
+									}`,
+								);
+							}
+							return callback(null, `${line}\n`);
+						},
+					}),
+				);
+			} finally {
+				// Ensure that file handles are closed, even if an error occurred
+				rl?.close();
+				await fileHandle?.close();
+				await fileTempHandle?.close();
+			}
+		}
+	} else
+		await write(
+			fileTempPath,
+			`${Array.isArray(data) ? data.join("\n") : data}\n`,
+			undefined,
+		);
+	return [fileTempPath, filePath];
 };
 
 /**
@@ -548,43 +563,44 @@ export const append = async (
  * Note: Creates a temporary file during the process and replaces the original file with it after removing lines.
  */
 export const remove = async (
-  filePath: string,
-  linesToDelete: number | number[]
+	filePath: string,
+	linesToDelete: number | number[],
 ): Promise<string[]> => {
-  let linesCount = 0,
-    deletedCount = 0;
+	let linesCount = 0;
+	let deletedCount = 0;
 
-  const fileHandle = await open(filePath, "r"),
-    fileTempPath = filePath.replace(/([^/]+)\/?$/, `.tmp/$1`),
-    fileTempHandle = await open(fileTempPath, "w"),
-    linesToDeleteArray = new Set(
-      Array.isArray(linesToDelete)
-        ? linesToDelete.map(Number)
-        : [Number(linesToDelete)]
-    ),
-    rl = readLineInternface(fileHandle);
+	const fileHandle = await open(filePath, "r");
+	const fileTempPath = filePath.replace(/([^/]+)\/?$/, ".tmp/$1");
+	const fileTempHandle = await open(fileTempPath, "w");
+	const linesToDeleteArray = new Set(
+		Array.isArray(linesToDelete)
+			? linesToDelete.map(Number)
+			: [Number(linesToDelete)],
+	);
+	const rl = readLineInternface(fileHandle);
 
-  await _pipeline(
-    rl,
-    fileTempHandle.createWriteStream(),
-    new Transform({
-      transform(line, encoding, callback) {
-        linesCount++;
-        if (linesToDeleteArray.has(linesCount)) {
-          deletedCount++;
-          return callback();
-        } else return callback(null, `${line}\n`);
-      },
-      final(callback) {
-        if (deletedCount === linesCount) this.push("\n");
-        return callback();
-      },
-    })
-  );
+	await _pipeline(
+		rl,
+		fileTempHandle.createWriteStream(),
+		new Transform({
+			transform(line, encoding, callback) {
+				linesCount++;
+				if (linesToDeleteArray.has(linesCount)) {
+					deletedCount++;
+					return callback();
+				}
+				return callback(null, `${line}\n`);
+			},
+			final(callback) {
+				if (deletedCount === linesCount) this.push("\n");
+				return callback();
+			},
+		}),
+	);
 
-  await fileTempHandle.close();
-  await fileHandle.close();
-  return [fileTempPath, filePath];
+	await fileTempHandle.close();
+	await fileHandle.close();
+	return [fileTempPath, filePath];
 };
 
 /**
@@ -607,109 +623,111 @@ export const remove = async (
  * Note: Decodes each line for comparison and can handle complex queries with multiple conditions.
  */
 export const search = async (
-  filePath: string,
-  operator: ComparisonOperator | ComparisonOperator[],
-  comparedAtValue:
-    | string
-    | number
-    | boolean
-    | null
-    | (string | number | boolean | null)[],
-  logicalOperator?: "and" | "or",
-  fieldType?: FieldType | FieldType[],
-  fieldChildrenType?: FieldType | FieldType[] | Schema,
-  limit?: number,
-  offset?: number,
-  readWholeFile?: boolean,
-  secretKey?: string | Buffer
+	filePath: string,
+	operator: ComparisonOperator | ComparisonOperator[],
+	comparedAtValue:
+		| string
+		| number
+		| boolean
+		| null
+		| (string | number | boolean | null)[],
+	logicalOperator?: "and" | "or",
+	fieldType?: FieldType | FieldType[],
+	fieldChildrenType?: FieldType | FieldType[] | Schema,
+	limit?: number,
+	offset?: number,
+	readWholeFile?: boolean,
+	secretKey?: string | Buffer,
 ): Promise<
-  [
-    Record<
-      number,
-      string | number | boolean | null | (string | number | boolean | null)[]
-    > | null,
-    number,
-    Set<number> | null
-  ]
+	[
+		Record<
+			number,
+			string | number | boolean | null | (string | number | boolean | null)[]
+		> | null,
+		number,
+		Set<number> | null,
+	]
 > => {
-  // Initialize a Map to store the matching lines with their line numbers.
-  const matchingLines: Record<
-    number,
-    string | number | boolean | null | (string | number | boolean | null)[]
-  > = {};
+	// Initialize a Map to store the matching lines with their line numbers.
+	const matchingLines: Record<
+		number,
+		string | number | boolean | null | (string | number | boolean | null)[]
+	> = {};
 
-  // Initialize counters for line number, found items, and processed items.
-  let linesCount = 0,
-    foundItems = 0,
-    linesNumbers: Set<number> = new Set();
+	// Initialize counters for line number, found items, and processed items.
+	let linesCount = 0;
+	let foundItems = 0;
+	const linesNumbers: Set<number> = new Set();
 
-  let fileHandle, rl;
+	let fileHandle = null;
+	let rl = null;
 
-  try {
-    // Open the file for reading.
-    fileHandle = await open(filePath, "r");
-    // Create a Readline interface to read the file line by line.
-    rl = readLineInternface(fileHandle);
+	try {
+		// Open the file for reading.
+		fileHandle = await open(filePath, "r");
+		// Create a Readline interface to read the file line by line.
+		rl = readLineInternface(fileHandle);
 
-    // Iterate through each line in the file.
-    for await (const line of rl) {
-      // Increment the line count for each line.
-      linesCount++;
+		// Iterate through each line in the file.
+		for await (const line of rl) {
+			// Increment the line count for each line.
+			linesCount++;
 
-      // Decode the line for comparison.
-      const decodedLine = decode(line, fieldType, fieldChildrenType, secretKey);
+			// Decode the line for comparison.
+			const decodedLine = decode(line, fieldType, fieldChildrenType, secretKey);
 
-      // Check if the line meets the specified conditions based on comparison and logical operators.
-      const meetsConditions =
-        (Array.isArray(operator) &&
-          Array.isArray(comparedAtValue) &&
-          ((logicalOperator === "or" &&
-            operator.some((single_operator, index) =>
-              compare(
-                single_operator,
-                decodedLine,
-                comparedAtValue[index],
-                fieldType
-              )
-            )) ||
-            operator.every((single_operator, index) =>
-              compare(
-                single_operator,
-                decodedLine,
-                comparedAtValue[index],
-                fieldType
-              )
-            ))) ||
-        (!Array.isArray(operator) &&
-          compare(operator, decodedLine, comparedAtValue, fieldType));
+			// Check if the line meets the specified conditions based on comparison and logical operators.
+			const meetsConditions =
+				(Array.isArray(operator) &&
+					Array.isArray(comparedAtValue) &&
+					((logicalOperator === "or" &&
+						operator.some((single_operator, index) =>
+							compare(
+								single_operator,
+								decodedLine,
+								comparedAtValue[index],
+								fieldType,
+							),
+						)) ||
+						operator.every((single_operator, index) =>
+							compare(
+								single_operator,
+								decodedLine,
+								comparedAtValue[index],
+								fieldType,
+							),
+						))) ||
+				(!Array.isArray(operator) &&
+					compare(operator, decodedLine, comparedAtValue, fieldType));
 
-      // If the line meets the conditions, process it.
-      if (meetsConditions) {
-        // Increment the found items counter.
-        foundItems++;
-        linesNumbers.add(linesCount);
-        // Check if the line should be skipped based on the offset.
-        if (offset && foundItems < offset) continue;
+			// If the line meets the conditions, process it.
+			if (meetsConditions) {
+				// Increment the found items counter.
+				foundItems++;
+				linesNumbers.add(linesCount);
+				// Check if the line should be skipped based on the offset.
+				if (offset && foundItems < offset) continue;
 
-        // Check if the limit has been reached.
-        if (limit && foundItems > limit)
-          if (readWholeFile) continue;
-          else break;
+				// Check if the limit has been reached.
+				if (limit && foundItems > limit) {
+					if (readWholeFile) continue;
+					break;
+				}
 
-        // Store the decoded line in the result object.
-        matchingLines[linesCount] = decodedLine;
-      }
-    }
+				// Store the decoded line in the result object.
+				matchingLines[linesCount] = decodedLine;
+			}
+		}
 
-    // Convert the Map to an object using Object.fromEntries and return the result.
-    return foundItems
-      ? [matchingLines, foundItems, linesNumbers.size ? linesNumbers : null]
-      : [null, 0, null];
-  } finally {
-    // Close the file handle in the finally block to ensure it is closed even if an error occurs.
-    rl?.close();
-    await fileHandle?.close();
-  }
+		// Convert the Map to an object using Object.fromEntries and return the result.
+		return foundItems
+			? [matchingLines, foundItems, linesNumbers.size ? linesNumbers : null]
+			: [null, 0, null];
+	} finally {
+		// Close the file handle in the finally block to ensure it is closed even if an error occurs.
+		rl?.close();
+		await fileHandle?.close();
+	}
 };
 
 /**
@@ -721,21 +739,22 @@ export const search = async (
  * Note: Reads through the file line by line to count the total number of lines.
  */
 export const count = async (filePath: string): Promise<number> => {
-  // return Number((await exec(`wc -l < ${filePath}`)).stdout.trim());
-  let linesCount = 0;
-  if (await isExists(filePath)) {
-    let fileHandle, rl;
-    try {
-      (fileHandle = await open(filePath, "r")),
-        (rl = readLineInternface(fileHandle));
+	// return Number((await exec(`wc -l < ${filePath}`)).stdout.trim());
+	let linesCount = 0;
+	if (await isExists(filePath)) {
+		let fileHandle = null;
+		let rl = null;
+		try {
+			fileHandle = await open(filePath, "r");
+			rl = readLineInternface(fileHandle);
 
-      for await (const line of rl) linesCount++;
-    } finally {
-      rl?.close();
-      await fileHandle?.close();
-    }
-  }
-  return linesCount;
+			for await (const _ of rl) linesCount++;
+		} finally {
+			rl?.close();
+			await fileHandle?.close();
+		}
+	}
+	return linesCount;
 };
 
 /**
@@ -748,31 +767,31 @@ export const count = async (filePath: string): Promise<number> => {
  * Note: Decodes each line as a number using the 'decode' function. Non-numeric lines contribute 0 to the sum.
  */
 export const sum = async (
-  filePath: string,
-  lineNumbers?: number | number[]
+	filePath: string,
+	lineNumbers?: number | number[],
 ): Promise<number> => {
-  let sum: number = 0;
+	let sum = 0;
 
-  const fileHandle = await open(filePath, "r"),
-    rl = readLineInternface(fileHandle);
+	const fileHandle = await open(filePath, "r");
+	const rl = readLineInternface(fileHandle);
 
-  if (lineNumbers) {
-    let linesCount = 0;
-    let lineNumbersArray = new Set(
-      Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers]
-    );
+	if (lineNumbers) {
+		let linesCount = 0;
+		const lineNumbersArray = new Set(
+			Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers],
+		);
 
-    for await (const line of rl) {
-      linesCount++;
-      if (!lineNumbersArray.has(linesCount)) continue;
-      sum += +(decode(line, "number") ?? 0);
-      lineNumbersArray.delete(linesCount);
-      if (!lineNumbersArray.size) break;
-    }
-  } else for await (const line of rl) sum += +(decode(line, "number") ?? 0);
+		for await (const line of rl) {
+			linesCount++;
+			if (!lineNumbersArray.has(linesCount)) continue;
+			sum += +(decode(line, "number") ?? 0);
+			lineNumbersArray.delete(linesCount);
+			if (!lineNumbersArray.size) break;
+		}
+	} else for await (const line of rl) sum += +(decode(line, "number") ?? 0);
 
-  await fileHandle.close();
-  return sum;
+	await fileHandle.close();
+	return sum;
 };
 
 /**
@@ -785,36 +804,36 @@ export const sum = async (
  * Note: Decodes each line as a number using the 'decode' function. Considers only numerical values for determining the maximum.
  */
 export const max = async (
-  filePath: string,
-  lineNumbers?: number | number[]
+	filePath: string,
+	lineNumbers?: number | number[],
 ): Promise<number> => {
-  let max: number = 0;
+	let max = 0;
 
-  const fileHandle = await open(filePath, "r"),
-    rl = readLineInternface(fileHandle);
+	const fileHandle = await open(filePath, "r");
+	const rl = readLineInternface(fileHandle);
 
-  if (lineNumbers) {
-    let linesCount = 0;
+	if (lineNumbers) {
+		let linesCount = 0;
 
-    let lineNumbersArray = new Set(
-      Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers]
-    );
-    for await (const line of rl) {
-      linesCount++;
-      if (!lineNumbersArray.has(linesCount)) continue;
-      const lineContentNum = +(decode(line, "number") ?? 0);
-      if (lineContentNum > max) max = lineContentNum;
-      lineNumbersArray.delete(linesCount);
-      if (!lineNumbersArray.size) break;
-    }
-  } else
-    for await (const line of rl) {
-      const lineContentNum = +(decode(line, "number") ?? 0);
-      if (lineContentNum > max) max = lineContentNum;
-    }
+		const lineNumbersArray = new Set(
+			Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers],
+		);
+		for await (const line of rl) {
+			linesCount++;
+			if (!lineNumbersArray.has(linesCount)) continue;
+			const lineContentNum = +(decode(line, "number") ?? 0);
+			if (lineContentNum > max) max = lineContentNum;
+			lineNumbersArray.delete(linesCount);
+			if (!lineNumbersArray.size) break;
+		}
+	} else
+		for await (const line of rl) {
+			const lineContentNum = +(decode(line, "number") ?? 0);
+			if (lineContentNum > max) max = lineContentNum;
+		}
 
-  await fileHandle.close();
-  return max;
+	await fileHandle.close();
+	return max;
 };
 
 /**
@@ -827,104 +846,60 @@ export const max = async (
  * Note: Decodes each line as a number using the 'decode' function. Considers only numerical values for determining the minimum.
  */
 export const min = async (
-  filePath: string,
-  lineNumbers?: number | number[]
+	filePath: string,
+	lineNumbers?: number | number[],
 ): Promise<number> => {
-  let min: number = 0;
+	let min = 0;
 
-  const fileHandle = await open(filePath, "r"),
-    rl = readLineInternface(fileHandle);
+	const fileHandle = await open(filePath, "r");
+	const rl = readLineInternface(fileHandle);
 
-  if (lineNumbers) {
-    let linesCount = 0;
+	if (lineNumbers) {
+		let linesCount = 0;
 
-    let lineNumbersArray = new Set(
-      Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers]
-    );
-    for await (const line of rl) {
-      linesCount++;
-      if (!lineNumbersArray.has(linesCount)) continue;
-      const lineContentNum = +(decode(line, "number") ?? 0);
-      if (lineContentNum < min) min = lineContentNum;
-      lineNumbersArray.delete(linesCount);
-      if (!lineNumbersArray.size) break;
-    }
-  } else
-    for await (const line of rl) {
-      const lineContentNum = +(decode(line, "number") ?? 0);
-      if (lineContentNum < min) min = lineContentNum;
-    }
+		const lineNumbersArray = new Set(
+			Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers],
+		);
+		for await (const line of rl) {
+			linesCount++;
+			if (!lineNumbersArray.has(linesCount)) continue;
+			const lineContentNum = +(decode(line, "number") ?? 0);
+			if (lineContentNum < min) min = lineContentNum;
+			lineNumbersArray.delete(linesCount);
+			if (!lineNumbersArray.size) break;
+		}
+	} else
+		for await (const line of rl) {
+			const lineContentNum = +(decode(line, "number") ?? 0);
+			if (lineContentNum < min) min = lineContentNum;
+		}
 
-  await fileHandle.close();
-  return min;
+	await fileHandle.close();
+	return min;
 };
 
 export function createWorker(
-  functionName:
-    | "get"
-    | "remove"
-    | "search"
-    | "replace"
-    | "sum"
-    | "min"
-    | "max"
-    | "append"
-    | "count",
-  arg: any[]
+	functionName:
+		| "get"
+		| "remove"
+		| "search"
+		| "replace"
+		| "sum"
+		| "min"
+		| "max"
+		| "append"
+		| "count",
+	arg: any[],
 ): Promise<any> {
-  return new Promise(function (resolve, reject) {
-    const worker = new Worker("./dist/file.thread.js", {
-      workerData: { functionName, arg },
-    });
-    worker.on("message", (data) => {
-      resolve(data);
-    });
-    worker.on("error", (msg) => {
-      reject(`An error ocurred: ${msg}`);
-    });
-  });
-}
-
-/**
- * Asynchronously sorts the lines in a file in the specified direction.
- *
- * @param filePath - Path of the file to be sorted.
- * @param sortDirection - Direction for sorting: 1 or 'asc' for ascending, -1 or 'desc' for descending.
- * @param lineNumbers - Optional specific line numbers to sort. If not provided, sorts all lines.
- * @param _lineNumbersPerChunk - Optional parameter for handling large files, specifying the number of lines per chunk.
- * @returns Promise<void>. Modifies the file by sorting specified lines.
- *
- * Note: The sorting is applied either to the entire file or to the specified lines. Large files are handled in chunks.
- */
-export const sort = async (
-  filePath: string,
-  sortDirection: 1 | -1 | "asc" | "desc",
-  lineNumbers?: number | number[],
-  _lineNumbersPerChunk: number = 100000
-): Promise<void> => {
-  // return Number((await exec(`wc -l < ${filePath}`)).stdout.trim());
-};
-
-export default class File {
-  static get = get;
-  static remove = remove;
-  static search = search;
-  static replace = replace;
-  static encode = encode;
-  static decode = decode;
-  static isExists = isExists;
-  static sum = sum;
-  static min = min;
-  static max = max;
-
-  static append = append;
-  static count = count;
-
-  static write = write;
-  static read = read;
-
-  static lock = lock;
-  static unlock = unlock;
-
-  static createWorker = createWorker;
+	return new Promise((resolve, reject) => {
+		const worker = new Worker("./dist/file.thread.js", {
+			workerData: { functionName, arg },
+		});
+		worker.on("message", (data) => {
+			resolve(data);
+		});
+		worker.on("error", (msg) => {
+			reject(`An error ocurred: ${msg}`);
+		});
+	});
 }
