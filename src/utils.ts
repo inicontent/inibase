@@ -311,20 +311,21 @@ export const detectFieldType = (
 				if (availableTypes.includes("table")) return "table";
 				if (availableTypes.includes("date")) return "date";
 				if (availableTypes.includes("number")) return "number";
-			} else if (availableTypes.includes("table") && isValidID(input))
-				return "table";
-			else if (input.startsWith("[") && availableTypes.includes("array"))
-				return "array";
-			else if (availableTypes.includes("email") && isEmail(input))
-				return "email";
-			else if (availableTypes.includes("url") && isURL(input)) return "url";
-			else if (availableTypes.includes("password") && isPassword(input))
-				return "password";
-			else if (availableTypes.includes("json") && isJSON(input)) return "json";
-			else if (availableTypes.includes("json") && isDate(input)) return "json";
-			else if (availableTypes.includes("string") && isString(input))
-				return "string";
-			else if (availableTypes.includes("ip") && isIP(input)) return "ip";
+			} else if (typeof input === "string") {
+				if (availableTypes.includes("table") && isValidID(input))
+					return "table";
+				if (input.startsWith("[") && availableTypes.includes("array"))
+					return "array";
+				if (availableTypes.includes("email") && isEmail(input)) return "email";
+				if (availableTypes.includes("url") && isURL(input)) return "url";
+				if (availableTypes.includes("password") && isPassword(input))
+					return "password";
+				if (availableTypes.includes("json") && isJSON(input)) return "json";
+				if (availableTypes.includes("json") && isDate(input)) return "json";
+				if (availableTypes.includes("string") && isString(input))
+					return "string";
+				if (availableTypes.includes("ip") && isIP(input)) return "ip";
+			}
 		} else return "array";
 
 	return undefined;

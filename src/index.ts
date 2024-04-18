@@ -1678,7 +1678,7 @@ export default class Inibase {
 				...(({ id, ...restOfData }) => restOfData)(data as Data),
 				updatedAt: Date.now(),
 			});
-
+			console.log(pathesContents);
 			try {
 				await File.lock(join(tablePath, ".tmp"));
 
