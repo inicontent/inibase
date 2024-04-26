@@ -314,7 +314,7 @@ export default class Inibase {
 		];
 	}
 
-	public async getSchemaWhenTableNotEmpty(
+	private async getSchemaWhenTableNotEmpty(
 		tableName: string,
 		schema?: Schema,
 	): Promise<never | Schema> {
@@ -593,50 +593,61 @@ export default class Inibase {
 		}
 	}
 
-	private _combineObjectsToArray = (input: any[]) =>
+	private _combineObjectsToArray = (
+		input: any[],
+	): Record<
+		string,
+		string | boolean | number | null | (string | boolean | number | null)[]
+	> =>
 		input.reduce((result, current) => {
 			for (const [key, value] of Object.entries(current))
-				if (!result[key]) result[key] = [value];
-				else result[key].push(value);
+				if (Object.hasOwn(result, key) && Array.isArray(result[key]))
+					result[key].push(value);
+				else result[key] = [value];
 
 			return result;
 		}, {});
-	private _CombineData = (data: Data | Data[], prefix?: string) => {
-		let RETURN: Record<
+	private _CombineData = (
+		data: Data | Data[],
+		prefix?: string,
+	): Record<
+		string,
+		string | boolean | number | null | (string | boolean | number | null)[]
+	> => {
+		if (Utils.isArrayOfObjects(data))
+			return this._combineObjectsToArray(
+				data.map((single_data) => this._CombineData(single_data)),
+			);
+
+		const RETURN: Record<
 			string,
 			string | boolean | number | null | (string | boolean | number | null)[]
 		> = {};
-		if (Utils.isArrayOfObjects(data))
-			RETURN = this._combineObjectsToArray(
-				data.map((single_data) => this._CombineData(single_data)),
-			);
-		else
-			for (const [key, value] of Object.entries(data)) {
-				if (Utils.isObject(value))
-					Object.assign(RETURN, this._CombineData(value, `${key}.`));
-				else if (Utils.isArrayOfObjects(value)) {
-					Object.assign(
-						RETURN,
-						this._CombineData(
-							this._combineObjectsToArray(value),
-							`${(prefix ?? "") + key}.`,
-						),
-					);
-				} else if (
-					Utils.isArrayOfArrays(value) &&
-					value.every(Utils.isArrayOfObjects)
-				)
-					Object.assign(
-						RETURN,
-						this._CombineData(
-							this._combineObjectsToArray(
-								value.map(this._combineObjectsToArray),
-							),
-							`${(prefix ?? "") + key}.`,
-						),
-					);
-				else RETURN[(prefix ?? "") + key] = File.encode(value);
-			}
+
+		for (const [key, value] of Object.entries(data)) {
+			if (Utils.isObject(value))
+				Object.assign(RETURN, this._CombineData(value, `${key}.`));
+			else if (Utils.isArrayOfObjects(value)) {
+				Object.assign(
+					RETURN,
+					this._CombineData(
+						this._combineObjectsToArray(value),
+						`${(prefix ?? "") + key}.`,
+					),
+				);
+			} else if (
+				Utils.isArrayOfArrays(value) &&
+				value.every(Utils.isArrayOfObjects)
+			)
+				Object.assign(
+					RETURN,
+					this._CombineData(
+						this._combineObjectsToArray(value.map(this._combineObjectsToArray)),
+						`${(prefix ?? "") + key}.`,
+					),
+				);
+			else RETURN[(prefix ?? "") + key] = File.encode(value);
+		}
 
 		return RETURN;
 	};
@@ -647,7 +658,7 @@ export default class Inibase {
 
 		return newObject;
 	};
-	public joinPathesContents(
+	private joinPathesContents(
 		mainPath: string,
 		data: Data | Data[],
 	): { [key: string]: string[] } {
@@ -1678,7 +1689,7 @@ export default class Inibase {
 				...(({ id, ...restOfData }) => restOfData)(data as Data),
 				updatedAt: Date.now(),
 			});
-			console.log(pathesContents);
+
 			try {
 				await File.lock(join(tablePath, ".tmp"));
 
