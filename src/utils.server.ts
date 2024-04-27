@@ -355,7 +355,7 @@ export const isEqual = (
 
 		// Default comparison.
 		default:
-			return originalValue === comparedAtValue;
+			return originalValue == comparedAtValue;
 	}
 };
 
