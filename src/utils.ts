@@ -171,11 +171,7 @@ export const isIP = (input: any) =>
  * Note: Recognizes both boolean literals (true, false) and their string representations ("true", "false").
  */
 export const isBoolean = (input: any): input is boolean =>
-	typeof input === "boolean" ||
-	input === "true" ||
-	input === "false" ||
-	input === true ||
-	input === false;
+	typeof input === "boolean" || input === "true" || input === "false";
 
 /**
  * Type guard function to check if the input is a password based on a specific length criterion.
