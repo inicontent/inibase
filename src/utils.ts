@@ -75,55 +75,6 @@ export const deepMerge = (target: any, source: any): any => {
 };
 
 /**
- * Combines an array of objects into a single object. If the same key exists in multiple objects, the values are merged.
- *
- * @param arr - Array of objects to be combined.
- * @returns Record<string, any> - A single object with combined keys and values.
- *
- * Note: Handles nested objects by recursively combining them. Non-object values with the same key are merged into arrays.
- */
-export const combineObjects = (
-	arr: Record<string, any>[],
-): Record<string, any> => {
-	const result: Record<string, any> = {};
-
-	for (const obj of arr) {
-		for (const key in obj) {
-			if (Object.hasOwn(obj, key)) {
-				const existingValue = result[key];
-				const newValue = obj[key];
-
-				if (
-					isObject(existingValue) &&
-					isObject(newValue) &&
-					existingValue !== null &&
-					existingValue !== undefined &&
-					newValue !== null &&
-					newValue !== undefined
-				) {
-					// If both values are objects, recursively combine them
-					result[key] = combineObjects([existingValue, newValue]);
-				} else {
-					// If one or both values are not objects, overwrite the existing value
-					result[key] =
-						existingValue !== null && existingValue !== undefined
-							? Array.isArray(existingValue)
-								? Array.isArray(newValue)
-									? [...existingValue, ...newValue]
-									: [...existingValue, newValue]
-								: Array.isArray(newValue)
-									? [existingValue, ...newValue]
-									: [existingValue, newValue]
-							: newValue;
-				}
-			}
-		}
-	}
-
-	return result;
-};
-
-/**
  * Type guard function to check if the input is a number.
  *
  * @param input - The value to be checked.

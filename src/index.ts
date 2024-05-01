@@ -577,15 +577,13 @@ export default class Inibase {
 							}),
 						]
 					: null;
-			case "object":
+			case "object": {
 				if (!field.children || !Utils.isArrayOfObjects(field.children))
 					return null;
-
-				return Utils.combineObjects(
-					field.children.map((f: Field) => ({
-						[f.key]: this.getDefaultValue(f),
-					})),
-				);
+				const RETURN: Record<string, any> = {};
+				for (const f of field.children) RETURN[f.key] = this.getDefaultValue(f);
+				return RETURN;
+			}
 			case "boolean":
 				return false;
 			default:
@@ -1694,27 +1692,16 @@ export default class Inibase {
 				await File.lock(join(tablePath, ".tmp"));
 
 				await Promise.all(
-					Object.entries(pathesContents).map(async ([path, content]) =>
+					Object.entries(pathesContents).map(async ([path, content]) => {
+						const replacementObject: Record<number, any> = {};
+						for (const index of [...Array(totalItems)].keys())
+							replacementObject[`${index + 1}`] = content;
 						renameList.push(
 							this.isThreadEnabled
-								? await File.createWorker("replace", [
-										path,
-										Utils.combineObjects(
-											[...Array(totalItems)].map((_, i) => ({
-												[`${i + 1}`]: content,
-											})),
-										),
-									])
-								: await File.replace(
-										path,
-										Utils.combineObjects(
-											[...Array(totalItems)].map((_, i) => ({
-												[`${i + 1}`]: content,
-											})),
-										),
-									),
-						),
-					),
+								? await File.createWorker("replace", [path, replacementObject])
+								: await File.replace(path, replacementObject),
+						);
+					}),
 				);
 
 				await Promise.all(
