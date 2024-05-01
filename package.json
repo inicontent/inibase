@@ -1,95 +1,79 @@
 {
-  "name": "inibase",
-  "version": "1.0.0-rc.54",
-  "author": {
-    "name": "Karim Amahtil",
-    "email": "karim.amahtil@gmail.com"
-  },
-  "repository": "inicontent/inibase",
-  "main": "./dist/index.js",
-  "exports": {
-    ".": "./dist/index.js",
-    "./thread": "./dist/index.thread.js",
-    "./file": "./dist/file.js",
-    "./file.thread": "./dist/file.thread.js",
-    "./config": "./dist/config.js",
-    "./utils": "./dist/utils.js",
-    "./utils.server": "./dist/utils.server.js"
-  },
-  "bugs": {
-    "url": "https://github.com/inicontent/inibase/issues"
-  },
-  "description": "A file-based & memory-efficient, serverless, ACID compliant, relational database management system",
-  "engines": {
-    "node": ">=16"
-  },
-  "files": [
-    "/dist"
-  ],
-  "funding": "https://github.com/sponsors/inicontent",
-  "homepage": "https://github.com/inicontent/inibase#readme",
-  "keywords": [
-    "nosql",
-    "rdms",
-    "database",
-    "db",
-    "mongoose",
-    "relational",
-    "local",
-    "file",
-    "storage",
-    "json",
-    "sqlite",
-    "sql",
-    "supabase",
-    "better-sqlite",
-    "mongodb",
-    "firebase",
-    "postgresql",
-    "pocketbase"
-  ],
-  "license": "MIT",
-  "scripts": {
-    "prepare": "npx tsc",
-    "build": "npx tsc",
-    "test": "npx tsx watch --expose-gc --env-file=.env ./index.test",
-    "benchmark": "npx tsx watch --env-file=.env ./benchmark/index",
-    "benchmark:single": "npx tsx --expose-gc --env-file=.env ./benchmark/single",
-    "benchmark:bulk": "npx tsx --expose-gc --env-file=.env ./benchmark/bulk"
-  },
-  "type": "module",
-  "types": "./dist",
-  "typesVersions": {
-    "*": {
-      ".": [
-        "./dist/index.d.ts"
-      ],
-      "thread": [
-        "./dist/index.thread.d.ts"
-      ],
-      "file": [
-        "./dist/file.d.ts"
-      ],
-      "file.thread": [
-        "./dist/file.thread.d.ts"
-      ],
-      "utils": [
-        "./dist/utils.d.ts"
-      ],
-      "config": [
-        "./dist/config.d.ts"
-      ],
-      "utils.server": [
-        "./dist/utils.server.d.ts"
-      ]
-    }
-  },
-  "devDependencies": {
-    "@types/node": "^20.10.6",
-    "tinybench": "^2.6.0",
-    "typescript": "^5.3.3"
-  },
-  "dependencies": {
-    "inison": "^1.0.0-rc.2"
-  }
+	"name": "inibase",
+	"version": "1.0.0-rc.54",
+	"author": {
+		"name": "Karim Amahtil",
+		"email": "karim.amahtil@gmail.com"
+	},
+	"repository": "inicontent/inibase",
+	"main": "./dist/index.js",
+	"exports": {
+		".": "./dist/index.js",
+		"./thread": "./dist/index.thread.js",
+		"./file": "./dist/file.js",
+		"./file.thread": "./dist/file.thread.js",
+		"./config": "./dist/config.js",
+		"./utils": "./dist/utils.js",
+		"./utils.server": "./dist/utils.server.js"
+	},
+	"bugs": {
+		"url": "https://github.com/inicontent/inibase/issues"
+	},
+	"description": "A file-based & memory-efficient, serverless, ACID compliant, relational database management system",
+	"engines": {
+		"node": ">=16"
+	},
+	"files": ["/dist"],
+	"funding": "https://github.com/sponsors/inicontent",
+	"homepage": "https://github.com/inicontent/inibase#readme",
+	"keywords": [
+		"nosql",
+		"rdms",
+		"database",
+		"db",
+		"mongoose",
+		"relational",
+		"local",
+		"file",
+		"storage",
+		"json",
+		"sqlite",
+		"sql",
+		"supabase",
+		"better-sqlite",
+		"mongodb",
+		"firebase",
+		"postgresql",
+		"pocketbase"
+	],
+	"license": "MIT",
+	"scripts": {
+		"prepare": "npx tsc",
+		"build": "npx tsc",
+		"test": "npx tsx watch --expose-gc --env-file=.env ./index.test",
+		"benchmark": "npx tsx --env-file=.env ./benchmark/index",
+		"benchmark:single": "npx tsx --expose-gc --env-file=.env ./benchmark/single",
+		"benchmark:bulk": "npx tsx --expose-gc --env-file=.env ./benchmark/bulk"
+	},
+	"type": "module",
+	"types": "./dist",
+	"typesVersions": {
+		"*": {
+			".": ["./dist/index.d.ts"],
+			"thread": ["./dist/index.thread.d.ts"],
+			"file": ["./dist/file.d.ts"],
+			"file.thread": ["./dist/file.thread.d.ts"],
+			"utils": ["./dist/utils.d.ts"],
+			"config": ["./dist/config.d.ts"],
+			"utils.server": ["./dist/utils.server.d.ts"]
+		}
+	},
+	"devDependencies": {
+		"@types/node": "^20.10.6",
+		"tinybench": "^2.6.0",
+		"typescript": "^5.3.3"
+	},
+	"dependencies": {
+		"inison": "^1.0.0-rc.2"
+	}
 }
