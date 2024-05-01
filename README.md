@@ -109,7 +109,7 @@ Ps: Testing by default with `user` table, with username, email, password fields 
 - [ ] TO-DO:
   - [x] Improve caching
   - [ ] Commenting the code
-  - [ ] Add property "unique" for schema fields
+  - [x] Add property "unique" for schema fields
   - [ ] Add Backup feature (generate a tar.gz)
   - [ ] Add Custom field validation property to schema (using RegEx?)
 - [ ] Features:
