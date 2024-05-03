@@ -1,15 +1,15 @@
 import { unlink, rename, mkdir, readdir } from "node:fs/promises";
-import { existsSync, appendFileSync } from "node:fs";
+import { existsSync, appendFileSync, readFileSync } from "node:fs";
 import { join, parse } from "node:path";
 import { scryptSync, randomBytes } from "node:crypto";
 import { Worker } from "node:worker_threads";
+import { inspect } from "node:util";
+import Inison from "inison";
 
 import * as File from "./file.js";
 import * as Utils from "./utils.js";
 import * as UtilsServer from "./utils.server.js";
 import * as Config from "./config.js";
-import { inspect } from "node:util";
-import Inison from "inison";
 
 export interface Data {
 	id?: number | string;
@@ -96,7 +96,8 @@ export type ErrorCodes =
 	| "NO_RESULTS"
 	| "INVALID_ID"
 	| "INVALID_TYPE"
-	| "INVALID_PARAMETERS";
+	| "INVALID_PARAMETERS"
+	| "NO_ENV";
 export type ErrorLang = "en";
 
 export default class Inibase {
@@ -125,7 +126,12 @@ export default class Inibase {
 		this.isThreadEnabled = _isThreadEnabled;
 		this.checkIFunique = {};
 
-		if (!existsSync(".env") || !process.env.INIBASE_SECRET) {
+		if (!process.env.INIBASE_SECRET) {
+			if (
+				existsSync(".env") &&
+				readFileSync(".env").includes("INIBASE_SECRET=")
+			)
+				this.throwError("NO_ENV");
 			this.salt = scryptSync(randomBytes(16), randomBytes(16), 32);
 			appendFileSync(".env", `\nINIBASE_SECRET=${this.salt.toString("hex")}\n`);
 		} else this.salt = Buffer.from(process.env.INIBASE_SECRET, "hex");
@@ -148,6 +154,10 @@ export default class Inibase {
 				INVALID_TYPE:
 					"Expect {variable} to be {variable}, got {variable} instead",
 				INVALID_PARAMETERS: "The given parameters are not valid",
+				NO_ENV:
+					Number(process.versions.node.split(".").reduce((a, b) => a + b)) >= 26
+						? "please run with '--env-file=.env'"
+						: "please use dotenv",
 			},
 			// Add more languages and error messages as needed
 		};
@@ -1904,7 +1914,7 @@ export default class Inibase {
 							undefined,
 							this.salt,
 						)) ?? {},
-					).map(([_key, id]) => UtilsServer.encodeID(Number(id), this.salt));
+					).map(([_, id]) => UtilsServer.encodeID(id as string, this.salt));
 
 				if (!_id.length) throw this.throwError("NO_RESULTS", tableName);
 
