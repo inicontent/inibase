@@ -910,8 +910,9 @@ export default class Inibase {
 					}
 				} else if (field.type === "table") {
 					if (
+						field.table &&
 						(await File.isExists(
-							join(this.folder, this.database, field.key),
+							join(this.folder, this.database, field.table),
 						)) &&
 						(await File.isExists(
 							join(tablePath, `${(prefix ?? "") + field.key}.inib`),
@@ -935,7 +936,11 @@ export default class Inibase {
 								Object.entries(items).map(async ([index, item]) => {
 									if (!RETURN[index]) RETURN[index] = {};
 									RETURN[index][field.key] = item
-										? await this.get(field.key, item as number, options)
+										? await this.get(
+												field.table as string,
+												item as number,
+												options,
+											)
 										: this.getDefaultValue(field);
 								}),
 							);
