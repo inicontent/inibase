@@ -10,8 +10,9 @@
 
 - **Lightweight** 🪶
 - **Minimalist** :white_circle: (but powerful)
-- **TypeScript** :large_blue_diamond:
+- **100% TypeScript** :large_blue_diamond:
 - **Super-Fast** :zap: (built-in caching system)
+- **ATOMIC** :lock: File lock for writing
 - **Built-in form-validation** included :sunglasses:
 - **Suitable for large data** :page_with_curl: (tested with 200K row)
 - **Support Compression** :eight_spoked_asterisk: (using built-in nodejs zlib)
@@ -25,7 +26,7 @@
 
 ```js
 import Inibase from "inibase";
-const db = new Inibase("database_name");
+const db = new Inibase("databaseName");
 
 // Get all items from "user" table
 const users = await db.get("user");
@@ -77,6 +78,21 @@ To simplify the idea, each database has tables, each table has columns, each col
 Ps: Testing by default with `user` table, with username, email, password fields _so results include password encryption process_
 
 
+## Config (.env)
+
+The `.env` file supports the following parameters (make sure to run commands with flag --env-file=.env)
+
+```ini
+# Auto generated secret key, will be using for encrypting the IDs
+INIBASE_SECRET=
+
+INIBASE_COMPRESSION=true
+INIBASE_CACHE=true
+
+# Prepend new items to the beginning of file 
+INIBASE_REVERSE=true
+```
+
 ## Roadmap
 
 - [x] Actions:
@@ -126,7 +142,7 @@ Ps: Testing by default with `user` table, with username, email, password fields 
 
 ```js
 import Inibase from "inibase";
-const db = new Inibase("/database_name");
+const db = new Inibase("/databaseName");
 
 const user_schema = [
   {
@@ -271,7 +287,7 @@ Link two tables: "product" with "user"
 
 ```js
 import Inibase from "inibase";
-const db = new Inibase("/database_name");
+const db = new Inibase("/databaseName");
 
 const product_schema = [
   {
@@ -337,7 +353,7 @@ const product = await db.post("product", product_data);
 
 ```js
 import Inibase from "inibase";
-const db = new Inibase("/database_name");
+const db = new Inibase("/databaseName");
 
 // Get "user" by id
 const user = await db.get("user", "1d88385d4b1581f8fb059334dec30f4c");
@@ -415,7 +431,7 @@ const users = await db.get("user", undefined, {
 
 ```js
 import Inibase from "inibase";
-const db = new Inibase("/database_name");
+const db = new Inibase("/databaseName");
 
 // set "isActive" to "false" for all items in table "user"
 await db.put("user", { isActive: false });
@@ -434,7 +450,7 @@ await db.put("user", { isActive: false }, { isActive: true });
 
 ```js
 import Inibase from "inibase";
-const db = new Inibase("/database_name");
+const db = new Inibase("/databaseName");
 
 // delete all items in "user" table
 await db.delete("user");
@@ -453,7 +469,7 @@ await db.put("user", { isActive: false });
 
 ```js
 import Inibase from "inibase";
-const db = new Inibase("/database_name");
+const db = new Inibase("/databaseName");
 
 // get the sum of column "age" in "user" table
 await db.sum("user", "age");
@@ -469,7 +485,7 @@ await db.sum("user", ["age", ...], { isActive: false });
 
 ```js
 import Inibase from "inibase";
-const db = new Inibase("/database_name");
+const db = new Inibase("/databaseName");
 
 // get the biggest number of column "age" in "user" table
 await db.max("user", "age");
@@ -485,7 +501,7 @@ await db.max("user", ["age", ...], { isActive: false });
 
 ```js
 import Inibase from "inibase";
-const db = new Inibase("/database_name");
+const db = new Inibase("/databaseName");
 
 // get the smallest number of column "age" in "user" table
 await db.min("user", "age");
@@ -495,48 +511,6 @@ await db.min("user", ["age", ...], { isActive: false });
 ```
 
 </details>
-
-<details>
-<summary>createWorker</summary>
-
-```js
-import Inibase from "inibase";
-const db = new Inibase("/database_name");
-
-// POST 10,000 USER
-await Promise.all(
-  [...Array(10)]
-    .map((x, i) => i)
-    .map(
-      (_index) =>
-        db.createWorker("post", [
-          "user",
-          [...Array(1000)].map((_, i) => ({
-            username: `username_${i + 1}`,
-            email: `email_${i + 1}@test.com`,
-            password: `password_${i + 1}`,
-          })),
-        ])
-    )
-)
-```
-
-</details>
-
-## Config (.env)
-
-The `.env` file supports the following parameters (make sure to run commands with flag --env-file=.env)
-
-```ini
-# Auto generated secret key, will be using for encrypting the IDs
-INIBASE_SECRET=
-
-INIBASE_COMPRESSION=true
-INIBASE_CACHE=true
-
-# Prepend new items to the beginning of file 
-INIBASE_REVERSE=true
-```
 
 ## License
 
