@@ -9,9 +9,7 @@
 	"main": "./dist/index.js",
 	"exports": {
 		".": "./dist/index.js",
-		"./thread": "./dist/index.thread.js",
 		"./file": "./dist/file.js",
-		"./file.thread": "./dist/file.thread.js",
 		"./config": "./dist/config.js",
 		"./utils": "./dist/utils.js",
 		"./utils.server": "./dist/utils.server.js"
@@ -23,9 +21,7 @@
 	"engines": {
 		"node": ">=16"
 	},
-	"files": [
-		"/dist"
-	],
+	"files": ["/dist"],
 	"funding": "https://github.com/sponsors/inicontent",
 	"homepage": "https://github.com/inicontent/inibase#readme",
 	"keywords": [
@@ -50,8 +46,8 @@
 	],
 	"license": "MIT",
 	"scripts": {
-		"prepare": "npx tsc",
-		"build": "npx tsc",
+		"prepare": "tsc",
+		"build": "tsc",
 		"test": "npx tsx watch --expose-gc --env-file=.env ./index.test",
 		"benchmark": "npx tsx --env-file=.env ./benchmark/index",
 		"benchmark:single": "npx tsx --expose-gc --env-file=.env ./benchmark/single",
@@ -61,33 +57,16 @@
 	"types": "./dist",
 	"typesVersions": {
 		"*": {
-			".": [
-				"./dist/index.d.ts"
-			],
-			"thread": [
-				"./dist/index.thread.d.ts"
-			],
-			"file": [
-				"./dist/file.d.ts"
-			],
-			"file.thread": [
-				"./dist/file.thread.d.ts"
-			],
-			"utils": [
-				"./dist/utils.d.ts"
-			],
-			"config": [
-				"./dist/config.d.ts"
-			],
-			"utils.server": [
-				"./dist/utils.server.d.ts"
-			]
+			".": ["./dist/index.d.ts"],
+			"file": ["./dist/file.d.ts"],
+			"utils": ["./dist/utils.d.ts"],
+			"config": ["./dist/config.d.ts"],
+			"utils.server": ["./dist/utils.server.d.ts"]
 		}
 	},
 	"devDependencies": {
-		"@types/node": "^20.10.6",
-		"tinybench": "^2.6.0",
-		"typescript": "^5.3.3"
+		"@types/node": "^20.12.11",
+		"tinybench": "^2.6.0"
 	},
 	"dependencies": {
 		"inison": "^1.0.0-rc.2"
