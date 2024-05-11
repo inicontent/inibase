@@ -15,7 +15,6 @@ import { Transform, type Transform as TransformType } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createGzip, createGunzip, gunzipSync, gzipSync } from "node:zlib";
 import { join } from "node:path";
-import { Worker } from "node:worker_threads";
 
 import type { ComparisonOperator, FieldType, Schema } from "./index.js";
 import {
@@ -67,11 +66,10 @@ export const write = async (
 	);
 };
 
-export const read = async (filePath: string, disableCompression = false) => {
-	return Config.isCompressionEnabled && !disableCompression
+export const read = async (filePath: string, disableCompression = false) =>
+	Config.isCompressionEnabled && !disableCompression
 		? gunzipSync(await readFile(filePath)).toString()
 		: (await readFile(filePath)).toString();
-};
 
 const _pipeline = async (
 	rl: Interface,
@@ -89,18 +87,13 @@ const _pipeline = async (
  * @param fileHandle - The file handle from which to create a read stream.
  * @returns A readline.Interface instance configured with the provided file stream.
  */
-const readLineInternface = (fileHandle: FileHandle) => {
-	const [major, minor, patch] = process.versions.node.split(".").map(Number);
-	return major > 18 ||
-		(major === 18 && minor >= 11 && !Config.isCompressionEnabled)
-		? fileHandle.readLines()
-		: createInterface({
-				input: Config.isCompressionEnabled
-					? fileHandle.createReadStream().pipe(createGunzip())
-					: fileHandle.createReadStream(),
-				crlfDelay: Number.POSITIVE_INFINITY,
-			});
-};
+const readLineInternface = (fileHandle: FileHandle) =>
+	createInterface({
+		input: Config.isCompressionEnabled
+			? fileHandle.createReadStream().pipe(createGunzip())
+			: fileHandle.createReadStream(),
+		crlfDelay: Number.POSITIVE_INFINITY,
+	});
 
 /**
  * Checks if a file or directory exists at the specified path.
@@ -523,7 +516,7 @@ export const append = async (
 					rl,
 					fileTempHandle.createWriteStream(),
 					new Transform({
-						transform(line, encoding, callback) {
+						transform(line, _, callback) {
 							if (!isAppended) {
 								isAppended = true;
 								return callback(
@@ -877,29 +870,3 @@ export const min = async (
 	await fileHandle.close();
 	return min;
 };
-
-export function createWorker(
-	functionName:
-		| "get"
-		| "remove"
-		| "search"
-		| "replace"
-		| "sum"
-		| "min"
-		| "max"
-		| "append"
-		| "count",
-	arg: any[],
-): Promise<any> {
-	return new Promise((resolve, reject) => {
-		const worker = new Worker("./dist/file.thread.js", {
-			workerData: { functionName, arg },
-		});
-		worker.on("message", (data) => {
-			resolve(data);
-		});
-		worker.on("error", (msg) => {
-			reject(`An error ocurred: ${msg}`);
-		});
-	});
-}

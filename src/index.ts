@@ -2,7 +2,6 @@ import { unlink, rename, mkdir, readdir } from "node:fs/promises";
 import { existsSync, appendFileSync, readFileSync } from "node:fs";
 import { join, parse } from "node:path";
 import { scryptSync, randomBytes } from "node:crypto";
-import { Worker } from "node:worker_threads";
 import { inspect } from "node:util";
 import Inison from "inison";
 
@@ -174,38 +173,6 @@ export default class Inibase {
 					: errorMessage.replaceAll("{variable}", `'${variable.toString()}'`)
 				: errorMessage.replaceAll("{variable}", ""),
 		);
-	}
-
-	public async createWorker(
-		functionName:
-			| "get"
-			| "post"
-			| "put"
-			| "delete"
-			| "sum"
-			| "min"
-			| "max"
-			| "sort",
-		arg: any[],
-	): Promise<any> {
-		return new Promise((resolve, reject) => {
-			const worker = new Worker("./dist/index.thread.js", {
-				workerData: {
-					_constructor: [
-						this.database,
-						this.folder,
-						this.table,
-						this.totalItems,
-						this.pageInfo,
-						true, // enable Thread
-					],
-					functionName,
-					arg,
-				},
-			});
-			worker.on("message", resolve);
-			worker.on("error", reject);
-		});
 	}
 
 	private _schemaToIdsPath = (schema: Schema, prefix = "") => {
@@ -766,9 +733,8 @@ export default class Inibase {
 									options,
 									`${(prefix ?? "") + field.key}.`,
 								)) ?? {},
-							)) {
+							))
 								this._getItemsFromSchemaHelper(RETURN, item, index, field);
-							}
 
 							field.children = field.children.filter(
 								(children) =>
@@ -1577,11 +1543,7 @@ export default class Inibase {
 			);
 			await Promise.all(
 				Object.entries(pathesContents).map(async ([path, content]) =>
-					renameList.push(
-						this.isThreadEnabled
-							? await File.createWorker("append", [path, content])
-							: await File.append(path, content),
-					),
+					renameList.push(await File.append(path, content)),
 				),
 			);
 
@@ -1711,11 +1673,7 @@ export default class Inibase {
 						const replacementObject: Record<number, any> = {};
 						for (const index of [...Array(totalItems)].keys())
 							replacementObject[`${index + 1}`] = content;
-						renameList.push(
-							this.isThreadEnabled
-								? await File.createWorker("replace", [path, replacementObject])
-								: await File.replace(path, replacementObject),
-						);
+						renameList.push(await File.replace(path, replacementObject));
 					}),
 				);
 
@@ -1796,11 +1754,7 @@ export default class Inibase {
 
 				await Promise.all(
 					Object.entries(pathesContents).map(async ([path, content]) =>
-						renameList.push(
-							this.isThreadEnabled
-								? await File.createWorker("replace", [path, content])
-								: await File.replace(path, content),
-						),
+						renameList.push(await File.replace(path, content)),
 					),
 				);
 
@@ -1928,14 +1882,7 @@ export default class Inibase {
 
 					await Promise.all(
 						files.map(async (file) =>
-							renameList.push(
-								this.isThreadEnabled
-									? await File.createWorker("remove", [
-											join(tablePath, file),
-											where,
-										])
-									: await File.remove(join(tablePath, file), where),
-							),
+							renameList.push(await File.remove(join(tablePath, file), where)),
 						),
 					);
 
