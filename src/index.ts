@@ -9,6 +9,8 @@ import * as File from "./file.js";
 import * as Utils from "./utils.js";
 import * as UtilsServer from "./utils.server.js";
 import * as Config from "./config.js";
+import { execSync } from "node:child_process";
+import { performance } from "node:perf_hooks";
 
 export interface Data {
 	id?: number | string;
@@ -104,8 +106,8 @@ export default class Inibase {
 	public database: string;
 	public table: string | null;
 	public pageInfo: Record<string, pageInfo>;
+	private fileExtension = ".txt";
 	private checkIFunique: Record<string, (string | number)[]>;
-	private isThreadEnabled = false;
 	private totalItems: Record<string, number>;
 	public salt: Buffer;
 
@@ -122,7 +124,6 @@ export default class Inibase {
 		this.table = _table;
 		this.totalItems = _totalItems;
 		this.pageInfo = _pageInfo;
-		this.isThreadEnabled = _isThreadEnabled;
 		this.checkIFunique = {};
 
 		if (!process.env.INIBASE_SECRET) {
@@ -134,6 +135,20 @@ export default class Inibase {
 			this.salt = scryptSync(randomBytes(16), randomBytes(16), 32);
 			appendFileSync(".env", `\nINIBASE_SECRET=${this.salt.toString("hex")}\n`);
 		} else this.salt = Buffer.from(process.env.INIBASE_SECRET, "hex");
+
+		// try {
+		// 	if (Config.isCompressionEnabled)
+		// 		execSync(
+		// 			`gzip -r ${join(this.folder, this.database)}/*/*.txt 2>/dev/null`,
+		// 		);
+		// 	else
+		// 		execSync(
+		// 			`gunzip -r ${join(
+		// 				this.folder,
+		// 				this.database,
+		// 			)}/*/*.txt.gz 2>/dev/null`,
+		// 		);
+		// } catch {}
 	}
 
 	private throwError(
@@ -175,6 +190,15 @@ export default class Inibase {
 		);
 	}
 
+	private getFileExtension = () => {
+		let mainExtension = this.fileExtension;
+		// TODO: ADD ENCRYPTION
+		// if(Config.isEncryptionEnabled)
+		// 	mainExtension += ".enc"
+		if (Config.isCompressionEnabled) mainExtension += ".gz";
+		return mainExtension;
+	};
+
 	private _schemaToIdsPath = (schema: Schema, prefix = "") => {
 		const RETURN: any = {};
 		for (const field of schema)
@@ -191,7 +215,9 @@ export default class Inibase {
 					),
 				);
 			} else if (field.id)
-				RETURN[field.id] = `${(prefix ?? "") + field.key}.inib`;
+				RETURN[field.id] = `${
+					(prefix ?? "") + field.key
+				}${this.getFileExtension()}`;
 
 		return RETURN;
 	};
@@ -301,7 +327,7 @@ export default class Inibase {
 
 		if (!schema) throw this.throwError("NO_SCHEMA", tableName);
 
-		if (!(await File.isExists(join(tablePath, "id.inib"))))
+		if (!(await File.isExists(join(tablePath, `id${this.getFileExtension()}`))))
 			throw this.throwError("NO_ITEMS", tableName);
 
 		return schema;
@@ -472,7 +498,7 @@ export default class Inibase {
 			const field = Utils.getField(key, schema);
 			if (!field) continue;
 			const [searchResult, totalLines] = await File.search(
-				join(tablePath, `${key}.inib`),
+				join(tablePath, `${key}${this.getFileExtension()}`),
 				Array.isArray(values) ? "=" : "[]",
 				values,
 				undefined,
@@ -629,7 +655,8 @@ export default class Inibase {
 	private _addPathToKeys = (obj: Record<string, any>, path: string) => {
 		const newObject: Record<string, any> = {};
 
-		for (const key in obj) newObject[join(path, `${key}.inib`)] = obj[key];
+		for (const key in obj)
+			newObject[join(path, `${key}${this.getFileExtension()}`)] = obj[key];
 
 		return newObject;
 	};
@@ -705,52 +732,52 @@ export default class Inibase {
 	) {
 		const tablePath = join(this.folder, this.database, tableName);
 		let RETURN: Record<number, Data> = {};
-		await Promise.all(
-			schema.map(async (field) => {
-				if (
-					(field.type === "array" ||
-						(Array.isArray(field.type) && field.type.includes("array"))) &&
-					field.children
-				) {
-					if (Utils.isArrayOfObjects(field.children)) {
-						if (
-							field.children.filter(
+
+		for await (const field of schema) {
+			if (
+				(field.type === "array" ||
+					(Array.isArray(field.type) && field.type.includes("array"))) &&
+				field.children
+			) {
+				if (Utils.isArrayOfObjects(field.children)) {
+					if (
+						field.children.filter(
+							(children) =>
+								children.type === "array" &&
+								Utils.isArrayOfObjects(children.children),
+						).length
+					) {
+						// one of children has array field type and has children array of object = Schema
+						const childItems = await this.getItemsFromSchema(
+							tableName,
+							(field.children as Schema).filter(
 								(children) =>
 									children.type === "array" &&
 									Utils.isArrayOfObjects(children.children),
-							).length
-						) {
-							// one of children has array field type and has children array of object = Schema
-							for (const [index, item] of Object.entries(
-								(await this.getItemsFromSchema(
-									tableName,
-									(field.children as Schema).filter(
-										(children) =>
-											children.type === "array" &&
-											Utils.isArrayOfObjects(children.children),
-									),
-									linesNumber,
-									options,
-									`${(prefix ?? "") + field.key}.`,
-								)) ?? {},
-							))
+							),
+							linesNumber,
+							options,
+							`${(prefix ?? "") + field.key}.`,
+						);
+						if (childItems)
+							for (const [index, item] of Object.entries(childItems))
 								this._getItemsFromSchemaHelper(RETURN, item, index, field);
 
-							field.children = field.children.filter(
-								(children) =>
-									children.type !== "array" ||
-									!Utils.isArrayOfObjects(children.children),
-							);
-						}
-						for (const [index, item] of Object.entries(
-							(await this.getItemsFromSchema(
-								tableName,
-								field.children,
-								linesNumber,
-								options,
-								`${(prefix ?? "") + field.key}.`,
-							)) ?? {},
-						)) {
+						field.children = field.children.filter(
+							(children) =>
+								children.type !== "array" ||
+								!Utils.isArrayOfObjects(children.children),
+						);
+					}
+					const fieldItems = await this.getItemsFromSchema(
+						tableName,
+						field.children,
+						linesNumber,
+						options,
+						`${(prefix ?? "") + field.key}.`,
+					);
+					if (fieldItems)
+						for (const [index, item] of Object.entries(fieldItems)) {
 							if (!RETURN[index]) RETURN[index] = {};
 							if (Utils.isObject(item)) {
 								if (!Utils.isArrayOfNulls(Object.values(item))) {
@@ -797,91 +824,21 @@ export default class Inibase {
 								} else RETURN[index][field.key] = null;
 							} else RETURN[index][field.key] = item;
 						}
-					} else if (
-						field.children === "table" ||
-						(Array.isArray(field.type) && field.type.includes("table")) ||
-						(Array.isArray(field.children) && field.children.includes("table"))
-					) {
-						if (
-							field.table &&
-							(await File.isExists(
-								join(this.folder, this.database, field.table),
-							)) &&
-							(await File.isExists(
-								join(tablePath, `${(prefix ?? "") + field.key}.inib`),
-							))
-						) {
-							if (options.columns)
-								options.columns = (options.columns as string[])
-									.filter((column) => column.includes(`${field.key}.`))
-									.map((column) => column.replace(`${field.key}.`, ""));
-
-							const items = await File.get(
-								join(tablePath, `${(prefix ?? "") + field.key}.inib`),
-								linesNumber,
-								field.type,
-								field.children,
-								this.salt,
-							);
-
-							if (items)
-								await Promise.allSettled(
-									Object.entries(items).map(async ([index, item]) => {
-										if (!RETURN[index]) RETURN[index] = {};
-										RETURN[index][field.key] = item
-											? await this.get(
-													field.table as string,
-													item as number,
-													options,
-												)
-											: this.getDefaultValue(field);
-									}),
-								);
-						}
-					} else if (
-						await File.isExists(
-							join(tablePath, `${(prefix ?? "") + field.key}.inib`),
-						)
-					) {
-						const items = await File.get(
-							join(tablePath, `${(prefix ?? "") + field.key}.inib`),
-							linesNumber,
-							field.type,
-							field.children,
-							this.salt,
-						);
-
-						if (items)
-							for (const [index, item] of Object.entries(items)) {
-								if (!RETURN[index]) RETURN[index] = {};
-								RETURN[index][field.key] = item ?? this.getDefaultValue(field);
-							}
-					}
-				} else if (field.type === "object") {
-					for await (const [index, item] of Object.entries(
-						(await this.getItemsFromSchema(
-							tableName,
-							field.children as Schema,
-							linesNumber,
-							options,
-							`${(prefix ?? "") + field.key}.`,
-						)) ?? {},
-					)) {
-						if (!RETURN[index]) RETURN[index] = {};
-						if (Utils.isObject(item)) {
-							if (!Object.values(item).every((i) => i === null))
-								RETURN[index][field.key] = item;
-							else RETURN[index][field.key] = null;
-						} else RETURN[index][field.key] = null;
-					}
-				} else if (field.type === "table") {
+				} else if (
+					field.children === "table" ||
+					(Array.isArray(field.type) && field.type.includes("table")) ||
+					(Array.isArray(field.children) && field.children.includes("table"))
+				) {
 					if (
 						field.table &&
 						(await File.isExists(
 							join(this.folder, this.database, field.table),
 						)) &&
 						(await File.isExists(
-							join(tablePath, `${(prefix ?? "") + field.key}.inib`),
+							join(
+								tablePath,
+								`${(prefix ?? "") + field.key}${this.getFileExtension()}`,
+							),
 						))
 					) {
 						if (options.columns)
@@ -890,34 +847,41 @@ export default class Inibase {
 								.map((column) => column.replace(`${field.key}.`, ""));
 
 						const items = await File.get(
-							join(tablePath, `${(prefix ?? "") + field.key}.inib`),
+							join(
+								tablePath,
+								`${(prefix ?? "") + field.key}${this.getFileExtension()}`,
+							),
 							linesNumber,
-							"number",
-							undefined,
+							field.type,
+							field.children,
 							this.salt,
 						);
 
 						if (items)
-							await Promise.allSettled(
-								Object.entries(items).map(async ([index, item]) => {
-									if (!RETURN[index]) RETURN[index] = {};
-									RETURN[index][field.key] = item
-										? await this.get(
-												field.table as string,
-												item as number,
-												options,
-											)
-										: this.getDefaultValue(field);
-								}),
-							);
+							for await (const [index, item] of Object.entries(items)) {
+								if (!RETURN[index]) RETURN[index] = {};
+								RETURN[index][field.key] = item
+									? await this.get(
+											field.table as string,
+											item as number,
+											options,
+										)
+									: this.getDefaultValue(field);
+							}
 					}
 				} else if (
 					await File.isExists(
-						join(tablePath, `${(prefix ?? "") + field.key}.inib`),
+						join(
+							tablePath,
+							`${(prefix ?? "") + field.key}${this.getFileExtension()}`,
+						),
 					)
 				) {
 					const items = await File.get(
-						join(tablePath, `${(prefix ?? "") + field.key}.inib`),
+						join(
+							tablePath,
+							`${(prefix ?? "") + field.key}${this.getFileExtension()}`,
+						),
 						linesNumber,
 						field.type,
 						field.children,
@@ -929,16 +893,94 @@ export default class Inibase {
 							if (!RETURN[index]) RETURN[index] = {};
 							RETURN[index][field.key] = item ?? this.getDefaultValue(field);
 						}
-					else
-						RETURN = Object.fromEntries(
-							Object.entries(RETURN).map(([index, data]) => [
-								index,
-								{ ...data, [field.key]: this.getDefaultValue(field) },
-							]),
-						);
 				}
-			}),
-		);
+			} else if (field.type === "object") {
+				const fieldItems = await this.getItemsFromSchema(
+					tableName,
+					field.children as Schema,
+					linesNumber,
+					options,
+					`${(prefix ?? "") + field.key}.`,
+				);
+				if (fieldItems)
+					for (const [index, item] of Object.entries(fieldItems)) {
+						if (!RETURN[index]) RETURN[index] = {};
+						if (Utils.isObject(item)) {
+							if (!Object.values(item).every((i) => i === null))
+								RETURN[index][field.key] = item;
+							else RETURN[index][field.key] = null;
+						} else RETURN[index][field.key] = null;
+					}
+			} else if (field.type === "table") {
+				if (
+					field.table &&
+					(await File.isExists(
+						join(this.folder, this.database, field.table),
+					)) &&
+					(await File.isExists(
+						join(
+							tablePath,
+							`${(prefix ?? "") + field.key}${this.getFileExtension()}`,
+						),
+					))
+				) {
+					if (options.columns)
+						options.columns = (options.columns as string[])
+							.filter((column) => column.includes(`${field.key}.`))
+							.map((column) => column.replace(`${field.key}.`, ""));
+
+					const items = await File.get(
+						join(
+							tablePath,
+							`${(prefix ?? "") + field.key}${this.getFileExtension()}`,
+						),
+						linesNumber,
+						"number",
+						undefined,
+						this.salt,
+					);
+
+					if (items)
+						for await (const [index, item] of Object.entries(items)) {
+							if (!RETURN[index]) RETURN[index] = {};
+							RETURN[index][field.key] = item
+								? await this.get(field.table as string, item as number, options)
+								: this.getDefaultValue(field);
+						}
+				}
+			} else if (
+				await File.isExists(
+					join(
+						tablePath,
+						`${(prefix ?? "") + field.key}${this.getFileExtension()}`,
+					),
+				)
+			) {
+				const items = await File.get(
+					join(
+						tablePath,
+						`${(prefix ?? "") + field.key}${this.getFileExtension()}`,
+					),
+					linesNumber,
+					field.type,
+					field.children,
+					this.salt,
+				);
+
+				if (items)
+					for (const [index, item] of Object.entries(items)) {
+						if (!RETURN[index]) RETURN[index] = {};
+						RETURN[index][field.key] = item ?? this.getDefaultValue(field);
+					}
+				else
+					RETURN = Object.fromEntries(
+						Object.entries(RETURN).map(([index, data]) => [
+							index,
+							{ ...data, [field.key]: this.getDefaultValue(field) },
+						]),
+					);
+			}
+		}
 		return RETURN;
 	}
 
@@ -1102,7 +1144,7 @@ export default class Inibase {
 					searchComparedAtValue = value as number | boolean;
 				}
 				const [searchResult, totalLines, linesNumbers] = await File.search(
-					join(tablePath, `${key}.inib`),
+					join(tablePath, `${key}${this.getFileExtension()}`),
 					searchOperator ?? "=",
 					searchComparedAtValue ?? null,
 					searchLogicalOperator,
@@ -1181,7 +1223,9 @@ export default class Inibase {
 	public async clearCache(tablePath: string) {
 		await Promise.all(
 			(await readdir(join(tablePath, ".cache")))
-				?.filter((fileName: string) => fileName !== "pagination.inib")
+				?.filter(
+					(fileName: string) => fileName !== `pagination${this.fileExtension}`,
+				)
 				.map(async (file) => unlink(join(tablePath, ".cache", file))),
 		);
 	}
@@ -1266,17 +1310,21 @@ export default class Inibase {
 				),
 			);
 			if (
-				Config.isCacheEnabled &&
-				(await File.isExists(join(tablePath, ".cache", "pagination.inib")))
+				await File.isExists(
+					join(tablePath, ".cache", `pagination${this.fileExtension}`),
+				)
 			)
 				this.totalItems[`${tableName}-*`] = Number(
 					(
-						await File.read(join(tablePath, ".cache", "pagination.inib"), true)
+						await File.read(
+							join(tablePath, ".cache", `pagination${this.fileExtension}`),
+							true,
+						)
 					).split(",")[1],
 				);
 			else {
 				let [lastId, totalItems] = await File.get(
-					join(tablePath, "id.inib"),
+					join(tablePath, `id${this.getFileExtension()}`),
 					-1,
 					"number",
 					undefined,
@@ -1287,12 +1335,11 @@ export default class Inibase {
 
 				this.totalItems[`${tableName}-*`] = totalItems;
 
-				if (Config.isCacheEnabled)
-					await File.write(
-						join(tablePath, ".cache", "pagination.inib"),
-						`${lastId},${totalItems}`,
-						true,
-					);
+				await File.write(
+					join(tablePath, ".cache", `pagination${this.fileExtension}`),
+					`${lastId},${totalItems}`,
+					true,
+				);
 			}
 		} else if (
 			(Array.isArray(where) && where.every(Utils.isNumber)) ||
@@ -1326,7 +1373,7 @@ export default class Inibase {
 			let Ids = where as string | number | (string | number)[];
 			if (!Array.isArray(Ids)) Ids = [Ids];
 			const [lineNumbers, countItems] = await File.search(
-				join(tablePath, "id.inib"),
+				join(tablePath, `id${this.getFileExtension()}`),
 				"[]",
 				Ids.map((id) =>
 					Utils.isNumber(id) ? Number(id) : UtilsServer.decodeID(id, this.salt),
@@ -1367,7 +1414,9 @@ export default class Inibase {
 				cachedFilePath = join(
 					tablePath,
 					".cache",
-					`${UtilsServer.hashString(inspect(where, { sorted: true }))}.inib`,
+					`${UtilsServer.hashString(inspect(where, { sorted: true }))}${
+						this.fileExtension
+					}`,
 				);
 
 			if (Config.isCacheEnabled && (await File.isExists(cachedFilePath))) {
@@ -1492,20 +1541,26 @@ export default class Inibase {
 		try {
 			await File.lock(join(tablePath, ".tmp"), keys);
 
-			if (await File.isExists(join(tablePath, "id.inib"))) {
+			if (
+				await File.isExists(join(tablePath, `id${this.getFileExtension()}`))
+			) {
 				if (
-					Config.isCacheEnabled &&
-					(await File.isExists(join(tablePath, ".cache", "pagination.inib")))
+					await File.isExists(
+						join(tablePath, ".cache", `pagination${this.fileExtension}`),
+					)
 				)
 					[lastId, totalItems] = (
-						await File.read(join(tablePath, ".cache", "pagination.inib"), true)
+						await File.read(
+							join(tablePath, ".cache", `pagination${this.fileExtension}`),
+							true,
+						)
 					)
 						.split(",")
 						.map(Number);
 				else {
 					let lastIdObj = null;
 					[lastIdObj, totalItems] = await File.get(
-						join(tablePath, "id.inib"),
+						join(tablePath, `id${this.getFileExtension()}`),
 						-1,
 						"number",
 						undefined,
@@ -1555,14 +1610,12 @@ export default class Inibase {
 			renameList = [];
 			totalItems += Array.isArray(RETURN) ? RETURN.length : 1;
 
-			if (Config.isCacheEnabled) {
-				await this.clearCache(tablePath);
-				await File.write(
-					join(tablePath, ".cache", "pagination.inib"),
-					`${lastId},${totalItems}`,
-					true,
-				);
-			}
+			if (Config.isCacheEnabled) await this.clearCache(tablePath);
+			await File.write(
+				join(tablePath, ".cache", `pagination${this.fileExtension}`),
+				`${lastId},${totalItems}`,
+				true,
+			);
 
 			if (returnPostedData)
 				return this.get(
@@ -1650,15 +1703,22 @@ export default class Inibase {
 			}
 			let totalItems: number;
 			if (
-				Config.isCacheEnabled &&
-				(await File.isExists(join(tablePath, ".cache", "pagination.inib")))
+				await File.isExists(
+					join(tablePath, ".cache", `pagination${this.fileExtension}`),
+				)
 			)
 				totalItems = (
-					await File.read(join(tablePath, ".cache", "pagination.inib"), true)
+					await File.read(
+						join(tablePath, ".cache", `pagination${this.fileExtension}`),
+						true,
+					)
 				)
 					.split(",")
 					.map(Number)[1];
-			else totalItems = await File.count(join(tablePath, "id.inib"));
+			else
+				totalItems = await File.count(
+					join(tablePath, `id${this.getFileExtension()}`),
+				);
 
 			const pathesContents = this.joinPathesContents(tablePath, {
 				...(({ id, ...restOfData }) => restOfData)(data as Data),
@@ -1815,11 +1875,21 @@ export default class Inibase {
 		where?: (number | string)[] | Criteria,
 		_id?: string | string[],
 	): Promise<string[] | null>;
+	delete(
+		tableName: string,
+		where?: number,
+		_id?: string | string[],
+	): Promise<number | null>;
+	delete(
+		tableName: string,
+		where?: number[],
+		_id?: string | string[],
+	): Promise<number[] | null>;
 	public async delete(
 		tableName: string,
 		where?: number | string | (number | string)[] | Criteria,
 		_id?: string | string[],
-	): Promise<string | string[] | null> {
+	): Promise<string | number | (string | number)[] | null> {
 		const renameList: string[][] = [];
 
 		const tablePath = join(this.folder, this.database, tableName),
@@ -1860,23 +1930,10 @@ export default class Inibase {
 		) {
 			// "where" in this case, is the line(s) number(s) and not id(s)
 			const files = (await readdir(tablePath))?.filter((fileName: string) =>
-				fileName.endsWith(".inib"),
+				fileName.endsWith(this.getFileExtension()),
 			);
 
 			if (files.length) {
-				if (!_id)
-					_id = Object.entries(
-						(await File.get(
-							join(tablePath, "id.inib"),
-							where,
-							"number",
-							undefined,
-							this.salt,
-						)) ?? {},
-					).map(([_, id]) => UtilsServer.encodeID(id as string, this.salt));
-
-				if (!_id.length) throw this.throwError("NO_RESULTS", tableName);
-
 				try {
 					await File.lock(join(tablePath, ".tmp"));
 
@@ -1892,31 +1949,31 @@ export default class Inibase {
 						),
 					);
 
-					if (Config.isCacheEnabled) {
-						await this.clearCache(tablePath);
-						if (
-							await File.isExists(join(tablePath, ".cache", "pagination.inib"))
-						) {
-							const [lastId, totalItems] = (
-								await File.read(
-									join(tablePath, ".cache", "pagination.inib"),
-									true,
-								)
-							)
-								.split(",")
-								.map(Number);
-
-							await File.write(
-								join(tablePath, ".cache", "pagination.inib"),
-								`${lastId},${
-									totalItems - (Array.isArray(where) ? where.length : 1)
-								}`,
+					if (Config.isCacheEnabled) await this.clearCache(tablePath);
+					if (
+						await File.isExists(
+							join(tablePath, ".cache", `pagination${this.fileExtension}`),
+						)
+					) {
+						const [lastId, totalItems] = (
+							await File.read(
+								join(tablePath, ".cache", `pagination${this.fileExtension}`),
 								true,
-							);
-						}
-					}
+							)
+						)
+							.split(",")
+							.map(Number);
 
-					return Array.isArray(_id) && _id.length === 1 ? _id[0] : _id;
+						await File.write(
+							join(tablePath, ".cache", `pagination${this.fileExtension}`),
+							`${lastId},${
+								totalItems - (Array.isArray(where) ? where.length : 1)
+							}`,
+							true,
+						);
+					}
+					if (_id) return Array.isArray(_id) && _id.length === 1 ? _id[0] : _id;
+					return where;
 				} finally {
 					if (renameList.length)
 						await Promise.allSettled(
@@ -1960,7 +2017,7 @@ export default class Inibase {
 
 		if (!Array.isArray(columns)) columns = [columns];
 		for await (const column of columns) {
-			const columnPath = join(tablePath, `${column}.inib`);
+			const columnPath = join(tablePath, `${column}${this.getFileExtension()}`);
 			if (await File.isExists(columnPath)) {
 				if (where) {
 					const lineNumbers = await this.get(
@@ -2002,7 +2059,7 @@ export default class Inibase {
 
 		if (!Array.isArray(columns)) columns = [columns];
 		for await (const column of columns) {
-			const columnPath = join(tablePath, `${column}.inib`);
+			const columnPath = join(tablePath, `${column}${this.getFileExtension()}`);
 			if (await File.isExists(columnPath)) {
 				if (where) {
 					const lineNumbers = await this.get(
@@ -2043,7 +2100,7 @@ export default class Inibase {
 
 		if (!Array.isArray(columns)) columns = [columns];
 		for await (const column of columns) {
-			const columnPath = join(tablePath, `${column}.inib`);
+			const columnPath = join(tablePath, `${column}${this.getFileExtension()}`);
 			if (await File.isExists(columnPath)) {
 				if (where) {
 					const lineNumbers = await this.get(
@@ -2114,7 +2171,7 @@ export default class Inibase {
 			);
 			keepItems = Object.values(
 				(await File.get(
-					join(tablePath, "id.inib"),
+					join(tablePath, `id${this.getFileExtension()}`),
 					lineNumbers,
 					"number",
 					undefined,
@@ -2139,7 +2196,7 @@ export default class Inibase {
 			);
 
 		const filesPathes = [["id", true], ...sortArray].map((column) =>
-			join(tablePath, `${column[0]}.inib`),
+			join(tablePath, `${column[0]}${this.getFileExtension()}`),
 		);
 		// Construct the paste command to merge files and filter lines by IDs
 		const pasteCommand = `paste ${filesPathes.join(" ")}`;
@@ -2170,18 +2227,24 @@ export default class Inibase {
 
 			// Combine the commands
 			// Execute the command synchronously
-			const { stdout, stderr } = await UtilsServer.exec(
+			const { stdout } = await UtilsServer.exec(
 				Config.isCacheEnabled
-					? (await File.isExists(join(tablePath, ".cache", `${cacheKey}.inib`)))
-						? `${awkCommand} ${join(tablePath, ".cache", `${cacheKey}.inib`)}`
+					? (await File.isExists(
+							join(tablePath, ".cache", `${cacheKey}${this.fileExtension}`),
+						))
+						? `${awkCommand} ${join(
+								tablePath,
+								".cache",
+								`${cacheKey}${this.fileExtension}`,
+							)}`
 						: `${pasteCommand} | ${sortCommand} -o ${join(
 								tablePath,
 								".cache",
-								`${cacheKey}.inib`,
+								`${cacheKey}${this.fileExtension}`,
 							)} && ${awkCommand} ${join(
 								tablePath,
 								".cache",
-								`${cacheKey}.inib`,
+								`${cacheKey}${this.fileExtension}`,
 							)}`
 					: `${pasteCommand} | ${sortCommand} | ${awkCommand}`,
 				{
@@ -2195,7 +2258,7 @@ export default class Inibase {
 				const splitedFileColumns = line.split("\t"); // Assuming tab-separated columns
 				const outputObject: Record<string, any> = {};
 
-				// Extract values for each file, including "id.inib"
+				// Extract values for each file, including `id${this.getFileExtension()}`
 				filesPathes.forEach((fileName, index) => {
 					const Field = Utils.getField(parse(fileName).name, schema);
 					if (Field)

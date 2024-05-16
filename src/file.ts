@@ -8,13 +8,14 @@ import {
 	unlink,
 	copyFile,
 	appendFile,
+	mkdir,
 } from "node:fs/promises";
 import type { WriteStream } from "node:fs";
 import { createInterface, type Interface } from "node:readline";
 import { Transform, type Transform as TransformType } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createGzip, createGunzip, gunzipSync, gzipSync } from "node:zlib";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import type { ComparisonOperator, FieldType, Schema } from "./index.js";
 import {
@@ -24,7 +25,7 @@ import {
 	isNumber,
 	isObject,
 } from "./utils.js";
-import { encodeID, compare } from "./utils.server.js";
+import { encodeID, compare, exec } from "./utils.server.js";
 import * as Config from "./config.js";
 import Inison from "inison";
 
@@ -58,6 +59,7 @@ export const write = async (
 	data: any,
 	disableCompression = false,
 ) => {
+	await mkdir(dirname(filePath), { recursive: true });
 	await writeFile(
 		filePath,
 		Config.isCompressionEnabled && !disableCompression
@@ -377,23 +379,40 @@ export async function get(
 					secretKey,
 				);
 		} else {
-			const lineNumbersArray = new Set(
-				Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers],
-			);
-			for await (const line of rl) {
-				linesCount++;
-				if (!lineNumbersArray.has(linesCount)) continue;
-				lines[linesCount] = decode(
+			lineNumbers = Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers];
+			if (readWholeFile) {
+				const lineNumbersArray = new Set(lineNumbers);
+				for await (const line of rl) {
+					linesCount++;
+					if (!lineNumbersArray.has(linesCount)) continue;
+					lines[linesCount] = decode(
+						line,
+						fieldType,
+						fieldChildrenType,
+						secretKey,
+					);
+					lineNumbersArray.delete(linesCount);
+				}
+				return [lines, linesCount];
+			}
+
+			const command = Config.isCompressionEnabled
+					? `zcat ${filePath} | sed -n '${lineNumbers.join("p;")}p'`
+					: `sed -n '${lineNumbers.join("p;")}p' ${filePath}`,
+				foundedLines = (await exec(command)).stdout.trim().split(/\r?\n/);
+
+			let index = 0;
+			for (const line of foundedLines) {
+				lines[lineNumbers[index]] = decode(
 					line,
 					fieldType,
 					fieldChildrenType,
 					secretKey,
 				);
-				lineNumbersArray.delete(linesCount);
-				if (!lineNumbersArray.size && !readWholeFile) break;
+				index++;
 			}
 		}
-		return readWholeFile ? [lines, linesCount] : lines;
+		return lines;
 	} finally {
 		// Ensure that file handles are closed, even if an error occurred
 		rl?.close();
@@ -559,40 +578,48 @@ export const remove = async (
 	filePath: string,
 	linesToDelete: number | number[],
 ): Promise<string[]> => {
-	let linesCount = 0;
-	let deletedCount = 0;
-
-	const fileHandle = await open(filePath, "r");
+	linesToDelete = Array.isArray(linesToDelete)
+		? linesToDelete.map(Number)
+		: [Number(linesToDelete)];
 	const fileTempPath = filePath.replace(/([^/]+)\/?$/, ".tmp/$1");
-	const fileTempHandle = await open(fileTempPath, "w");
-	const linesToDeleteArray = new Set(
-		Array.isArray(linesToDelete)
-			? linesToDelete.map(Number)
-			: [Number(linesToDelete)],
-	);
-	const rl = readLineInternface(fileHandle);
 
-	await _pipeline(
-		rl,
-		fileTempHandle.createWriteStream(),
-		new Transform({
-			transform(line, encoding, callback) {
-				linesCount++;
-				if (linesToDeleteArray.has(linesCount)) {
-					deletedCount++;
+	if (linesToDelete.length < 1000) {
+		const command = Config.isCompressionEnabled
+			? `zcat ${filePath} | sed "${linesToDelete.join(
+					"d;",
+				)}d" | gzip > ${fileTempPath}`
+			: `sed "${linesToDelete.join("d;")}d" ${filePath} > ${fileTempPath}`;
+		await exec(command);
+	} else {
+		let linesCount = 0;
+		let deletedCount = 0;
+		const fileHandle = await open(filePath, "r");
+		const fileTempHandle = await open(fileTempPath, "w");
+		const linesToDeleteArray = new Set(linesToDelete);
+		const rl = readLineInternface(fileHandle);
+
+		await _pipeline(
+			rl,
+			fileTempHandle.createWriteStream(),
+			new Transform({
+				transform(line, _, callback) {
+					linesCount++;
+					if (linesToDeleteArray.has(linesCount)) {
+						deletedCount++;
+						return callback();
+					}
+					return callback(null, `${line}\n`);
+				},
+				final(callback) {
+					if (deletedCount === linesCount) this.push("\n");
 					return callback();
-				}
-				return callback(null, `${line}\n`);
-			},
-			final(callback) {
-				if (deletedCount === linesCount) this.push("\n");
-				return callback();
-			},
-		}),
-	);
+				},
+			}),
+		);
 
-	await fileTempHandle.close();
-	await fileHandle.close();
+		await fileTempHandle.close();
+		await fileHandle.close();
+	}
 	return [fileTempPath, filePath];
 };
 
@@ -732,7 +759,7 @@ export const search = async (
  * Note: Reads through the file line by line to count the total number of lines.
  */
 export const count = async (filePath: string): Promise<number> => {
-	// return Number((await exec(`wc -l < ${filePath}`)).stdout.trim());
+	// Number((await exec(`wc -l < ${filePath}`)).stdout.trim());
 	let linesCount = 0;
 	if (await isExists(filePath)) {
 		let fileHandle = null;
