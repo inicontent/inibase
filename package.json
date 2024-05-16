@@ -50,10 +50,12 @@
 	"scripts": {
 		"prepare": "tsc",
 		"build": "tsc",
-		"test": "npx tsx watch --expose-gc --env-file=.env ./index.test",
-		"benchmark": "npx tsx --env-file=.env ./benchmark/index",
-		"benchmark:single": "npx tsx --expose-gc --env-file=.env ./benchmark/single",
-		"benchmark:bulk": "npx tsx --expose-gc --env-file=.env ./benchmark/bulk"
+		"benchmark": "tsx --env-file=.env ./benchmark/index",
+		"benchmark:single": "tsx --expose-gc --env-file=.env ./benchmark/single",
+		"benchmark:bulk": "tsx --expose-gc --env-file=.env ./benchmark/bulk"
+	},
+	"bin": {
+		"inibase": "./dist/cli.js"
 	},
 	"type": "module",
 	"types": "./dist",
@@ -81,6 +83,8 @@
 		"tinybench": "^2.6.0"
 	},
 	"dependencies": {
+		"commander": "^12.0.0",
+		"dotenv": "^16.4.5",
 		"inison": "^1.0.0-rc.2"
 	}
 }
