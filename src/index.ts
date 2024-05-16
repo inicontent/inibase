@@ -2259,12 +2259,12 @@ export default class Inibase {
 
 				// Extract values for each file, including `id${this.getFileExtension()}`
 				filesPathes.forEach((fileName, index) => {
-					const Field = Utils.getField(parse(fileName).name, schema);
-					if (Field)
-						outputObject[Field.key as string] = File.decode(
+					const field = Utils.getField(parse(fileName).name, schema);
+					if (field)
+						outputObject[field.key as string] = File.decode(
 							splitedFileColumns[index],
-							Field?.type,
-							Field?.children as any,
+							field?.type,
+							field?.children as any,
 							this.salt,
 						);
 				});
