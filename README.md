@@ -209,6 +209,8 @@ const user_schema = [
   },
 ];
 
+await db.setTableSchema("user", user_schema);
+
 const user_data = [
   {
     username: "user1",
