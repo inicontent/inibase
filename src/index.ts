@@ -2132,7 +2132,6 @@ export default class Inibase {
 			perPage: 15,
 		},
 	) {
-		// TO-DO: Cache Results based on "Columns and Sort Direction"
 		const tablePath = join(this.folder, this.database, tableName),
 			schema = await this.getSchemaWhenTableNotEmpty(tableName);
 
