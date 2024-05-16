@@ -42,8 +42,10 @@ const users = await db.get("user", undefined, {
 // Get items from "user" table where "favoriteFoods" does not includes "Pizza" or "Burger"
 const users = await db.get("user", { favoriteFoods: "![]Pizza,Burger" });
 ```
-
-If you like Inibase, please sponsor: [GitHub Sponsors](https://github.com/sponsors/inicontent) || [Paypal](https://paypal.me/KarimAmahtil).
+> [!NOTE]
+> Enjoy using Inibase? Consider sponsoring us via [PayPal](https://paypal.me/KarimAmahtil) <br>
+> Your support helps us maintain and improve our services. <br>
+> Thank you! 🫰
 
 ## Install
 
@@ -53,21 +55,29 @@ If you like Inibase, please sponsor: [GitHub Sponsors](https://github.com/sponso
 
 ## How it works?
 
-To simplify the idea, each database has tables, each table has columns, each column will be stored in a seperated file. When **POST**ing new data, it will be appended to the _head_ of each file as new line. When **GET**ing data, the file will be readed line-by-line so it can handle large data (without consuming a lot of resources), when **PUT**ing(updating) in a specific column, only one file will be opened and updated
+`Inibase` organizes data into databases, tables, and columns, each stored in separate files. 
+
+- **POST**: New data is appended to column files efficiently.
+- **GET**: Data retrieval is optimized by reading files line-by-line.
+- **PUT**: Updates are streamlined, with only the relevant file being modified.
+- **DELETE**: Removes lines from column files for swift deletion.
+
+This structure ensures efficient storage, retrieval, and updates, making our system scalable and high-performing for diverse datasets and applications.
 
 ## Config (.env)
 
-The `.env` file supports the following parameters (make sure to run commands with flag --env-file=.env)
+The `.env` file supports the following parameters
+> Make sure to run commands with flag `--env-file=.env` or use `dotenv/config`
 
 ```ini
-# Auto generated secret key, will be using for encrypting the IDs
+# Don't add this line, it's an auto generated secret key, will be using for encrypting the IDs
 INIBASE_SECRET=
 
-INIBASE_COMPRESSION=true
-INIBASE_CACHE=true
+INIBASE_COMPRESSION=false
+INIBASE_CACHE=false
 
-# Prepend new items to the beginning of file 
-INIBASE_REVERSE=true
+# Prepend new items to the beginning of file
+INIBASE_REVERSE=false
 ```
 
 ## Benchmark
@@ -92,58 +102,91 @@ INIBASE_REVERSE=true
 
 Ps: Testing by default with `user` table, with username, email, password fields _so results include password encryption process_
 
-## Roadmap
+## Inibase CLI
 
-- [x] Actions:
-  - [x] GET:
-    - [x] Pagination
-    - [x] Criteria
-    - [x] Columns
-    - [x] Sort (using UNIX commands)
-  - [x] POST
-  - [x] PUT
-  - [x] DELETE
-  - [x] SUM
-  - [x] MAX
-  - [x] MIN
-- [ ] Schema supported types:
-  - [x] String
-  - [x] Number
-  - [x] Boolean
-  - [x] Date
-  - [x] Email
-  - [x] Url
-  - [x] Table
-  - [x] Object
-  - [x] Array
-  - [x] Password
-  - [x] IP
-  - [x] HTML
-  - [x] Id
-  - [x] JSON
-- [ ] TO-DO:
-  - [x] Improve caching
-  - [ ] Commenting the code
-  - [x] Add property "unique" for schema fields
-  - [ ] Add Backup feature (generate a tar.gz)
-  - [ ] Add Custom field validation property to schema (using RegEx?)
-- [ ] Features:
-  - [ ] Encryption
-  - [x] Data Compression
-  - [x] Caching System
-  - [ ] Suggest [new feature +](https://github.com/inicontent/inibase/discussions/new?category=ideas)
+```shell
+npx inibase -p <databaseFolderPath>
+```
 
+<blockquote>
+<details>
+<summary>GET</summary>
+
+```shell 
+get <tableName> -w <ID|LineNumber|Criteria> -p <pageNumber> -l <perPage> -c <columnName1>  -c <columnName2>
+```
+</details>
+
+<details>
+<summary>POST</summary>
+
+```shell 
+post <tableName> -d <InisonStrigifedData>
+```
+</details>
+
+<details>
+<summary>PUT</summary>
+
+```shell 
+put <tableName> -d <InisonStrigifedData> -w <ID|LineNumber|Criteria>
+```
+</details>
+
+<details>
+<summary>DELETE</summary>
+
+```shell 
+delete <tableName> -w <ID|LineNumber|Criteria>
+```
+</details>
+</blockquote>
 
 ## Examples
 
 <details>
-<summary>POST</summary>
+<summary>Schema</summary>
+<blockquote>
+
+<details>
+<summary>Create Schema</summary>
+<blockquote>
+
+<details>
+<summary>Using schema.json file</summary>
+<blockquote>
+Inside the table folder
+
+1. Create empty folders `.cache` `.tmp`
+2. Create `schema.json` file
+
+```jsonc
+[
+  {
+    // Give a unique ID number for each field
+    "id": 1,
+    "key": "username",
+    "type": "string"
+  },
+  {
+    "id": 2,
+    "key": "email",
+    "type": "email"
+  },
+]
+```
+</blockquote>
+</details>
+
+<details>
+<summary>Using built-in function</summary>
+<blockquote>
 
 ```js
 import Inibase from "inibase";
 const db = new Inibase("/databaseName");
 
-const user_schema = [
+const userSchema = [
   {
     key: "username",
     type: "string",
@@ -209,9 +252,128 @@ const user_schema = [
   },
 ];
 
-await db.setTableSchema("user", user_schema);
+await db.setTableSchema("user", userSchema);
+```
+</blockquote>
+</details>
 
-const user_data = [
+</blockquote>
+</details>
+
+<details>
+<summary>Add field</summary>
+<blockquote>
+
+```js
+import Inibase from "inibase";
+const db = new Inibase("/databaseName");
+
+const userSchema = await db.getTableSchema("user");
+const newUserSchema = [...userSchema, {key: "phone2", type: "number", required: false}];
+
+await db.setTableSchema("user", newUserSchema);
+```
+</blockquote>
+</details>
+
+<details>
+<summary>Update field</summary>
+<blockquote>
+
+```js
+import Inibase from "inibase";
+import { setField } from "inibase/utils";
+
+const db = new Inibase("/databaseName");
+
+const userSchema = await db.getTableSchema("user");
+setField("username", userSchema, {key: "full_name"});
+await db.setTableSchema("user", newUserSchema);
+```
+</blockquote>
+</details>
+
+<details>
+<summary>Join Tables</summary>
+<blockquote>
+
+```js
+import Inibase from "inibase";
+const db = new Inibase("/databaseName");
+
+const productSchema = [
+  {
+    key: "title",
+    type: "string",
+    required: true,
+  },
+  {
+    key: "price",
+    type: "number",
+  },
+  {
+    key: "createdBy",
+    type: "table",
+    table: "user",
+    required: true,
+  },
+];
+
+await db.setTableSchema("product", productSchema);
+
+const productData = [
+  {
+    title: "Product 1",
+    price: 16,
+    createdBy: "1d88385d4b1581f8fb059334dec30f4c",
+  },
+  {
+    title: "Product 2",
+    price: 10,
+    createdBy: "5011c230aa44481bf7e8dcfe0710474f",
+  },
+];
+
+const product = await db.post("product", productData);
+// [
+//   {
+//     "id": "1d88385d4b1581f8fb059334dec30f4c",
+//     "title": "Product 1",
+//     "price": 16,
+//     "createdBy": {
+//       "id": "1d88385d4b1581f8fb059334dec30f4c",
+//       "username": "user1",
+//       "email": "user1@example.com",
+//       ...
+//     }
+//   },
+//   {
+//     "id": "5011c230aa44481bf7e8dcfe0710474f",
+//     "title": "Product 2",
+//     "price": 10,
+//     "createdBy": {
+//       "id": "5011c230aa44481bf7e8dcfe0710474f",
+//       "username": "user2",
+//       ...
+//     }
+//   }
+// ]
+```
+</blockquote>
+</details>
+
+</blockquote>
+</details>
+
+<details>
+<summary>POST</summary>
+<blockquote>
+
+```js
+import Inibase from "inibase";
+const db = new Inibase("/databaseName");
+
+const userData = [
   {
     username: "user1",
     email: "user1@example.com",
@@ -246,7 +408,7 @@ const user_data = [
   },
 ];
 
-const users = await db.post("user", user_data);
+const users = await db.post("user", userData);
 // [
 //   {
 //     "id": "1d88385d4b1581f8fb059334dec30f4c",
@@ -284,79 +446,21 @@ const users = await db.post("user", user_data);
 // ]
 ```
 
-Link two tables: "product" with "user"
-
-```js
-import Inibase from "inibase";
-const db = new Inibase("/databaseName");
-
-const product_schema = [
-  {
-    key: "title",
-    type: "string",
-    required: true,
-  },
-  {
-    key: "price",
-    type: "number",
-  },
-  {
-    key: "createdBy",
-    type: "table",
-    table: "user",
-    required: true,
-  },
-];
-
-const product_data = [
-  {
-    title: "Product 1",
-    price: 16,
-    createdBy: "1d88385d4b1581f8fb059334dec30f4c",
-  },
-  {
-    title: "Product 2",
-    price: 10,
-    createdBy: "5011c230aa44481bf7e8dcfe0710474f",
-  },
-];
-
-const product = await db.post("product", product_data);
-// [
-//   {
-//     "id": "1d88385d4b1581f8fb059334dec30f4c",
-//     "title": "Product 1",
-//     "price": 16,
-//     "createdBy": {
-//       "id": "1d88385d4b1581f8fb059334dec30f4c",
-//       "username": "user1",
-//       "email": "user1@example.com",
-//       ...
-//     }
-//   },
-//   {
-//     "id": "5011c230aa44481bf7e8dcfe0710474f",
-//     "title": "Product 2",
-//     "price": 10,
-//     "createdBy": {
-//       "id": "5011c230aa44481bf7e8dcfe0710474f",
-//       "username": "user2",
-//       ...
-//     }
-//   }
-// ]
-```
-
+</blockquote>
 </details>
 
 <details>
 <summary>GET</summary>
+<blockquote>
+
+<details>
+<summary>GET by ID</summary>
+<blockquote>
 
 ```js
 import Inibase from "inibase";
 const db = new Inibase("/databaseName");
 
-// Get "user" by id
 const user = await db.get("user", "1d88385d4b1581f8fb059334dec30f4c");
 // {
 //     "id": "1d88385d4b1581f8fb059334dec30f4c",
@@ -385,8 +489,18 @@ const user = await db.get("user", "1d88385d4b1581f8fb059334dec30f4c");
 //         "country": "Sampleland"
 //     }
 // }
+```
+</blockquote>
+</details>
 
-// Get "user" by Criteria: where "favoriteFoods" includes "Pizza"
+<details>
+<summary>GET by criteria</summary>
+<blockquote>
+
+```js
+import Inibase from "inibase";
+const db = new Inibase("/databaseName");
+
 const users = await db.get("user", { favoriteFoods: "[]Pizza" });
 // [
 //   {
@@ -418,17 +532,32 @@ const users = await db.get("user", { favoriteFoods: "[]Pizza" });
 //   },
 //   ...
 // ]
+```
+</blockquote>
+</details>
+
+<details>
+<summary>GET with columns</summary>
+<blockquote>
+
+```js
+import Inibase from "inibase";
+const db = new Inibase("/databaseName");
 
 // Get all "user" columns except "username" & "address.street"
 const users = await db.get("user", undefined, {
   columns: ["!username", "!address.street"],
 });
 ```
+</blockquote>
+</details>
 
+</blockquote>
 </details>
 
 <details>
 <summary>PUT</summary>
+<blockquote>
 
 ```js
 import Inibase from "inibase";
@@ -443,11 +572,12 @@ await db.put("user", { isActive: false }, "1d88385d4b1581f8fb059334dec30f4c");
 // set "isActive" to "true" in table "user" by criteria (where "isActive" is equal to "true")
 await db.put("user", { isActive: false }, { isActive: true });
 ```
-
+</blockquote>
 </details>
 
 <details>
 <summary>DELETE</summary>
+<blockquote>
 
 ```js
 import Inibase from "inibase";
@@ -462,11 +592,12 @@ await db.put("user", "1d88385d4b1581f8fb059334dec30f4c");
 // delete "user" by criteria (where "isActive" is equal to "false")
 await db.put("user", { isActive: false });
 ```
-
+</blockquote>
 </details>
 
 <details>
 <summary>SUM</summary>
+<blockquote>
 
 ```js
 import Inibase from "inibase";
@@ -478,11 +609,12 @@ await db.sum("user", "age");
 // get the sum of column "age" by criteria (where "isActive" is equal to "false") in "user" table
 await db.sum("user", ["age", ...], { isActive: false });
 ```
-
+</blockquote>
 </details>
 
 <details>
 <summary>MAX</summary>
+<blockquote>
 
 ```js
 import Inibase from "inibase";
@@ -494,11 +626,12 @@ await db.max("user", "age");
 // get the biggest number of column "age" by criteria (where "isActive" is equal to "false") in "user" table
 await db.max("user", ["age", ...], { isActive: false });
 ```
-
+</blockquote>
 </details>
 
 <details>
 <summary>MIN</summary>
+<blockquote>
 
 ```js
 import Inibase from "inibase";
@@ -510,11 +643,12 @@ await db.min("user", "age");
 // get the smallest number of column "age" by criteria (where "isActive" is equal to "false") in "user" table
 await db.min("user", ["age", ...], { isActive: false });
 ```
-
+</blockquote>
 </details>
 
 <details>
 <summary>SORT</summary>
+<blockquote>
 
 ```js
 import Inibase from "inibase";
@@ -527,8 +661,49 @@ await db.sort("user", "age");
 await db.sort("user", ["age","username"]);
 await db.sort("user", {age: -1, username: "asc"});
 ```
-
+</blockquote>
 </details>
+
+## Roadmap
+
+- [x] Actions:
+  - [x] GET:
+    - [x] Pagination
+    - [x] Criteria
+    - [x] Columns
+    - [x] Sort (using UNIX commands)
+  - [x] POST
+  - [x] PUT
+  - [x] DELETE
+  - [x] SUM
+  - [x] MAX
+  - [x] MIN
+- [ ] Schema supported types:
+  - [x] String
+  - [x] Number
+  - [x] Boolean
+  - [x] Date
+  - [x] Email
+  - [x] Url
+  - [x] Table
+  - [x] Object
+  - [x] Array
+  - [x] Password
+  - [x] IP
+  - [x] HTML
+  - [x] Id
+  - [x] JSON
+- [ ] TO-DO:
+  - [x] Improve caching
+  - [ ] Commenting the code
+  - [x] Add property "unique" for schema fields
+  - [ ] Add Backup feature (generate a tar.gz)
+  - [ ] Add Custom field validation property to schema (using RegEx?)
+- [ ] Features:
+  - [ ] Encryption
+  - [x] Data Compression
+  - [x] Caching System
+  - [ ] Suggest [new feature +](https://github.com/inicontent/inibase/discussions/new?category=ideas)
 
 ## License
 
