@@ -45,7 +45,7 @@ rl.on("line", async (input) => {
 		const table = splitedInput[1];
 		if (!table) throw new Error("Please specify table name");
 
-		let { where, page, perPage, columns, data, returnData } = parseArgs({
+		let { where, page, perPage, columns, data } = parseArgs({
 			args: splitedInput.toSpliced(0, 2),
 			options: {
 				where: { type: "string", short: "w" },
@@ -53,7 +53,6 @@ rl.on("line", async (input) => {
 				perPage: { type: "string", short: "l" },
 				columns: { type: "string", short: "c", multiple: true },
 				data: { type: "string", short: "d" },
-				returnData: { type: "boolean", short: "r" },
 			},
 		}).values;
 		if (where) {
@@ -75,8 +74,8 @@ rl.on("line", async (input) => {
 				);
 				break;
 			case "post":
-				{
-					const postReturn = await db.post(
+				console.log(
+					await db.post(
 						table,
 						data as any,
 						{
@@ -84,34 +83,25 @@ rl.on("line", async (input) => {
 							perPage: Number(perPage) ?? 15,
 							columns,
 						},
-						returnData,
-					);
-					console.log(
-						postReturn !== null && typeof postReturn === "object"
-							? "Item(s) Posted Successfully"
-							: postReturn,
-					);
-				}
-				break;
-			case "put": {
-				const putReturn = await db.put(
-					table,
-					data as any,
-					where,
-					{
-						page: Number(page) ?? 1,
-						perPage: Number(perPage) ?? 15,
-						columns,
-					},
-					returnData as any,
+						true,
+					),
 				);
+				break;
+			case "put":
 				console.log(
-					putReturn !== null && typeof putReturn === "object"
-						? "Item(s) Updated Successfully"
-						: putReturn,
+					await db.put(
+						table,
+						data as any,
+						where,
+						{
+							page: Number(page) ?? 1,
+							perPage: Number(perPage) ?? 15,
+							columns,
+						},
+						true,
+					),
 				);
 				break;
-			}
 			case "delete":
 				console.log(await db.delete(table, where));
 				break;
