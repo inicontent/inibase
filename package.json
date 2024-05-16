@@ -50,9 +50,9 @@
 	"scripts": {
 		"prepare": "tsc",
 		"build": "tsc",
-		"benchmark": "tsx --env-file=.env ./benchmark/index",
-		"benchmark:single": "tsx --expose-gc --env-file=.env ./benchmark/single",
-		"benchmark:bulk": "tsx --expose-gc --env-file=.env ./benchmark/bulk"
+		"benchmark": "tsx ./benchmark/index",
+		"benchmark:single": "tsx --expose-gc ./benchmark/single",
+		"benchmark:bulk": "tsx --expose-gc ./benchmark/bulk"
 	},
 	"bin": {
 		"inibase": "./dist/cli.js"
@@ -80,11 +80,10 @@
 	},
 	"devDependencies": {
 		"@types/node": "^20.12.11",
+		"dotenv": "^16.4.5",
 		"tinybench": "^2.6.0"
 	},
 	"dependencies": {
-		"commander": "^12.0.0",
-		"dotenv": "^16.4.5",
 		"inison": "^1.0.0-rc.2"
 	}
 }

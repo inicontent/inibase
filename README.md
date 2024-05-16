@@ -67,7 +67,6 @@ This structure ensures efficient storage, retrieval, and updates, making our sys
 ## Config (.env)
 
 The `.env` file supports the following parameters
-> Make sure to run commands with flag `--env-file=.env` or use `dotenv/config`
 
 ```ini
 # Don't add this line, it's an auto generated secret key, will be using for encrypting the IDs
@@ -100,7 +99,8 @@ INIBASE_REVERSE=false
 | PUT    | 33 ms (10.29 mb)  | 312 ms (11.06 mb)  | 3539 ms (14.87 mb) |
 | DELETE | 134 ms (13.50 mb) | 1224 ms (16.57 mb) | 7339 ms (11.46 mb) |
 
-Ps: Testing by default with `user` table, with username, email, password fields _so results include password encryption process_
+> Testing by default with `user` table, with username, email, password fields _so results include password encryption process_
+> To run benchmarks, install *typescript* & *tsx* globally and run `benchmark` `benchmark:bulk` `benchmark:single`
 
 ## Inibase CLI
 

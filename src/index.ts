@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { unlink, rename, mkdir, readdir } from "node:fs/promises";
 import { existsSync, appendFileSync, readFileSync } from "node:fs";
 import { join, parse } from "node:path";
@@ -9,8 +10,6 @@ import * as File from "./file.js";
 import * as Utils from "./utils.js";
 import * as UtilsServer from "./utils.server.js";
 import * as Config from "./config.js";
-import { execSync } from "node:child_process";
-import { performance } from "node:perf_hooks";
 
 export interface Data {
 	id?: number | string;
