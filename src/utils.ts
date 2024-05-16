@@ -444,3 +444,28 @@ export function getField(keyPath: string, schema: Schema) {
 	if (!RETURN) return null;
 	return isArrayOfObjects(RETURN) ? RETURN[0] : RETURN;
 }
+
+export function setField(
+	keyPath: string,
+	schema: Schema,
+	field: Omit<Field, "key" | "type"> & {
+		key?: string;
+		type?: FieldType | FieldType[];
+	},
+) {
+	const keyPathSplited = keyPath.split(".");
+	for (const [index, key] of keyPathSplited.entries()) {
+		const foundItem = schema.find((item) => item.key === key);
+		if (!foundItem) return null;
+		if (index === keyPathSplited.length - 1) {
+			Object.assign(foundItem, field);
+			return foundItem;
+		}
+		if (
+			(foundItem.type === "array" || foundItem.type === "object") &&
+			foundItem.children &&
+			isArrayOfObjects(foundItem.children)
+		)
+			schema = foundItem.children as Schema;
+	}
+}
