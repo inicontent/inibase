@@ -14,7 +14,7 @@
 - **Super-Fast** :zap: (built-in caching system)
 - **ATOMIC** :lock: File lock for writing
 - **Built-in form-validation** included :sunglasses:
-- **Suitable for large data** :page_with_curl: (tested with 200K row)
+- **Suitable for large data** :page_with_curl: (tested with 4M records)
 - **Support Compression** :eight_spoked_asterisk: (using built-in nodejs zlib)
 - **Support Table Joins** :link:
 - **Low memory-usage** :chart_with_downwards_trend: (3-5mb)
@@ -55,6 +55,21 @@ If you like Inibase, please sponsor: [GitHub Sponsors](https://github.com/sponso
 
 To simplify the idea, each database has tables, each table has columns, each column will be stored in a seperated file. When **POST**ing new data, it will be appended to the _head_ of each file as new line. When **GET**ing data, the file will be readed line-by-line so it can handle large data (without consuming a lot of resources), when **PUT**ing(updating) in a specific column, only one file will be opened and updated
 
+## Config (.env)
+
+The `.env` file supports the following parameters (make sure to run commands with flag --env-file=.env)
+
+```ini
+# Auto generated secret key, will be using for encrypting the IDs
+INIBASE_SECRET=
+
+INIBASE_COMPRESSION=true
+INIBASE_CACHE=true
+
+# Prepend new items to the beginning of file 
+INIBASE_REVERSE=true
+```
+
 ## Benchmark
 
 ### Bulk
@@ -77,22 +92,6 @@ To simplify the idea, each database has tables, each table has columns, each col
 
 Ps: Testing by default with `user` table, with username, email, password fields _so results include password encryption process_
 
-
-## Config (.env)
-
-The `.env` file supports the following parameters (make sure to run commands with flag --env-file=.env)
-
-```ini
-# Auto generated secret key, will be using for encrypting the IDs
-INIBASE_SECRET=
-
-INIBASE_COMPRESSION=true
-INIBASE_CACHE=true
-
-# Prepend new items to the beginning of file 
-INIBASE_REVERSE=true
-```
-
 ## Roadmap
 
 - [x] Actions:
@@ -100,7 +99,7 @@ INIBASE_REVERSE=true
     - [x] Pagination
     - [x] Criteria
     - [x] Columns
-    - [x] Order By (using UNIX commands)
+    - [x] Sort (using UNIX commands)
   - [x] POST
   - [x] PUT
   - [x] DELETE
@@ -508,6 +507,23 @@ await db.min("user", "age");
 
 // get the smallest number of column "age" by criteria (where "isActive" is equal to "false") in "user" table
 await db.min("user", ["age", ...], { isActive: false });
+```
+
+</details>
+
+<details>
+<summary>SORT</summary>
+
+```js
+import Inibase from "inibase";
+const db = new Inibase("/databaseName");
+
+// order users by the age column
+await db.sort("user", "age");
+
+// order users by the age and username columns
+await db.sort("user", ["age","username"]);
+await db.sort("user", {age: -1, username: "asc"});
 ```
 
 </details>
