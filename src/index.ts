@@ -4,7 +4,6 @@ import {
 	rename,
 	mkdir,
 	readdir,
-	open,
 	writeFile,
 	readFile,
 } from "node:fs/promises";
@@ -239,9 +238,10 @@ export default class Inibase {
 
 		if (config) {
 			if (config.compression)
-				await open(join(tablePath, ".compression.config"), "w");
-			if (config.cache) await open(join(tablePath, ".cache.config"), "w");
-			if (config.prepend) await open(join(tablePath, ".prepend.config"), "w");
+				await writeFile(join(tablePath, ".compression.config"), "");
+			if (config.cache) await writeFile(join(tablePath, ".cache.config"), "");
+			if (config.prepend)
+				await writeFile(join(tablePath, ".prepend.config"), "");
 		}
 		if (schema)
 			await writeFile(
@@ -267,26 +267,28 @@ export default class Inibase {
 				if (!config.compression && table.config.compression) {
 					try {
 						await UtilsServer.exec(
-							`gunzip -r ${tablePath}/*.txt.gz 2>/dev/null`,
+							`gunzip ${tablePath}/*.${this.fileExtension}.gz 2>/dev/null`,
 						);
 						await unlink(join(tablePath, ".compression.config"));
 					} catch {}
 				} else if (config.compression && !table.config.compression) {
 					try {
-						await UtilsServer.exec(`gzip -r ${tablePath}/*.txt 2>/dev/null`);
-						await open(join(tablePath, ".compression.config"), "w");
+						await UtilsServer.exec(
+							`gzip ${tablePath}/*.${this.fileExtension} 2>/dev/null`,
+						);
+						await writeFile(join(tablePath, ".compression.config"), "");
 					} catch {}
 				}
 			}
 			if (config.cache !== undefined) {
 				if (config.cache && !table.config.cache)
-					await open(join(tablePath, ".cache.config"), "w");
+					await writeFile(join(tablePath, ".cache.config"), "");
 				else if (!config.cache && table.config.cache)
 					await unlink(join(tablePath, ".cache.config"));
 			}
 			if (config.prepend !== undefined) {
 				if (config.prepend && !table.config.prepend)
-					await open(join(tablePath, ".prepend.config"), "w");
+					await writeFile(join(tablePath, ".prepend.config"), "");
 				else if (!config.prepend && table.config.prepend)
 					await unlink(join(tablePath, ".prepend.config"));
 			}
