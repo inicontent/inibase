@@ -2,10 +2,11 @@
 import "dotenv/config";
 import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
-import Inibase from "./index.js";
 import { basename } from "node:path";
-import { isJSON, isNumber } from "./utils.js";
 import Inison from "inison";
+
+import Inibase from "./index.js";
+import { isJSON, isNumber } from "./utils.js";
 
 const { path } = parseArgs({
 	options: {
@@ -22,18 +23,19 @@ const db = new Inibase(basename(path));
 const rl = createInterface({
 	input: process.stdin,
 	output: process.stdout,
+	prompt: "\u001b[1;36m>  \u001b[0m",
 });
+console.clear();
 rl.prompt();
+
 rl.on("line", async (input) => {
 	const trimedInput = input.trim();
 	if (trimedInput === "clear") {
-		console.clear();
+		process.stdout.write("\x1Bc");
 		rl.prompt();
 	}
-	if (trimedInput === "info") {
-		console.warn("war");
-		console.error("err");
-	}
+	if (trimedInput === "exit") process.exit();
+
 	const splitedInput = trimedInput.match(
 		/[^\s"']+|"([^"]*)"|'([^']*)'/g,
 	) as string[];
@@ -56,11 +58,12 @@ rl.on("line", async (input) => {
 			},
 		}).values;
 		if (where) {
-			if (isNumber(where)) where = Number(where) as any;
+			if (where === "'-1'" || where === '"-1"') where = -1 as any;
+			else if (isNumber(where)) where = Number(where) as any;
 			else if (isJSON(where)) where = Inison.unstringify(where) as any;
 		}
 		if (data) {
-			if (isJSON(data)) where = Inison.unstringify(data) as any;
+			if (isJSON(data)) data = Inison.unstringify(data) as any;
 			else data = undefined;
 		}
 		switch (splitedInput[0].toLocaleLowerCase()) {
@@ -109,4 +112,5 @@ rl.on("line", async (input) => {
 				break;
 		}
 	}
+	rl.prompt();
 });
