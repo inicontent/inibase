@@ -1,5 +1,13 @@
 import "dotenv/config";
-import { unlink, rename, mkdir, readdir } from "node:fs/promises";
+import {
+	unlink,
+	rename,
+	mkdir,
+	readdir,
+	open,
+	writeFile,
+	readFile,
+} from "node:fs/promises";
 import { existsSync, appendFileSync, readFileSync } from "node:fs";
 import { join, parse } from "node:path";
 import { scryptSync, randomBytes } from "node:crypto";
@@ -9,7 +17,6 @@ import Inison from "inison";
 import * as File from "./file.js";
 import * as Utils from "./utils.js";
 import * as UtilsServer from "./utils.server.js";
-import * as Config from "./config.js";
 
 export interface Data {
 	id?: number | string;
@@ -51,6 +58,17 @@ export interface Options {
 	perPage?: number;
 	columns?: string[] | string;
 	order?: Record<string, "asc" | "desc">;
+}
+
+export interface Config {
+	compression: boolean;
+	cache: boolean;
+	prepend: boolean;
+}
+
+export interface TableObject {
+	schema?: Schema;
+	config: Config;
 }
 
 export type ComparisonOperator =
@@ -97,32 +115,25 @@ export type ErrorCodes =
 	| "INVALID_ID"
 	| "INVALID_TYPE"
 	| "INVALID_PARAMETERS"
-	| "NO_ENV";
+	| "NO_ENV"
+	| "TABLE_EXISTS"
+	| "TABLE_NOT_EXISTS";
 export type ErrorLang = "en";
 
 export default class Inibase {
-	public folder: string;
-	public database: string;
-	public table: string | null;
 	public pageInfo: Record<string, pageInfo>;
+	public salt: Buffer;
+	private databasePath: string;
+	private tables: Record<string, TableObject>;
 	private fileExtension = ".txt";
 	private checkIFunique: Record<string, (string | number)[]>;
 	private totalItems: Record<string, number>;
-	public salt: Buffer;
 
-	constructor(
-		database: string,
-		mainFolder = ".",
-		_table: string | null = null,
-		_totalItems: Record<string, number> = {},
-		_pageInfo: Record<string, pageInfo> = {},
-		_isThreadEnabled = false,
-	) {
-		this.database = database;
-		this.folder = mainFolder;
-		this.table = _table;
-		this.totalItems = _totalItems;
-		this.pageInfo = _pageInfo;
+	constructor(database: string, mainFolder = ".") {
+		this.databasePath = join(mainFolder, database);
+		this.tables = {};
+		this.totalItems = {};
+		this.pageInfo = {};
 		this.checkIFunique = {};
 
 		if (!process.env.INIBASE_SECRET) {
@@ -134,20 +145,6 @@ export default class Inibase {
 			this.salt = scryptSync(randomBytes(16), randomBytes(16), 32);
 			appendFileSync(".env", `\nINIBASE_SECRET=${this.salt.toString("hex")}\n`);
 		} else this.salt = Buffer.from(process.env.INIBASE_SECRET, "hex");
-
-		// try {
-		// 	if (Config.isCompressionEnabled)
-		// 		execSync(
-		// 			`gzip -r ${join(this.folder, this.database)}/*/*.txt 2>/dev/null`,
-		// 		);
-		// 	else
-		// 		execSync(
-		// 			`gunzip -r ${join(
-		// 				this.folder,
-		// 				this.database,
-		// 			)}/*/*.txt.gz 2>/dev/null`,
-		// 		);
-		// } catch {}
 	}
 
 	private throwError(
@@ -160,6 +157,8 @@ export default class Inibase {
 				FIELD_UNIQUE:
 					"Field {variable} should be unique, got {variable} instead",
 				FIELD_REQUIRED: "Field {variable} is required",
+				TABLE_EXISTS: "Table {variable} already exists",
+				TABLE_NOT_EXISTS: "Table {variable} doesn't exist",
 				NO_SCHEMA: "Table {variable} does't have a schema",
 				NO_ITEMS: "Table {variable} is empty",
 				NO_RESULTS: "No results found for table {variable}",
@@ -189,16 +188,20 @@ export default class Inibase {
 		);
 	}
 
-	private getFileExtension = () => {
+	private getFileExtension = (tableName: string) => {
 		let mainExtension = this.fileExtension;
 		// TODO: ADD ENCRYPTION
-		// if(Config.isEncryptionEnabled)
+		// if(this.tables[tableName].config.encryption)
 		// 	mainExtension += ".enc"
-		if (Config.isCompressionEnabled) mainExtension += ".gz";
+		if (this.tables[tableName].config.compression) mainExtension += ".gz";
 		return mainExtension;
 	};
 
-	private _schemaToIdsPath = (schema: Schema, prefix = "") => {
+	private _schemaToIdsPath = (
+		tableName: string,
+		schema: Schema,
+		prefix = "",
+	) => {
 		const RETURN: any = {};
 		for (const field of schema)
 			if (
@@ -209,6 +212,7 @@ export default class Inibase {
 				Utils.deepMerge(
 					RETURN,
 					this._schemaToIdsPath(
+						tableName,
 						field.children,
 						`${(prefix ?? "") + field.key}.`,
 					),
@@ -216,76 +220,152 @@ export default class Inibase {
 			} else if (field.id)
 				RETURN[field.id] = `${
 					(prefix ?? "") + field.key
-				}${this.getFileExtension()}`;
+				}${this.getFileExtension(tableName)}`;
 
 		return RETURN;
 	};
-
-	public async setTableSchema(
+	public async createTable(
 		tableName: string,
-		schema: Schema,
-	): Promise<void> {
-		const tablePath = join(this.folder, this.database, tableName),
-			tableSchemaPath = join(tablePath, "schema.json"),
-			isTablePathExists = await File.isExists(tablePath);
-		// remove id from schema
-		schema = schema.filter(
-			({ key }) => !["id", "createdAt", "updatedAt"].includes(key),
-		);
-		if (!isTablePathExists) await mkdir(tablePath, { recursive: true });
-		if (!(await File.isExists(join(tablePath, ".tmp"))))
-			await mkdir(join(tablePath, ".tmp"));
-		if (!(await File.isExists(join(tablePath, ".cache"))))
-			await mkdir(join(tablePath, ".cache"));
-		if (await File.isExists(tableSchemaPath)) {
-			// update columns files names based on field id
-			const currentSchema = await this.getTableSchema(tableName, false);
-			schema = UtilsServer.addIdToSchema(
-				schema,
-				currentSchema?.length
-					? UtilsServer.findLastIdNumber(currentSchema, this.salt)
-					: 0,
-				this.salt,
-				false,
-			);
-			if (currentSchema?.length) {
-				const replaceOldPathes = Utils.findChangedProperties(
-					this._schemaToIdsPath(currentSchema),
-					this._schemaToIdsPath(schema),
-				);
-				if (replaceOldPathes)
-					await Promise.all(
-						Object.entries(replaceOldPathes).map(async ([oldPath, newPath]) => {
-							if (await File.isExists(join(tablePath, oldPath)))
-								await rename(
-									join(tablePath, oldPath),
-									join(tablePath, newPath),
-								);
-						}),
-					);
-			}
-		} else schema = UtilsServer.addIdToSchema(schema, 0, this.salt, false);
+		schema?: Schema,
+		config?: Config,
+	) {
+		const tablePath = join(this.databasePath, tableName);
 
-		await File.write(
-			join(tablePath, "schema.json"),
-			JSON.stringify(schema, null, 2),
-			true,
-		);
+		if (await File.isExists(tablePath))
+			this.throwError("TABLE_EXISTS", tableName);
+		await Promise.all([
+			mkdir(tablePath, { recursive: true }),
+			mkdir(join(tablePath, ".tmp")),
+			mkdir(join(tablePath, ".cache")),
+		]);
+		if (config) {
+			if (config.compression)
+				await open(join(tablePath, ".compression.config"), "w");
+			if (config.cache) await open(join(tablePath, ".cache.config"), "w");
+			if (config.prepend) await open(join(tablePath, ".prepend.config"), "w");
+		}
+		if (schema)
+			await writeFile(
+				join(tablePath, "schema.json"),
+				JSON.stringify(
+					UtilsServer.addIdToSchema(schema, 0, this.salt, false),
+					null,
+					2,
+				),
+			);
+	}
+
+	public async updateTable(
+		tableName: string,
+		schema?: Schema,
+		config?: Config,
+	) {
+		const table = await this.getTable(tableName),
+			tablePath = join(this.databasePath, tableName);
+
+		if (config) {
+			if (config.compression !== undefined) {
+				if (!config.compression && table.config.compression) {
+					try {
+						await UtilsServer.exec(
+							`gunzip -r ${tablePath}/*.txt.gz 2>/dev/null`,
+						);
+						await unlink(join(tablePath, ".compression.config"));
+					} catch {}
+				} else if (config.compression && !table.config.compression) {
+					try {
+						await UtilsServer.exec(`gzip -r ${tablePath}/*.txt 2>/dev/null`);
+						await open(join(tablePath, ".compression.config"), "w");
+					} catch {}
+				}
+			}
+			if (config.cache !== undefined) {
+				if (config.cache && !table.config.cache)
+					await open(join(tablePath, ".cache.config"), "w");
+				else if (!config.cache && table.config.cache)
+					await unlink(join(tablePath, ".cache.config"));
+			}
+			if (config.prepend !== undefined) {
+				if (config.prepend && !table.config.prepend)
+					await open(join(tablePath, ".prepend.config"), "w");
+				else if (!config.prepend && table.config.prepend)
+					await unlink(join(tablePath, ".prepend.config"));
+			}
+		}
+
+		if (schema) {
+			// remove id from schema
+			schema = schema.filter(
+				({ key }) => !["id", "createdAt", "updatedAt"].includes(key),
+			);
+			if (await File.isExists(join(tablePath, "schema.json"))) {
+				// update columns files names based on field id
+				const currentSchema = await this.getTableSchema(tableName, false);
+				schema = UtilsServer.addIdToSchema(
+					schema,
+					currentSchema?.length
+						? UtilsServer.findLastIdNumber(currentSchema, this.salt)
+						: 0,
+					this.salt,
+					false,
+				);
+				if (currentSchema?.length) {
+					const replaceOldPathes = Utils.findChangedProperties(
+						this._schemaToIdsPath(tableName, currentSchema),
+						this._schemaToIdsPath(tableName, schema),
+					);
+					if (replaceOldPathes)
+						await Promise.all(
+							Object.entries(replaceOldPathes).map(
+								async ([oldPath, newPath]) => {
+									if (await File.isExists(join(tablePath, oldPath)))
+										await rename(
+											join(tablePath, oldPath),
+											join(tablePath, newPath),
+										);
+								},
+							),
+						);
+				}
+			} else schema = UtilsServer.addIdToSchema(schema, 0, this.salt, false);
+
+			await writeFile(
+				join(tablePath, "schema.json"),
+				JSON.stringify(schema, null, 2),
+			);
+
+			delete this.tables[tableName];
+		}
+	}
+
+	public async getTable(tableName: string): Promise<TableObject> {
+		const tablePath = join(this.databasePath, tableName);
+
+		if (!(await File.isExists(tablePath)))
+			this.throwError("TABLE_NOT_EXISTS", tableName);
+
+		if (!this.tables[tableName])
+			this.tables[tableName] = {
+				schema: await this.getTableSchema(tableName),
+				config: {
+					compression: await File.isExists(
+						join(tablePath, ".compression.config"),
+					),
+					cache: await File.isExists(join(tablePath, ".cache.config")),
+					prepend: await File.isExists(join(tablePath, ".prepend.config")),
+				},
+			};
+		return this.tables[tableName];
 	}
 
 	public async getTableSchema(
 		tableName: string,
 		encodeIDs = true,
 	): Promise<Schema | undefined> {
-		const tableSchemaPath = join(
-			this.folder,
-			this.database,
-			tableName,
-			"schema.json",
-		);
+		const tableSchemaPath = join(this.databasePath, tableName, "schema.json");
 		if (!(await File.isExists(tableSchemaPath))) return undefined;
 
-		const schemaFile = await File.read(tableSchemaPath, true);
+		const schemaFile = await readFile(tableSchemaPath, "utf8");
 
 		if (!schemaFile) return undefined;
 		const schema = JSON.parse(schemaFile),
@@ -316,20 +396,24 @@ export default class Inibase {
 		];
 	}
 
-	private async getSchemaWhenTableNotEmpty(
+	private async throwErrorIfTableEmpty(
 		tableName: string,
-		schema?: Schema,
-	): Promise<never | Schema> {
-		const tablePath = join(this.folder, this.database, tableName);
+	): Promise<TableObject> {
+		const table = await this.getTable(tableName);
 
-		if (!schema) schema = await this.getTableSchema(tableName);
+		if (!table.schema) throw this.throwError("NO_SCHEMA", tableName);
 
-		if (!schema) throw this.throwError("NO_SCHEMA", tableName);
-
-		if (!(await File.isExists(join(tablePath, `id${this.getFileExtension()}`))))
+		if (
+			!(await File.isExists(
+				join(
+					this.databasePath,
+					tableName,
+					`id${this.getFileExtension(tableName)}`,
+				),
+			))
+		)
 			throw this.throwError("NO_ITEMS", tableName);
-
-		return schema;
+		return table;
 	}
 
 	private validateData(
@@ -492,12 +576,12 @@ export default class Inibase {
 	}
 
 	private async checkUnique(tableName: string, schema: Schema) {
-		const tablePath = join(this.folder, this.database, tableName);
+		const tablePath = join(this.databasePath, tableName);
 		for await (const [key, values] of Object.entries(this.checkIFunique)) {
 			const field = Utils.getField(key, schema);
 			if (!field) continue;
 			const [searchResult, totalLines] = await File.search(
-				join(tablePath, `${key}${this.getFileExtension()}`),
+				join(tablePath, `${key}${this.getFileExtension(tableName)}`),
 				Array.isArray(values) ? "=" : "[]",
 				values,
 				undefined,
@@ -651,19 +735,18 @@ export default class Inibase {
 
 		return RETURN;
 	};
-	private _addPathToKeys = (obj: Record<string, any>, path: string) => {
-		const newObject: Record<string, any> = {};
 
-		for (const key in obj)
-			newObject[join(path, `${key}${this.getFileExtension()}`)] = obj[key];
+	private joinPathesContents(tableName: string, data: Data | Data[]) {
+		const tablePath = join(this.databasePath, tableName),
+			combinedData = this._CombineData(data);
+		const newCombinedData: Record<string, any> = {};
 
-		return newObject;
-	};
-	private joinPathesContents(
-		mainPath: string,
-		data: Data | Data[],
-	): { [key: string]: string[] } {
-		return this._addPathToKeys(this._CombineData(data), mainPath);
+		for (const [key, value] of Object.entries(combinedData))
+			newCombinedData[
+				join(tablePath, `${key}${this.getFileExtension(tableName)}`)
+			] = value;
+
+		return newCombinedData;
 	}
 
 	private _getItemsFromSchemaHelper(
@@ -729,7 +812,7 @@ export default class Inibase {
 		options: Options,
 		prefix?: string,
 	) {
-		const tablePath = join(this.folder, this.database, tableName);
+		const tablePath = join(this.databasePath, tableName);
 		let RETURN: Record<number, Data> = {};
 
 		for await (const field of schema) {
@@ -830,13 +913,13 @@ export default class Inibase {
 				) {
 					if (
 						field.table &&
-						(await File.isExists(
-							join(this.folder, this.database, field.table),
-						)) &&
+						(await File.isExists(join(this.databasePath, field.table))) &&
 						(await File.isExists(
 							join(
 								tablePath,
-								`${(prefix ?? "") + field.key}${this.getFileExtension()}`,
+								`${(prefix ?? "") + field.key}${this.getFileExtension(
+									tableName,
+								)}`,
 							),
 						))
 					) {
@@ -848,7 +931,9 @@ export default class Inibase {
 						const items = await File.get(
 							join(
 								tablePath,
-								`${(prefix ?? "") + field.key}${this.getFileExtension()}`,
+								`${(prefix ?? "") + field.key}${this.getFileExtension(
+									tableName,
+								)}`,
 							),
 							linesNumber,
 							field.type,
@@ -872,14 +957,18 @@ export default class Inibase {
 					await File.isExists(
 						join(
 							tablePath,
-							`${(prefix ?? "") + field.key}${this.getFileExtension()}`,
+							`${(prefix ?? "") + field.key}${this.getFileExtension(
+								tableName,
+							)}`,
 						),
 					)
 				) {
 					const items = await File.get(
 						join(
 							tablePath,
-							`${(prefix ?? "") + field.key}${this.getFileExtension()}`,
+							`${(prefix ?? "") + field.key}${this.getFileExtension(
+								tableName,
+							)}`,
 						),
 						linesNumber,
 						field.type,
@@ -913,13 +1002,13 @@ export default class Inibase {
 			} else if (field.type === "table") {
 				if (
 					field.table &&
-					(await File.isExists(
-						join(this.folder, this.database, field.table),
-					)) &&
+					(await File.isExists(join(this.databasePath, field.table))) &&
 					(await File.isExists(
 						join(
 							tablePath,
-							`${(prefix ?? "") + field.key}${this.getFileExtension()}`,
+							`${(prefix ?? "") + field.key}${this.getFileExtension(
+								tableName,
+							)}`,
 						),
 					))
 				) {
@@ -931,7 +1020,9 @@ export default class Inibase {
 					const items = await File.get(
 						join(
 							tablePath,
-							`${(prefix ?? "") + field.key}${this.getFileExtension()}`,
+							`${(prefix ?? "") + field.key}${this.getFileExtension(
+								tableName,
+							)}`,
 						),
 						linesNumber,
 						"number",
@@ -951,14 +1042,14 @@ export default class Inibase {
 				await File.isExists(
 					join(
 						tablePath,
-						`${(prefix ?? "") + field.key}${this.getFileExtension()}`,
+						`${(prefix ?? "") + field.key}${this.getFileExtension(tableName)}`,
 					),
 				)
 			) {
 				const items = await File.get(
 					join(
 						tablePath,
-						`${(prefix ?? "") + field.key}${this.getFileExtension()}`,
+						`${(prefix ?? "") + field.key}${this.getFileExtension(tableName)}`,
 					),
 					linesNumber,
 					field.type,
@@ -990,7 +1081,7 @@ export default class Inibase {
 		criteria?: Criteria,
 		allTrue?: boolean,
 	): Promise<[Record<number, Data> | null, Set<number> | null]> {
-		const tablePath = join(this.folder, this.database, tableName);
+		const tablePath = join(this.databasePath, tableName);
 
 		let RETURN: Record<number, Data> = {},
 			RETURN_LineNumbers = null;
@@ -1143,7 +1234,7 @@ export default class Inibase {
 					searchComparedAtValue = value as number | boolean;
 				}
 				const [searchResult, totalLines, linesNumbers] = await File.search(
-					join(tablePath, `${key}${this.getFileExtension()}`),
+					join(tablePath, `${key}${this.getFileExtension(tableName)}`),
 					searchOperator ?? "=",
 					searchComparedAtValue ?? null,
 					searchLogicalOperator,
@@ -1235,8 +1326,7 @@ export default class Inibase {
 		options?: Options | undefined,
 		onlyOne?: true,
 		onlyLinesNumbers?: undefined,
-		tableSchema?: Schema,
-		skipIdColumn?: boolean,
+		_skipIdColumn?: boolean,
 	): Promise<Data | null>;
 	get(
 		tableName: string,
@@ -1244,8 +1334,7 @@ export default class Inibase {
 		options?: Options | undefined,
 		onlyOne?: boolean | undefined,
 		onlyLinesNumbers?: true,
-		tableSchema?: Schema,
-		skipIdColumn?: boolean,
+		_skipIdColumn?: boolean,
 	): Promise<number[]>;
 	public async get(
 		tableName: string,
@@ -1256,10 +1345,9 @@ export default class Inibase {
 		},
 		onlyOne?: boolean,
 		onlyLinesNumbers?: boolean,
-		tableSchema?: Schema,
-		skipIdColumn?: boolean,
+		_skipIdColumn?: boolean,
 	): Promise<Data[] | Data | number[] | null> {
-		const tablePath = join(this.folder, this.database, tableName);
+		const tablePath = join(this.databasePath, tableName);
 
 		// Ensure options.columns is an array
 		if (options.columns) {
@@ -1268,7 +1356,7 @@ export default class Inibase {
 				: [options.columns];
 
 			if (
-				!skipIdColumn &&
+				!_skipIdColumn &&
 				options.columns.length &&
 				!options.columns.includes("id")
 			)
@@ -1280,7 +1368,8 @@ export default class Inibase {
 		options.perPage = options.perPage || 15;
 
 		let RETURN!: Data | Data[] | null;
-		let schema = await this.getSchemaWhenTableNotEmpty(tableName, tableSchema);
+		let schema = (await this.throwErrorIfTableEmpty(tableName))
+			.schema as Schema;
 
 		if (options.columns?.length)
 			schema = this._filterSchemaByColumns(schema, options.columns as string[]);
@@ -1308,22 +1397,15 @@ export default class Inibase {
 					options,
 				),
 			);
-			if (
-				await File.isExists(
-					join(tablePath, ".cache", `pagination${this.fileExtension}`),
-				)
-			)
+			if (await File.isExists(join(tablePath, ".pagination")))
 				this.totalItems[`${tableName}-*`] = Number(
-					(
-						await File.read(
-							join(tablePath, ".cache", `pagination${this.fileExtension}`),
-							true,
-						)
-					).split(",")[1],
+					(await readFile(join(tablePath, ".pagination"), "utf8")).split(
+						",",
+					)[1],
 				);
 			else {
 				let [lastId, totalItems] = await File.get(
-					join(tablePath, `id${this.getFileExtension()}`),
+					join(tablePath, `id${this.getFileExtension(tableName)}`),
 					-1,
 					"number",
 					undefined,
@@ -1334,10 +1416,9 @@ export default class Inibase {
 
 				this.totalItems[`${tableName}-*`] = totalItems;
 
-				await File.write(
-					join(tablePath, ".cache", `pagination${this.fileExtension}`),
+				await writeFile(
+					join(tablePath, ".pagination"),
 					`${lastId},${totalItems}`,
-					true,
 				);
 			}
 		} else if (
@@ -1372,7 +1453,7 @@ export default class Inibase {
 			let Ids = where as string | number | (string | number)[];
 			if (!Array.isArray(Ids)) Ids = [Ids];
 			const [lineNumbers, countItems] = await File.search(
-				join(tablePath, `id${this.getFileExtension()}`),
+				join(tablePath, `id${this.getFileExtension(tableName)}`),
 				"[]",
 				Ids.map((id) =>
 					Utils.isNumber(id) ? Number(id) : UtilsServer.decodeID(id, this.salt),
@@ -1409,7 +1490,7 @@ export default class Inibase {
 		} else if (Utils.isObject(where)) {
 			let cachedFilePath = "";
 			// Criteria
-			if (Config.isCacheEnabled)
+			if (this.tables[tableName].config.cache)
 				cachedFilePath = join(
 					tablePath,
 					".cache",
@@ -1418,8 +1499,11 @@ export default class Inibase {
 					}`,
 				);
 
-			if (Config.isCacheEnabled && (await File.isExists(cachedFilePath))) {
-				const cachedItems = (await File.read(cachedFilePath, true)).split(",");
+			if (
+				this.tables[tableName].config.cache &&
+				(await File.isExists(cachedFilePath))
+			) {
+				const cachedItems = (await readFile(cachedFilePath, "utf8")).split(",");
 				this.totalItems[`${tableName}-*`] = cachedItems.length;
 				if (onlyLinesNumbers) return cachedItems.map(Number);
 
@@ -1432,9 +1516,6 @@ export default class Inibase {
 						)
 						.map(Number),
 					options,
-					undefined,
-					undefined,
-					schema,
 				);
 			}
 			let linesNumbers = null;
@@ -1459,12 +1540,8 @@ export default class Inibase {
 						),
 					),
 				);
-				if (Config.isCacheEnabled)
-					await File.write(
-						cachedFilePath,
-						Array.from(linesNumbers).join(","),
-						true,
-					);
+				if (this.tables[tableName].config.cache)
+					await writeFile(cachedFilePath, Array.from(linesNumbers).join(","));
 			}
 		}
 
@@ -1522,8 +1599,8 @@ export default class Inibase {
 				page: 1,
 				perPage: 15,
 			};
-		const tablePath = join(this.folder, this.database, tableName),
-			schema = await this.getTableSchema(tableName);
+		const tablePath = join(this.databasePath, tableName),
+			schema = (await this.getTable(tableName)).schema;
 
 		if (!schema) throw this.throwError("NO_SCHEMA", tableName);
 
@@ -1541,25 +1618,20 @@ export default class Inibase {
 			await File.lock(join(tablePath, ".tmp"), keys);
 
 			if (
-				await File.isExists(join(tablePath, `id${this.getFileExtension()}`))
-			) {
-				if (
-					await File.isExists(
-						join(tablePath, ".cache", `pagination${this.fileExtension}`),
-					)
+				await File.isExists(
+					join(tablePath, `id${this.getFileExtension(tableName)}`),
 				)
+			) {
+				if (await File.isExists(join(tablePath, ".pagination")))
 					[lastId, totalItems] = (
-						await File.read(
-							join(tablePath, ".cache", `pagination${this.fileExtension}`),
-							true,
-						)
+						await readFile(join(tablePath, ".pagination"), "utf8")
 					)
 						.split(",")
 						.map(Number);
 				else {
 					let lastIdObj = null;
 					[lastIdObj, totalItems] = await File.get(
-						join(tablePath, `id${this.getFileExtension()}`),
+						join(tablePath, `id${this.getFileExtension(tableName)}`),
 						-1,
 						"number",
 						undefined,
@@ -1588,8 +1660,8 @@ export default class Inibase {
 			RETURN = this.formatData(RETURN, schema);
 
 			const pathesContents = this.joinPathesContents(
-				tablePath,
-				Config.isReverseEnabled
+				tableName,
+				this.tables[tableName].config.prepend
 					? Array.isArray(RETURN)
 						? RETURN.toReversed()
 						: RETURN
@@ -1597,7 +1669,13 @@ export default class Inibase {
 			);
 			await Promise.all(
 				Object.entries(pathesContents).map(async ([path, content]) =>
-					renameList.push(await File.append(path, content)),
+					renameList.push(
+						await File.append(
+							path,
+							content,
+							this.tables[tableName].config.prepend,
+						),
+					),
 				),
 			);
 
@@ -1609,17 +1687,16 @@ export default class Inibase {
 			renameList = [];
 			totalItems += Array.isArray(RETURN) ? RETURN.length : 1;
 
-			if (Config.isCacheEnabled) await this.clearCache(tablePath);
-			await File.write(
-				join(tablePath, ".cache", `pagination${this.fileExtension}`),
+			if (this.tables[tableName].config.cache) await this.clearCache(tablePath);
+			await writeFile(
+				join(tablePath, ".pagination"),
 				`${lastId},${totalItems}`,
-				true,
 			);
 
 			if (returnPostedData)
 				return this.get(
 					tableName,
-					Config.isReverseEnabled
+					this.tables[tableName].config.prepend
 						? Array.isArray(RETURN)
 							? RETURN.map((_, index) => index + 1)
 							: 1
@@ -1628,8 +1705,6 @@ export default class Inibase {
 							: totalItems,
 					options,
 					!Utils.isArrayOfObjects(data), // return only one item if data is not array of objects
-					undefined,
-					schema,
 				);
 		} finally {
 			if (renameList.length)
@@ -1672,8 +1747,8 @@ export default class Inibase {
 		returnUpdatedData?: boolean,
 	): Promise<Data | Data[] | null | undefined | void> {
 		let renameList: string[][] = [];
-		const tablePath = join(this.folder, this.database, tableName),
-			schema = await this.getSchemaWhenTableNotEmpty(tableName);
+		const tablePath = join(this.databasePath, tableName),
+			schema = (await this.throwErrorIfTableEmpty(tableName)).schema as Schema;
 
 		this.validateData(data, schema, true);
 		await this.checkUnique(tableName, schema);
@@ -1701,25 +1776,16 @@ export default class Inibase {
 				return this.put(tableName, data, data.id);
 			}
 			let totalItems: number;
-			if (
-				await File.isExists(
-					join(tablePath, ".cache", `pagination${this.fileExtension}`),
-				)
-			)
-				totalItems = (
-					await File.read(
-						join(tablePath, ".cache", `pagination${this.fileExtension}`),
-						true,
-					)
-				)
+			if (await File.isExists(join(tablePath, ".pagination")))
+				totalItems = (await readFile(join(tablePath, ".pagination"), "utf8"))
 					.split(",")
 					.map(Number)[1];
 			else
 				totalItems = await File.count(
-					join(tablePath, `id${this.getFileExtension()}`),
+					join(tablePath, `id${this.getFileExtension(tableName)}`),
 				);
 
-			const pathesContents = this.joinPathesContents(tablePath, {
+			const pathesContents = this.joinPathesContents(tableName, {
 				...(({ id, ...restOfData }) => restOfData)(data as Data),
 				updatedAt: Date.now(),
 			});
@@ -1742,18 +1808,11 @@ export default class Inibase {
 					),
 				);
 
-				if (Config.isCacheEnabled)
+				if (this.tables[tableName].config.cache)
 					await this.clearCache(join(tablePath, ".cache"));
 
 				if (returnUpdatedData)
-					return await this.get(
-						tableName,
-						where as undefined,
-						options,
-						undefined,
-						undefined,
-						schema,
-					);
+					return await this.get(tableName, undefined, options);
 			} finally {
 				if (renameList.length)
 					await Promise.allSettled(
@@ -1771,7 +1830,6 @@ export default class Inibase {
 				undefined,
 				undefined,
 				true,
-				schema,
 			);
 			return this.put(tableName, data, lineNumbers);
 		} else if (
@@ -1782,7 +1840,7 @@ export default class Inibase {
 			const pathesContents = Object.fromEntries(
 				Object.entries(
 					this.joinPathesContents(
-						tablePath,
+						tableName,
 						Utils.isArrayOfObjects(data)
 							? data.map((item: any) => ({
 									...item,
@@ -1824,17 +1882,11 @@ export default class Inibase {
 				);
 				renameList = [];
 
-				if (Config.isCacheEnabled) await this.clearCache(tablePath);
+				if (this.tables[tableName].config.cache)
+					await this.clearCache(tablePath);
 
 				if (returnUpdatedData)
-					return this.get(
-						tableName,
-						where,
-						options,
-						!Array.isArray(where),
-						undefined,
-						schema,
-					);
+					return this.get(tableName, where, options, !Array.isArray(where));
 			} finally {
 				if (renameList.length)
 					await Promise.allSettled(
@@ -1849,7 +1901,6 @@ export default class Inibase {
 				undefined,
 				undefined,
 				true,
-				schema,
 			);
 			if (returnUpdatedData)
 				return this.put(
@@ -1891,8 +1942,8 @@ export default class Inibase {
 	): Promise<string | number | (string | number)[] | null> {
 		const renameList: string[][] = [];
 
-		const tablePath = join(this.folder, this.database, tableName),
-			schema = await this.getSchemaWhenTableNotEmpty(tableName);
+		const tablePath = join(this.databasePath, tableName);
+		await this.throwErrorIfTableEmpty(tableName);
 
 		if (!where) {
 			try {
@@ -1903,7 +1954,8 @@ export default class Inibase {
 						.map(async (file) => unlink(join(tablePath, file))),
 				);
 
-				if (Config.isCacheEnabled) await this.clearCache(tablePath);
+				if (this.tables[tableName].config.cache)
+					await this.clearCache(tablePath);
 			} finally {
 				await File.unlock(join(tablePath, ".tmp"));
 			}
@@ -1919,7 +1971,6 @@ export default class Inibase {
 				undefined,
 				undefined,
 				true,
-				schema,
 			);
 			return this.delete(tableName, lineNumbers, where);
 		}
@@ -1929,7 +1980,7 @@ export default class Inibase {
 		) {
 			// "where" in this case, is the line(s) number(s) and not id(s)
 			const files = (await readdir(tablePath))?.filter((fileName: string) =>
-				fileName.endsWith(this.getFileExtension()),
+				fileName.endsWith(this.getFileExtension(tableName)),
 			);
 
 			if (files.length) {
@@ -1948,27 +1999,20 @@ export default class Inibase {
 						),
 					);
 
-					if (Config.isCacheEnabled) await this.clearCache(tablePath);
-					if (
-						await File.isExists(
-							join(tablePath, ".cache", `pagination${this.fileExtension}`),
-						)
-					) {
+					if (this.tables[tableName].config.cache)
+						await this.clearCache(tablePath);
+					if (await File.isExists(join(tablePath, ".pagination"))) {
 						const [lastId, totalItems] = (
-							await File.read(
-								join(tablePath, ".cache", `pagination${this.fileExtension}`),
-								true,
-							)
+							await readFile(join(tablePath, ".pagination"), "utf8")
 						)
 							.split(",")
 							.map(Number);
 
-						await File.write(
-							join(tablePath, ".cache", `pagination${this.fileExtension}`),
+						await writeFile(
+							join(tablePath, ".pagination"),
 							`${lastId},${
 								totalItems - (Array.isArray(where) ? where.length : 1)
 							}`,
-							true,
 						);
 					}
 					if (_id) return Array.isArray(_id) && _id.length === 1 ? _id[0] : _id;
@@ -1988,7 +2032,6 @@ export default class Inibase {
 				undefined,
 				undefined,
 				true,
-				schema,
 			);
 			return this.delete(tableName, lineNumbers);
 		} else throw this.throwError("INVALID_PARAMETERS");
@@ -2011,12 +2054,15 @@ export default class Inibase {
 		where?: number | string | (number | string)[] | Criteria,
 	): Promise<number | Record<string, number>> {
 		const RETURN: Record<string, number> = {};
-		const tablePath = join(this.folder, this.database, tableName),
-			schema = await this.getSchemaWhenTableNotEmpty(tableName);
+		const tablePath = join(this.databasePath, tableName);
+		await this.throwErrorIfTableEmpty(tableName);
 
 		if (!Array.isArray(columns)) columns = [columns];
 		for await (const column of columns) {
-			const columnPath = join(tablePath, `${column}${this.getFileExtension()}`);
+			const columnPath = join(
+				tablePath,
+				`${column}${this.getFileExtension(tableName)}`,
+			);
 			if (await File.isExists(columnPath)) {
 				if (where) {
 					const lineNumbers = await this.get(
@@ -2025,7 +2071,6 @@ export default class Inibase {
 						undefined,
 						undefined,
 						true,
-						schema,
 					);
 
 					RETURN[column] = lineNumbers
@@ -2053,12 +2098,15 @@ export default class Inibase {
 		where?: number | string | (number | string)[] | Criteria,
 	): Promise<number | Record<string, number>> {
 		const RETURN: Record<string, number> = {};
-		const tablePath = join(this.folder, this.database, tableName),
-			schema = await this.getSchemaWhenTableNotEmpty(tableName);
+		const tablePath = join(this.databasePath, tableName);
+		await this.throwErrorIfTableEmpty(tableName);
 
 		if (!Array.isArray(columns)) columns = [columns];
 		for await (const column of columns) {
-			const columnPath = join(tablePath, `${column}${this.getFileExtension()}`);
+			const columnPath = join(
+				tablePath,
+				`${column}${this.getFileExtension(tableName)}`,
+			);
 			if (await File.isExists(columnPath)) {
 				if (where) {
 					const lineNumbers = await this.get(
@@ -2067,7 +2115,6 @@ export default class Inibase {
 						undefined,
 						undefined,
 						true,
-						schema,
 					);
 					RETURN[column] = lineNumbers
 						? await File.max(columnPath, lineNumbers)
@@ -2094,12 +2141,15 @@ export default class Inibase {
 		where?: number | string | (number | string)[] | Criteria,
 	): Promise<number | Record<string, number>> {
 		const RETURN: Record<string, number> = {};
-		const tablePath = join(this.folder, this.database, tableName),
-			schema = await this.getSchemaWhenTableNotEmpty(tableName);
+		const tablePath = join(this.databasePath, tableName);
+		await this.throwErrorIfTableEmpty(tableName);
 
 		if (!Array.isArray(columns)) columns = [columns];
 		for await (const column of columns) {
-			const columnPath = join(tablePath, `${column}${this.getFileExtension()}`);
+			const columnPath = join(
+				tablePath,
+				`${column}${this.getFileExtension(tableName)}`,
+			);
 			if (await File.isExists(columnPath)) {
 				if (where) {
 					const lineNumbers = await this.get(
@@ -2108,7 +2158,6 @@ export default class Inibase {
 						undefined,
 						undefined,
 						true,
-						schema,
 					);
 					RETURN[column] = lineNumbers
 						? await File.min(columnPath, lineNumbers)
@@ -2131,8 +2180,8 @@ export default class Inibase {
 			perPage: 15,
 		},
 	) {
-		const tablePath = join(this.folder, this.database, tableName),
-			schema = await this.getSchemaWhenTableNotEmpty(tableName);
+		const tablePath = join(this.databasePath, tableName),
+			schema = (await this.throwErrorIfTableEmpty(tableName)).schema as Schema;
 
 		// Default values for page and perPage
 		options.page = options.page || 1;
@@ -2155,7 +2204,7 @@ export default class Inibase {
 
 		let cacheKey = "";
 		// Criteria
-		if (Config.isCacheEnabled)
+		if (this.tables[tableName].config.cache)
 			cacheKey = UtilsServer.hashString(inspect(sortArray, { sorted: true }));
 
 		if (where) {
@@ -2165,11 +2214,10 @@ export default class Inibase {
 				undefined,
 				undefined,
 				true,
-				schema,
 			);
 			keepItems = Object.values(
 				(await File.get(
-					join(tablePath, `id${this.getFileExtension()}`),
+					join(tablePath, `id${this.getFileExtension(tableName)}`),
 					lineNumbers,
 					"number",
 					undefined,
@@ -2194,7 +2242,7 @@ export default class Inibase {
 			);
 
 		const filesPathes = [["id", true], ...sortArray].map((column) =>
-			join(tablePath, `${column[0]}${this.getFileExtension()}`),
+			join(tablePath, `${column[0]}${this.getFileExtension(tableName)}`),
 		);
 		// Construct the paste command to merge files and filter lines by IDs
 		const pasteCommand = `paste ${filesPathes.join(" ")}`;
@@ -2225,38 +2273,41 @@ export default class Inibase {
 
 			// Combine the commands
 			// Execute the command synchronously
-			const { stdout } = await UtilsServer.exec(
-				Config.isCacheEnabled
-					? (await File.isExists(
-							join(tablePath, ".cache", `${cacheKey}${this.fileExtension}`),
-						))
-						? `${awkCommand} ${join(
-								tablePath,
-								".cache",
-								`${cacheKey}${this.fileExtension}`,
-							)}`
-						: `${pasteCommand} | ${sortCommand} -o ${join(
-								tablePath,
-								".cache",
-								`${cacheKey}${this.fileExtension}`,
-							)} && ${awkCommand} ${join(
-								tablePath,
-								".cache",
-								`${cacheKey}${this.fileExtension}`,
-							)}`
-					: `${pasteCommand} | ${sortCommand} | ${awkCommand}`,
-				{
-					encoding: "utf-8",
-				},
-			);
+			const lines = (
+				await UtilsServer.exec(
+					this.tables[tableName].config.cache
+						? (await File.isExists(
+								join(tablePath, ".cache", `${cacheKey}${this.fileExtension}`),
+							))
+							? `${awkCommand} ${join(
+									tablePath,
+									".cache",
+									`${cacheKey}${this.fileExtension}`,
+								)}`
+							: `${pasteCommand} | ${sortCommand} -o ${join(
+									tablePath,
+									".cache",
+									`${cacheKey}${this.fileExtension}`,
+								)} && ${awkCommand} ${join(
+									tablePath,
+									".cache",
+									`${cacheKey}${this.fileExtension}`,
+								)}`
+						: `${pasteCommand} | ${sortCommand} | ${awkCommand}`,
+					{
+						encoding: "utf-8",
+					},
+				)
+			).stdout
+				.trim()
+				.split("\n");
 
 			// Parse the result and extract the specified lines
-			const lines = stdout.trim().split("\n");
 			const outputArray = lines.map((line) => {
 				const splitedFileColumns = line.split("\t"); // Assuming tab-separated columns
 				const outputObject: Record<string, any> = {};
 
-				// Extract values for each file, including `id${this.getFileExtension()}`
+				// Extract values for each file, including `id${this.getFileExtension(tableName)}`
 				filesPathes.forEach((fileName, index) => {
 					const field = Utils.getField(parse(fileName).name, schema);
 					if (field)
@@ -2276,7 +2327,6 @@ export default class Inibase {
 				options,
 				undefined,
 				undefined,
-				schema,
 				true,
 			);
 

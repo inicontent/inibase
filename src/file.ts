@@ -8,15 +8,15 @@ import {
 	unlink,
 	copyFile,
 	appendFile,
-	mkdir,
 } from "node:fs/promises";
 import type { WriteStream } from "node:fs";
 import { createInterface, type Interface } from "node:readline";
 import { Transform, type Transform as TransformType } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { createGzip, createGunzip, gunzipSync, gzipSync } from "node:zlib";
-import { dirname, join } from "node:path";
+import { createGzip, createGunzip } from "node:zlib";
+import { join } from "node:path";
 
+import Inison from "inison";
 import type { ComparisonOperator, FieldType, Schema } from "./index.js";
 import {
 	detectFieldType,
@@ -25,9 +25,7 @@ import {
 	isNumber,
 	isObject,
 } from "./utils.js";
-import { encodeID, compare, exec } from "./utils.server.js";
-import * as Config from "./config.js";
-import Inison from "inison";
+import { encodeID, compare, exec, gzip, gunzip } from "./utils.server.js";
 
 export const lock = async (
 	folderPath: string,
@@ -54,31 +52,22 @@ export const unlock = async (folderPath: string, prefix?: string) => {
 	} catch {}
 };
 
-export const write = async (
-	filePath: string,
-	data: any,
-	disableCompression = false,
-) => {
-	await mkdir(dirname(filePath), { recursive: true });
-	await writeFile(
-		filePath,
-		Config.isCompressionEnabled && !disableCompression
-			? gzipSync(String(data))
-			: String(data),
-	);
+export const write = async (filePath: string, data: any) => {
+	await writeFile(filePath, filePath.endsWith(".gz") ? await gzip(data) : data);
 };
 
-export const read = async (filePath: string, disableCompression = false) =>
-	Config.isCompressionEnabled && !disableCompression
-		? gunzipSync(await readFile(filePath)).toString()
-		: (await readFile(filePath)).toString();
+export const read = async (filePath: string) =>
+	filePath.endsWith(".gz")
+		? (await gunzip(await readFile(filePath, "utf8"))).toString()
+		: await readFile(filePath, "utf8");
 
 const _pipeline = async (
+	filePath: string,
 	rl: Interface,
 	writeStream: WriteStream,
 	transform: TransformType,
 ): Promise<void> => {
-	if (Config.isCompressionEnabled)
+	if (filePath.endsWith(".gz"))
 		await pipeline(rl, transform, createGzip(), writeStream);
 	else await pipeline(rl, transform, writeStream);
 };
@@ -89,9 +78,9 @@ const _pipeline = async (
  * @param fileHandle - The file handle from which to create a read stream.
  * @returns A readline.Interface instance configured with the provided file stream.
  */
-const readLineInternface = (fileHandle: FileHandle) =>
+const createReadLineInternface = (filePath: string, fileHandle: FileHandle) =>
 	createInterface({
-		input: Config.isCompressionEnabled
+		input: filePath.endsWith(".gz")
 			? fileHandle.createReadStream().pipe(createGunzip())
 			: fileHandle.createReadStream(),
 		crlfDelay: Number.POSITIVE_INFINITY,
@@ -344,7 +333,7 @@ export async function get(
 
 	try {
 		fileHandle = await open(filePath, "r");
-		rl = readLineInternface(fileHandle);
+		rl = createReadLineInternface(filePath, fileHandle);
 		const lines: Record<
 			number,
 			| string
@@ -365,21 +354,22 @@ export async function get(
 					secretKey,
 				);
 			}
-		} else if (lineNumbers === -1) {
-			let lastLine: string | null = null;
-			for await (const line of rl) {
-				linesCount++;
-				lastLine = line;
-			}
-			if (lastLine)
+		} else if (lineNumbers == -1) {
+			const command = filePath.endsWith(".gz")
+					? `zcat ${filePath} | sed -n '$p'`
+					: `sed -n '$p' ${filePath}`,
+				foundedLine = (await exec(command)).stdout.trim();
+			if (foundedLine)
 				lines[linesCount] = decode(
-					lastLine,
+					foundedLine,
 					fieldType,
 					fieldChildrenType,
 					secretKey,
 				);
 		} else {
 			lineNumbers = Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers];
+			if (lineNumbers.some(Number.isNaN))
+				throw new Error("UNVALID_LINE_NUMBERS");
 			if (readWholeFile) {
 				const lineNumbersArray = new Set(lineNumbers);
 				for await (const line of rl) {
@@ -396,10 +386,10 @@ export async function get(
 				return [lines, linesCount];
 			}
 
-			const command = Config.isCompressionEnabled
+			const command = filePath.endsWith(".gz")
 					? `zcat ${filePath} | sed -n '${lineNumbers.join("p;")}p'`
 					: `sed -n '${lineNumbers.join("p;")}p' ${filePath}`,
-				foundedLines = (await exec(command)).stdout.trim().split(/\r?\n/);
+				foundedLines = (await exec(command)).stdout.trim().split("\n");
 
 			let index = 0;
 			for (const line of foundedLines) {
@@ -452,9 +442,10 @@ export const replace = async (
 			let linesCount = 0;
 			fileHandle = await open(filePath, "r");
 			fileTempHandle = await open(fileTempPath, "w");
-			rl = readLineInternface(fileHandle);
+			rl = createReadLineInternface(filePath, fileHandle);
 
 			await _pipeline(
+				filePath,
 				rl,
 				fileTempHandle.createWriteStream(),
 				new Transform({
@@ -512,10 +503,11 @@ export const replace = async (
 export const append = async (
 	filePath: string,
 	data: string | number | (string | number)[],
+	prepend?: boolean,
 ): Promise<string[]> => {
 	const fileTempPath = filePath.replace(/([^/]+)\/?$/, ".tmp/$1");
 	if (await isExists(filePath)) {
-		if (!Config.isReverseEnabled && !Config.isCompressionEnabled) {
+		if (!prepend && !filePath.endsWith(".gz")) {
 			await copyFile(filePath, fileTempPath);
 			await appendFile(
 				fileTempPath,
@@ -528,10 +520,11 @@ export const append = async (
 			try {
 				fileHandle = await open(filePath, "r");
 				fileTempHandle = await open(fileTempPath, "w");
-				rl = readLineInternface(fileHandle);
+				rl = createReadLineInternface(filePath, fileHandle);
 				let isAppended = false;
 
 				await _pipeline(
+					filePath,
 					rl,
 					fileTempHandle.createWriteStream(),
 					new Transform({
@@ -560,7 +553,6 @@ export const append = async (
 		await write(
 			fileTempPath,
 			`${Array.isArray(data) ? data.join("\n") : data}\n`,
-			undefined,
 		);
 	return [fileTempPath, filePath];
 };
@@ -581,10 +573,13 @@ export const remove = async (
 	linesToDelete = Array.isArray(linesToDelete)
 		? linesToDelete.map(Number)
 		: [Number(linesToDelete)];
+
+	if (linesToDelete.some(Number.isNaN)) throw new Error("UNVALID_LINE_NUMBERS");
+
 	const fileTempPath = filePath.replace(/([^/]+)\/?$/, ".tmp/$1");
 
 	if (linesToDelete.length < 1000) {
-		const command = Config.isCompressionEnabled
+		const command = filePath.endsWith(".gz")
 			? `zcat ${filePath} | sed "${linesToDelete.join(
 					"d;",
 				)}d" | gzip > ${fileTempPath}`
@@ -596,9 +591,10 @@ export const remove = async (
 		const fileHandle = await open(filePath, "r");
 		const fileTempHandle = await open(fileTempPath, "w");
 		const linesToDeleteArray = new Set(linesToDelete);
-		const rl = readLineInternface(fileHandle);
+		const rl = createReadLineInternface(filePath, fileHandle);
 
 		await _pipeline(
+			filePath,
 			rl,
 			fileTempHandle.createWriteStream(),
 			new Transform({
@@ -686,7 +682,7 @@ export const search = async (
 		// Open the file for reading.
 		fileHandle = await open(filePath, "r");
 		// Create a Readline interface to read the file line by line.
-		rl = readLineInternface(fileHandle);
+		rl = createReadLineInternface(filePath, fileHandle);
 
 		// Iterate through each line in the file.
 		for await (const line of rl) {
@@ -766,7 +762,7 @@ export const count = async (filePath: string): Promise<number> => {
 		let rl = null;
 		try {
 			fileHandle = await open(filePath, "r");
-			rl = readLineInternface(fileHandle);
+			rl = createReadLineInternface(filePath, fileHandle);
 
 			for await (const _ of rl) linesCount++;
 		} finally {
@@ -793,7 +789,7 @@ export const sum = async (
 	let sum = 0;
 
 	const fileHandle = await open(filePath, "r");
-	const rl = readLineInternface(fileHandle);
+	const rl = createReadLineInternface(filePath, fileHandle);
 
 	if (lineNumbers) {
 		let linesCount = 0;
@@ -830,7 +826,7 @@ export const max = async (
 	let max = 0;
 
 	const fileHandle = await open(filePath, "r");
-	const rl = readLineInternface(fileHandle);
+	const rl = createReadLineInternface(filePath, fileHandle);
 
 	if (lineNumbers) {
 		let linesCount = 0;
@@ -872,7 +868,7 @@ export const min = async (
 	let min = 0;
 
 	const fileHandle = await open(filePath, "r");
-	const rl = readLineInternface(fileHandle);
+	const rl = createReadLineInternface(filePath, fileHandle);
 
 	if (lineNumbers) {
 		let linesCount = 0;
