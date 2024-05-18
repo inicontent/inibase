@@ -233,11 +233,10 @@ export default class Inibase {
 
 		if (await File.isExists(tablePath))
 			this.throwError("TABLE_EXISTS", tableName);
-		await Promise.all([
-			mkdir(tablePath, { recursive: true }),
-			mkdir(join(tablePath, ".tmp")),
-			mkdir(join(tablePath, ".cache")),
-		]);
+
+		await mkdir(join(tablePath, ".tmp"), { recursive: true });
+		await mkdir(join(tablePath, ".cache"));
+
 		if (config) {
 			if (config.compression)
 				await open(join(tablePath, ".compression.config"), "w");
