@@ -118,7 +118,7 @@ export const decodeID = (
 };
 
 // Function to recursively flatten an array of objects and their nested children
-const _flattenSchema = (
+export const flattenSchema = (
 	schema: Schema,
 	secretKeyOrSalt: string | number | Buffer,
 ): number[] => {
@@ -133,7 +133,7 @@ const _flattenSchema = (
 			);
 
 		if (field.children && isArrayOfObjects(field.children))
-			result.push(..._flattenSchema(field.children, secretKeyOrSalt));
+			result.push(...flattenSchema(field.children, secretKeyOrSalt));
 	}
 
 	return result;
@@ -149,7 +149,7 @@ const _flattenSchema = (
 export const findLastIdNumber = (
 	schema: Schema,
 	secretKeyOrSalt: string | number | Buffer,
-): number => Math.max(..._flattenSchema(schema, secretKeyOrSalt));
+): number => Math.max(...flattenSchema(schema, secretKeyOrSalt));
 
 /**
  * Adds or updates IDs in a schema, encoding them using a provided secret key or salt.
