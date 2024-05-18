@@ -17,8 +17,13 @@ import {
 } from "./utils.js";
 import { promisify } from "node:util";
 import { exec as execAsync } from "node:child_process";
+import { gunzip as gunzipAsync, gzip as gzipAsync } from "node:zlib";
 
 export const exec = promisify(execAsync);
+
+export const gzip = promisify(gzipAsync);
+
+export const gunzip = promisify(gunzipAsync);
 
 /**
  * Generates a hashed password using SHA-256.
