@@ -417,16 +417,6 @@ export function FormatObjectCriteriaValue(
 	}
 }
 
-type ValidKey = number | string;
-export const swapKeyValue = <K extends ValidKey, V extends ValidKey>(
-	object: Record<K, V>,
-): Record<V, K> =>
-	Object.entries(object).reduce(
-		(swapped, [key, value]) =>
-			Object.assign(swapped, { [value as ValidKey]: key }),
-		{} as Record<V, K>,
-	);
-
 export function getField(keyPath: string, schema: Schema) {
 	let RETURN: Field | Schema | null = null;
 	const keyPathSplited = keyPath.split(".");
@@ -467,5 +457,39 @@ export function setField(
 			isArrayOfObjects(foundItem.children)
 		)
 			schema = foundItem.children as Schema;
+	}
+}
+
+export function unsetField(keyPath: string, schema: Schema) {
+	const keyPathSplited = keyPath.split(".");
+	let parent: any = null;
+	let targetIndex: number | undefined;
+
+	for (const [index, key] of keyPathSplited.entries()) {
+		const foundItem = schema.find((item) => item.key === key);
+		if (!foundItem) return null;
+		if (index === keyPathSplited.length - 1) {
+			if (parent) {
+				if (Array.isArray(parent)) {
+					if (targetIndex !== undefined) parent.splice(targetIndex, 1);
+				} else delete parent[key];
+			} else {
+				const indexToRemove = schema.indexOf(foundItem);
+				if (indexToRemove !== -1) schema.splice(indexToRemove, 1);
+			}
+			return foundItem;
+		}
+		if (
+			(foundItem.type === "array" || foundItem.type === "object") &&
+			foundItem.children &&
+			isArrayOfObjects(foundItem.children)
+		) {
+			parent = foundItem.children;
+			targetIndex = schema.indexOf(foundItem);
+			schema = foundItem.children as Schema;
+		} else {
+			parent = foundItem;
+			targetIndex = undefined;
+		}
 	}
 }
