@@ -64,44 +64,6 @@ const users = await db.get("user", { favoriteFoods: "![]Pizza,Burger" });
 
 This structure ensures efficient storage, retrieval, and updates, making our system scalable and high-performing for diverse datasets and applications.
 
-## Config (.env)
-
-The `.env` file supports the following parameters
-
-```ini
-# Don't add this line, it's an auto generated secret key, will be using for encrypting the IDs
-INIBASE_SECRET=
-
-INIBASE_COMPRESSION=false
-INIBASE_CACHE=false
-
-# Prepend new items to the beginning of file
-INIBASE_REVERSE=false
-```
-
-## Benchmark
-
-### Bulk
-
-|        | 10              | 100             | 1000            |
-|--------|-----------------|-----------------|-----------------|
-| POST   | 11 ms (0.65 mb) | 19 ms (1.00 mb) | 85 ms (4.58 mb) |
-| GET    | 14 ms (2.77 mb) | 12 ms (3.16 mb) | 34 ms (1.38 mb) |
-| PUT    | 6 ms (1.11 mb)  | 5 ms (1.37 mb)  | 10 ms (1.12 mb) |
-| DELETE | 17 ms (1.68 mb) | 14 ms (5.45 mb) | 25 ms (5.94 mb) |
-
-### Single
-
-|        | 10                | 100                | 1000               |
-|--------|-------------------|--------------------|--------------------|
-| POST   | 43 ms (4.70 mb)   | 387 ms (6.36 mb)   | 5341 ms (24.73 mb) |
-| GET    | 99 ms (12.51 mb)  | 846 ms (30.68 mb)  | 7103 ms (30.86 mb) |
-| PUT    | 33 ms (10.29 mb)  | 312 ms (11.06 mb)  | 3539 ms (14.87 mb) |
-| DELETE | 134 ms (13.50 mb) | 1224 ms (16.57 mb) | 7339 ms (11.46 mb) |
-
-> Testing by default with `user` table, with username, email, password fields _so results include password encryption process_ <br>
-> To run benchmarks, install *typescript* & *tsx* globally and run `benchmark` `benchmark:bulk` `benchmark:single`
-
 ## Inibase CLI
 
 ```shell
@@ -145,48 +107,75 @@ delete <tableName> -w <ID|LineNumber|Criteria>
 ## Examples
 
 <details>
-<summary>Schema</summary>
+<summary>Tables</summary>
 <blockquote>
 
 <details>
-<summary>Create Schema</summary>
+<summary>Config</summary>
 <blockquote>
 
-<details>
-<summary>Using schema.json file</summary>
-<blockquote>
-Inside the table folder
-
-1. Create empty folders `.cache` `.tmp`
-2. Create `schema.json` file
-
-```jsonc
-[
-  {
-    // Give a unique ID number for each field
-    "id": 1,
-    "key": "username",
-    "type": "string"
-  },
-  {
-    "id": 2,
-    "key": "email",
-    "type": "email"
-  },
-]
+```ts
+interface {
+  compression: boolean;
+  cache: boolean;
+  prepend: boolean;
+}
 ```
 </blockquote>
 </details>
 
 <details>
-<summary>Using built-in function</summary>
+<summary>Schema</summary>
+<blockquote>
+
+```ts
+interface {
+  id: number; // stored as a Number but displayed as a hashed ID
+  key: string;
+  required?: boolean;
+  unique?: boolean;
+  type: "string" | "number" | "boolean" | "date" | "email" | "url" | "password" | "html" | "ip" | "json" | "id";
+}
+interface Table {
+  id: number;
+  key: string;
+  required?: boolean;
+  type: "table";
+  table: string;
+}
+interface Array {
+  id: number;
+  key: string;
+  required?: boolean;
+  type: "array";
+  children: string|string[];
+}
+interface ObjectOrArrayOfObjects {
+  id: number;
+  key: string;
+  required?: boolean;
+  type: "object" | "array";
+  children: Schema;
+}
+```
+</blockquote>
+</details>
+
+<details>
+<summary>Create Table</summary>
 <blockquote>
 
 ```js
 import Inibase from "inibase";
 const db = new Inibase("/databaseName");
 
-const userSchema = [
+const userTableConfig = {
+  compression: true,
+  cache: true,
+  prepend: false
+}
+
+const userTableSchema = [
   {
     key: "username",
     type: "string",
@@ -252,14 +241,15 @@ const userSchema = [
   },
 ];
 
-await db.setTableSchema("user", userSchema);
+await db.createTable("user", userTableSchema, userTableConfig);
 ```
 </blockquote>
 </details>
 
-</blockquote>
-</details>
-
+<details>
+<summary>Update Table</summary>
+<blockquote>
+  
 <details>
 <summary>Add field</summary>
 <blockquote>
@@ -268,10 +258,10 @@ await db.setTableSchema("user", userSchema);
 import Inibase from "inibase";
 const db = new Inibase("/databaseName");
 
-const userSchema = await db.getTableSchema("user");
-const newUserSchema = [...userSchema, {key: "phone2", type: "number", required: false}];
+const userTableSchema = (await db.getTable("user")).schema;
+const newUserTableSchema = [...userTableSchema, {key: "phone2", type: "number", required: false}];
 
-await db.setTableSchema("user", newUserSchema);
+await db.updateTable("user", newUserTableSchema);
 ```
 </blockquote>
 </details>
@@ -286,10 +276,30 @@ import { setField } from "inibase/utils";
 
 const db = new Inibase("/databaseName");
 
-const userSchema = await db.getTableSchema("user");
-setField("username", userSchema, {key: "full_name"});
-await db.setTableSchema("user", newUserSchema);
+const userTableSchema = (await db.getTable("user")).schema;
+setField("username", userTableSchema, {key: "fullName"});
+await db.updateTable("user", newUserTableSchema);
 ```
+</blockquote>
+</details>
+
+<details>
+<summary>Remove field</summary>
+<blockquote>
+
+```js
+import Inibase from "inibase";
+import { unsetField } from "inibase/utils";
+
+const db = new Inibase("/databaseName");
+
+const userTableSchema = (await db.getTable("user")).schema;
+unsetField("fullName", userTableSchema);
+await db.updateTable("user", newUserTableSchema);
+```
+</blockquote>
+</details>
+
 </blockquote>
 </details>
 
@@ -301,7 +311,7 @@ await db.setTableSchema("user", newUserSchema);
 import Inibase from "inibase";
 const db = new Inibase("/databaseName");
 
-const productSchema = [
+const productTableSchema = [
   {
     key: "title",
     type: "string",
@@ -319,9 +329,9 @@ const productSchema = [
   },
 ];
 
-await db.setTableSchema("product", productSchema);
+await db.createTable("product", productTableSchema);
 
-const productData = [
+const productTableData = [
   {
     title: "Product 1",
     price: 16,
@@ -334,7 +344,7 @@ const productData = [
   },
 ];
 
-const product = await db.post("product", productData);
+const product = await db.post("product", productTableData);
 // [
 //   {
 //     "id": "1d88385d4b1581f8fb059334dec30f4c",
@@ -373,7 +383,7 @@ const product = await db.post("product", productData);
 import Inibase from "inibase";
 const db = new Inibase("/databaseName");
 
-const userData = [
+const userTableData = [
   {
     username: "user1",
     email: "user1@example.com",
@@ -408,7 +418,7 @@ const userData = [
   },
 ];
 
-const users = await db.post("user", userData);
+const users = await db.post("user", userTableData);
 // [
 //   {
 //     "id": "1d88385d4b1581f8fb059334dec30f4c",
@@ -664,6 +674,29 @@ await db.sort("user", {age: -1, username: "asc"});
 </blockquote>
 </details>
 
+## Benchmark
+
+### Bulk
+
+|        | 10              | 100             | 1000            |
+|--------|-----------------|-----------------|-----------------|
+| POST   | 11 ms (0.65 mb) | 19 ms (1.00 mb) | 85 ms (4.58 mb) |
+| GET    | 14 ms (2.77 mb) | 12 ms (3.16 mb) | 34 ms (1.38 mb) |
+| PUT    | 6 ms (1.11 mb)  | 5 ms (1.37 mb)  | 10 ms (1.12 mb) |
+| DELETE | 17 ms (1.68 mb) | 14 ms (5.45 mb) | 25 ms (5.94 mb) |
+
+### Single
+
+|        | 10                | 100                | 1000               |
+|--------|-------------------|--------------------|--------------------|
+| POST   | 43 ms (4.70 mb)   | 387 ms (6.36 mb)   | 5341 ms (24.73 mb) |
+| GET    | 99 ms (12.51 mb)  | 846 ms (30.68 mb)  | 7103 ms (30.86 mb) |
+| PUT    | 33 ms (10.29 mb)  | 312 ms (11.06 mb)  | 3539 ms (14.87 mb) |
+| DELETE | 134 ms (13.50 mb) | 1224 ms (16.57 mb) | 7339 ms (11.46 mb) |
+
+> Testing by default with `user` table, with username, email, password fields _so results include password encryption process_ <br>
+> To run benchmarks, install *typescript* & *[tsx](https://github.com/privatenumber/tsx)* globally and run `benchmark` `benchmark:bulk` `benchmark:single`
+
 ## Roadmap
 
 - [x] Actions:
@@ -671,7 +704,7 @@ await db.sort("user", {age: -1, username: "asc"});
     - [x] Pagination
     - [x] Criteria
     - [x] Columns
-    - [x] Sort (using UNIX commands)
+    - [x] Sort
   - [x] POST
   - [x] PUT
   - [x] DELETE
