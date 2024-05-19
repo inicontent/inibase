@@ -16,6 +16,7 @@ import Inison from "inison";
 import * as File from "./file.js";
 import * as Utils from "./utils.js";
 import * as UtilsServer from "./utils.server.js";
+import { execSync } from "node:child_process";
 
 export interface Data {
 	id?: number | string;
@@ -282,17 +283,17 @@ export default class Inibase {
 				if (!config.compression && table.config.compression) {
 					try {
 						await UtilsServer.exec(
-							`gunzip ${tablePath}/*.${this.fileExtension}.gz 2>/dev/null`,
+							`find ${tablePath} -type f -name '*${this.fileExtension}.gz' -exec gunzip -f {} +`,
 						);
-						await unlink(join(tablePath, ".compression.config"));
 					} catch {}
+					await unlink(join(tablePath, ".compression.config"));
 				} else if (config.compression && !table.config.compression) {
 					try {
 						await UtilsServer.exec(
-							`gzip ${tablePath}/*.${this.fileExtension} 2>/dev/null`,
+							`find ${tablePath} -type f -name '*${this.fileExtension}' -exec gzip -f {} +`,
 						);
-						await writeFile(join(tablePath, ".compression.config"), "");
 					} catch {}
+					await writeFile(join(tablePath, ".compression.config"), "");
 				}
 			}
 			if (config.cache !== undefined) {
@@ -302,6 +303,15 @@ export default class Inibase {
 					await unlink(join(tablePath, ".cache.config"));
 			}
 			if (config.prepend !== undefined) {
+				if (config.prepend !== table.config.prepend) {
+					try {
+						await UtilsServer.exec(
+							config.compression || table.config.compression
+								? `find ${tablePath} -type f -name '*${this.fileExtension}.gz' -exec sh -c 'zcat "$0" | tac | gzip > "$0.reversed" && mv "$0.reversed" "$0"' {} +`
+								: `find ${tablePath} -type f -name '*${this.fileExtension}' -exec sh -c 'tac "$0" > "$0.reversed" && mv "$0.reversed" "$0"' {} +`,
+						);
+					} catch {}
+				}
 				if (config.prepend && !table.config.prepend)
 					await writeFile(join(tablePath, ".prepend.config"), "");
 				else if (!config.prepend && table.config.prepend)
@@ -316,18 +326,17 @@ export default class Inibase {
 			);
 			if (await File.isExists(join(tablePath, "schema.json"))) {
 				// update columns files names based on field id
-				const currentSchema = await this.getTableSchema(tableName, false);
 				schema = UtilsServer.addIdToSchema(
 					schema,
-					currentSchema?.length
-						? UtilsServer.findLastIdNumber(currentSchema, this.salt)
+					table.schema?.length
+						? UtilsServer.findLastIdNumber(table.schema, this.salt)
 						: 0,
 					this.salt,
 					false,
 				);
-				if (currentSchema?.length) {
+				if (table.schema?.length) {
 					const replaceOldPathes = Utils.findChangedProperties(
-						this._schemaToIdsPath(tableName, currentSchema),
+						this._schemaToIdsPath(tableName, table.schema),
 						this._schemaToIdsPath(tableName, schema),
 					);
 					if (replaceOldPathes)
@@ -349,9 +358,8 @@ export default class Inibase {
 				join(tablePath, "schema.json"),
 				JSON.stringify(schema, null, 2),
 			);
-
-			delete this.tables[tableName];
 		}
+		delete this.tables[tableName];
 	}
 
 	/**
