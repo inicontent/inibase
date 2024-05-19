@@ -473,7 +473,22 @@ export default class Inibase {
 					throw this.throwError("INVALID_TYPE", [
 						field.key,
 						Array.isArray(field.type) ? field.type.join(", ") : field.type,
-						typeof data[field.key],
+						Utils.detectFieldType(data[field.key], [
+							"string",
+							"number",
+							"boolean",
+							"date",
+							"email",
+							"url",
+							"table",
+							"object",
+							"array",
+							"password",
+							"html",
+							"ip",
+							"json",
+							"id",
+						]) ?? "undefinedType",
 					]);
 				if (
 					(field.type === "array" || field.type === "object") &&
