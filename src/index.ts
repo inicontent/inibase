@@ -60,9 +60,9 @@ export interface Options {
 }
 
 export interface Config {
-	compression: boolean;
-	cache: boolean;
-	prepend: boolean;
+	compression?: boolean;
+	cache?: boolean;
+	prepend?: boolean;
 }
 
 export interface TableObject {
