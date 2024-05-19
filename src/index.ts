@@ -223,6 +223,14 @@ export default class Inibase {
 
 		return RETURN;
 	};
+
+	/**
+	 * Create a new table inside database, with predefined schema and config
+	 *
+	 * @param {string} tableName
+	 * @param {Schema} [schema]
+	 * @param {Config} [config]
+	 */
 	public async createTable(
 		tableName: string,
 		schema?: Schema,
@@ -254,6 +262,13 @@ export default class Inibase {
 			);
 	}
 
+	/**
+	 * Update table schema or config
+	 *
+	 * @param {string} tableName
+	 * @param {Schema} [schema]
+	 * @param {Config} [config]
+	 */
 	public async updateTable(
 		tableName: string,
 		schema?: Schema,
@@ -339,6 +354,12 @@ export default class Inibase {
 		}
 	}
 
+	/**
+	 * Get table schema and config
+	 *
+	 * @param {string} tableName
+	 * @return {*}  {Promise<TableObject>}
+	 */
 	public async getTable(tableName: string): Promise<TableObject> {
 		const tablePath = join(this.databasePath, tableName);
 
@@ -1311,16 +1332,30 @@ export default class Inibase {
 			.filter((i) => i) as Schema;
 	}
 
-	public async clearCache(tablePath: string) {
+	/**
+	 * Clear table cache
+	 *
+	 * @param {string} tableName
+	 */
+	public async clearCache(tableName: string) {
 		await Promise.all(
-			(await readdir(join(tablePath, ".cache")))
-				?.filter(
-					(fileName: string) => fileName !== `pagination${this.fileExtension}`,
-				)
-				.map(async (file) => unlink(join(tablePath, ".cache", file))),
+			(await readdir(join(this.databasePath, tableName, ".cache"))).map(
+				(file) => unlink(join(this.databasePath, tableName, ".cache", file)),
+			),
 		);
 	}
 
+	/**
+	 * Retrieve item(s) from a table
+	 *
+	 * @param {string} tableName
+	 * @param {(string | number | (string | number)[] | Criteria | undefined)} [where]
+	 * @param {(Options | undefined)} [options]
+	 * @param {true} [onlyOne]
+	 * @param {undefined} [onlyLinesNumbers]
+	 * @param {boolean} [_skipIdColumn]
+	 * @return {*}  {(Promise<Data[] | Data | number[] | null>)}
+	 */
 	get(
 		tableName: string,
 		where?: string | number | (string | number)[] | Criteria | undefined,
@@ -1571,6 +1606,15 @@ export default class Inibase {
 		return onlyOne && Array.isArray(RETURN) ? RETURN[0] : RETURN;
 	}
 
+	/**
+	 * Create new item(s) in a table
+	 *
+	 * @param {string} tableName
+	 * @param {(Data | Data[])} data Can be array of objects or a single object
+	 * @param {Options} [options] Pagination options, useful when the returnPostedData param is true
+	 * @param {boolean} [returnPostedData] By default function returns void, if you want to get the posted data, set this param to true
+	 * @return {*}  {Promise<Data | Data[] | null | void>}
+	 */
 	post(
 		tableName: string,
 		data: Data | Data[],
@@ -1688,7 +1732,7 @@ export default class Inibase {
 			renameList = [];
 			totalItems += Array.isArray(RETURN) ? RETURN.length : 1;
 
-			if (this.tables[tableName].config.cache) await this.clearCache(tablePath);
+			if (this.tables[tableName].config.cache) await this.clearCache(tableName);
 			await writeFile(
 				join(tablePath, ".pagination"),
 				`${lastId},${totalItems}`,
@@ -1716,6 +1760,16 @@ export default class Inibase {
 		}
 	}
 
+	/**
+	 * Update item(s) in a table
+	 *
+	 * @param {string} tableName
+	 * @param {(Data | Data[])} data
+	 * @param {(number | string | (number | string)[] | Criteria)} [where]
+	 * @param {Options} [options]
+	 * @param {false} [returnUpdatedData]
+	 * @return {*}  {Promise<Data | Data[] | null | undefined | void>}
+	 */
 	put(
 		tableName: string,
 		data: Data | Data[],
@@ -1763,6 +1817,8 @@ export default class Inibase {
 					)
 				)
 					throw this.throwError("INVALID_ID");
+
+				// TODO: Reduce I/O
 				return this.put(
 					tableName,
 					data,
@@ -1884,7 +1940,7 @@ export default class Inibase {
 				renameList = [];
 
 				if (this.tables[tableName].config.cache)
-					await this.clearCache(tablePath);
+					await this.clearCache(tableName);
 
 				if (returnUpdatedData)
 					return this.get(tableName, where, options, !Array.isArray(where));
@@ -1916,6 +1972,14 @@ export default class Inibase {
 		} else throw this.throwError("INVALID_PARAMETERS");
 	}
 
+	/**
+	 * Delete item(s) in a table
+	 *
+	 * @param {string} tableName
+	 * @param {(number | string)} [where]
+	 * @param {(string | string[])} [_id]
+	 * @return {*}  {(Promise<string | number | (string | number)[] | null>)}
+	 */
 	delete(
 		tableName: string,
 		where?: number | string,
@@ -1956,7 +2020,7 @@ export default class Inibase {
 				);
 
 				if (this.tables[tableName].config.cache)
-					await this.clearCache(tablePath);
+					await this.clearCache(tableName);
 			} finally {
 				await File.unlock(join(tablePath, ".tmp"));
 			}
@@ -2001,7 +2065,7 @@ export default class Inibase {
 					);
 
 					if (this.tables[tableName].config.cache)
-						await this.clearCache(tablePath);
+						await this.clearCache(tableName);
 					if (await File.isExists(join(tablePath, ".pagination"))) {
 						const [lastId, totalItems] = (
 							await readFile(join(tablePath, ".pagination"), "utf8")
@@ -2039,6 +2103,14 @@ export default class Inibase {
 		return null;
 	}
 
+	/**
+	 * Generate sum of column(s) in a table
+	 *
+	 * @param {string} tableName
+	 * @param {string} columns
+	 * @param {(number | string | (number | string)[] | Criteria)} [where]
+	 * @return {*}  {Promise<number | Record<string, number>>}
+	 */
 	sum(
 		tableName: string,
 		columns: string,
@@ -2083,6 +2155,14 @@ export default class Inibase {
 		return Array.isArray(columns) ? RETURN : Object.values(RETURN)[0];
 	}
 
+	/**
+	 * Generate max of column(s) in a table
+	 *
+	 * @param {string} tableName
+	 * @param {string} columns
+	 * @param {(number | string | (number | string)[] | Criteria)} [where]
+	 * @return {*}  {Promise<number>}
+	 */
 	max(
 		tableName: string,
 		columns: string,
@@ -2126,6 +2206,14 @@ export default class Inibase {
 		return RETURN;
 	}
 
+	/**
+	 * Generate min of column(s) in a table
+	 *
+	 * @param {string} tableName
+	 * @param {string} columns
+	 * @param {(number | string | (number | string)[] | Criteria)} [where]
+	 * @return {*}  {Promise<number>}
+	 */
 	min(
 		tableName: string,
 		columns: string,
@@ -2169,6 +2257,19 @@ export default class Inibase {
 		return RETURN;
 	}
 
+	/**
+	 * Sort column(s) of a table
+	 *
+	 * @param {string} tableName
+	 * @param {(string
+	 * 			| string[]
+	 * 			| Record<string, 1 | -1 | "asc" | "ASC" | "desc" | "DESC">)} columns
+	 * @param {(string | number | (string | number)[] | Criteria)} [where]
+	 * @param {Options} [options={
+	 * 			page: 1,
+	 * 			perPage: 15,
+	 * 		}]
+	 */
 	public async sort(
 		tableName: string,
 		columns:

@@ -417,6 +417,13 @@ export function FormatObjectCriteriaValue(
 	}
 }
 
+/**
+ * Get field from schema
+ *
+ * @export
+ * @param {string} keyPath Support dot notation path
+ * @param {Schema} schema
+ */
 export function getField(keyPath: string, schema: Schema) {
 	let RETURN: Field | Schema | null = null;
 	const keyPathSplited = keyPath.split(".");
@@ -435,6 +442,17 @@ export function getField(keyPath: string, schema: Schema) {
 	return isArrayOfObjects(RETURN) ? RETURN[0] : RETURN;
 }
 
+/**
+ * Override a schema field, key, type or other properties
+ *
+ * @export
+ * @param {string} keyPath Support dot notation path
+ * @param {Schema} schema
+ * @param {(Omit<Field, "key" | "type"> & {
+ * 		key?: string;
+ * 		type?: FieldType | FieldType[];
+ * 	})} field
+ */
 export function setField(
 	keyPath: string,
 	schema: Schema,
@@ -460,6 +478,13 @@ export function setField(
 	}
 }
 
+/**
+ * Remove field from schema
+ *
+ * @export
+ * @param {string} keyPath Support dot notation path
+ * @param {Schema} schema
+ */
 export function unsetField(keyPath: string, schema: Schema) {
 	const keyPathSplited = keyPath.split(".");
 	let parent: any = null;
