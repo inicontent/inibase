@@ -68,41 +68,8 @@ This structure ensures efficient storage, retrieval, and updates, making our sys
 
 ```shell
 npx inibase -p <databaseFolderPath>
+# by default it will diplay a list of available commands (or type 'help')
 ```
-
-<blockquote>
-<details>
-<summary>GET</summary>
-
-```shell 
-get <tableName> -w <ID|LineNumber|Criteria> -p <pageNumber> -l <perPage> -c <columnName1>  -c <columnName2>
-```
-</details>
-
-<details>
-<summary>POST</summary>
-
-```shell 
-post <tableName> -d <InisonStrigifedData>
-```
-</details>
-
-<details>
-<summary>PUT</summary>
-
-```shell 
-put <tableName> -d <InisonStrigifedData> -w <ID|LineNumber|Criteria>
-```
-</details>
-
-<details>
-<summary>DELETE</summary>
-
-```shell 
-delete <tableName> -w <ID|LineNumber|Criteria>
-```
-</details>
-</blockquote>
 
 ## Examples
 
