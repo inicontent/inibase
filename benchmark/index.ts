@@ -9,7 +9,7 @@ if (await isExists("test")) await rm("test", { recursive: true });
 
 const db = new Inibase("test");
 let i: number;
-await db.setTableSchema("user", [
+await db.createTable("user", [
 	{
 		key: "username",
 		type: "string",
