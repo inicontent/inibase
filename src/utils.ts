@@ -309,7 +309,7 @@ export const validateFieldType = (
 		case "string":
 			return isString(value);
 		case "password":
-			return isNumber(value) || isPassword(value) || isString(value);
+			return true; // accept
 		case "number":
 			return isNumber(value);
 		case "html":
