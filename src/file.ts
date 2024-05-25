@@ -489,7 +489,7 @@ export const replace = async (
 };
 
 /**
- * Asynchronously appends data to the beginning of a file.
+ * Asynchronously appends data to the end of a file.
  *
  * @param filePath - Path of the file to append to.
  * @param data - Data to append. Can be a string, number, or an array of strings/numbers.
@@ -499,17 +499,45 @@ export const replace = async (
 export const append = async (
 	filePath: string,
 	data: string | number | (string | number)[],
-	prepend?: boolean,
 ): Promise<string[]> => {
 	const fileTempPath = filePath.replace(/([^/]+)\/?$/, ".tmp/$1");
 	if (await isExists(filePath)) {
-		if (!prepend && !filePath.endsWith(".gz")) {
-			await copyFile(filePath, fileTempPath);
+		await copyFile(filePath, fileTempPath);
+		if (!filePath.endsWith(".gz")) {
 			await appendFile(
 				fileTempPath,
 				`${Array.isArray(data) ? data.join("\n") : data}\n`,
 			);
 		} else {
+			await exec(
+				`echo $'${(Array.isArray(data) ? data.join("\n") : data)
+					.toString()
+					.replace(/'/g, "\\'")}' | gzip - >> ${fileTempPath}`,
+			);
+		}
+	} else
+		await write(
+			fileTempPath,
+			`${Array.isArray(data) ? data.join("\n") : data}\n`,
+		);
+	return [fileTempPath, filePath];
+};
+
+/**
+ * Asynchronously prepends data to the beginning of a file.
+ *
+ * @param filePath - Path of the file to append to.
+ * @param data - Data to append. Can be a string, number, or an array of strings/numbers.
+ * @returns Promise<string[]>. Modifies the file by appending data.
+ *
+ */
+export const prepend = async (
+	filePath: string,
+	data: string | number | (string | number)[],
+): Promise<string[]> => {
+	const fileTempPath = filePath.replace(/([^/]+)\/?$/, ".tmp/$1");
+	if (await isExists(filePath)) {
+		if (!filePath.endsWith(".gz")) {
 			let fileHandle = null;
 			let fileTempHandle = null;
 			try {
@@ -541,6 +569,17 @@ export const append = async (
 				// Ensure that file handles are closed, even if an error occurred
 				await fileHandle?.close();
 				await fileTempHandle?.close();
+			}
+		} else {
+			const fileChildTempPath = filePath.replace(/([^/]+)\/?$/, ".tmp/tmp_$1");
+			try {
+				await write(
+					fileChildTempPath,
+					`${Array.isArray(data) ? data.join("\n") : data}\n`,
+				);
+				await exec(`cat ${fileChildTempPath} ${filePath} > ${fileTempPath}`);
+			} finally {
+				await unlink(fileChildTempPath);
 			}
 		}
 	} else

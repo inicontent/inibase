@@ -16,7 +16,6 @@ import Inison from "inison";
 import * as File from "./file.js";
 import * as Utils from "./utils.js";
 import * as UtilsServer from "./utils.server.js";
-import { execSync } from "node:child_process";
 
 export interface Data {
 	id?: number | string;
@@ -141,7 +140,7 @@ export default class Inibase {
 				existsSync(".env") &&
 				readFileSync(".env").includes("INIBASE_SECRET=")
 			)
-				this.throwError("NO_ENV");
+				throw this.throwError("NO_ENV");
 			this.salt = scryptSync(randomBytes(16), randomBytes(16), 32);
 			appendFileSync(".env", `\nINIBASE_SECRET=${this.salt.toString("hex")}\n`);
 		} else this.salt = Buffer.from(process.env.INIBASE_SECRET, "hex");
@@ -240,10 +239,18 @@ export default class Inibase {
 		const tablePath = join(this.databasePath, tableName);
 
 		if (await File.isExists(tablePath))
-			this.throwError("TABLE_EXISTS", tableName);
+			throw this.throwError("TABLE_EXISTS", tableName);
 
 		await mkdir(join(tablePath, ".tmp"), { recursive: true });
 		await mkdir(join(tablePath, ".cache"));
+
+		// if config not set => load default global env config
+		if (!config)
+			config = {
+				compression: process.env.INIBASE_COMPRESSION === "true",
+				cache: process.env.INIBASE_CACHE === "true",
+				prepend: process.env.INIBASE_PREPEND === "true",
+			};
 
 		if (config) {
 			if (config.compression)
@@ -279,43 +286,63 @@ export default class Inibase {
 			tablePath = join(this.databasePath, tableName);
 
 		if (config) {
-			if (config.compression !== undefined) {
-				if (!config.compression && table.config.compression) {
-					try {
-						await UtilsServer.exec(
-							`find ${tablePath} -type f -name '*${this.fileExtension}.gz' -exec gunzip -f {} +`,
-						);
-					} catch {}
-					await unlink(join(tablePath, ".compression.config"));
-				} else if (config.compression && !table.config.compression) {
-					try {
-						await UtilsServer.exec(
-							`find ${tablePath} -type f -name '*${this.fileExtension}' -exec gzip -f {} +`,
-						);
-					} catch {}
+			if (
+				config.compression !== undefined &&
+				config.compression !== table.config.compression
+			) {
+				await UtilsServer.execFile(
+					"find",
+					[
+						tableName,
+						"-type",
+						"f",
+						"-name",
+						`*${this.fileExtension}${config.compression ? "" : ".gz"}`,
+						"-exec",
+						config.compression ? "gzip" : "gunzip",
+						"-f",
+						"{}",
+						"+",
+					],
+					{ cwd: this.databasePath },
+				);
+				if (config.compression)
 					await writeFile(join(tablePath, ".compression.config"), "");
-				}
+				else await unlink(join(tablePath, ".compression.config"));
 			}
-			if (config.cache !== undefined) {
-				if (config.cache && !table.config.cache)
-					await writeFile(join(tablePath, ".cache.config"), "");
-				else if (!config.cache && table.config.cache)
-					await unlink(join(tablePath, ".cache.config"));
+			if (config.cache !== undefined && config.cache !== table.config.cache) {
+				if (config.cache) await writeFile(join(tablePath, ".cache.config"), "");
+				else await unlink(join(tablePath, ".cache.config"));
 			}
-			if (config.prepend !== undefined) {
-				if (config.prepend !== table.config.prepend) {
-					try {
-						await UtilsServer.exec(
-							config.compression || table.config.compression
-								? `find ${tablePath} -type f -name '*${this.fileExtension}.gz' -exec sh -c 'zcat "$0" | tac | gzip > "$0.reversed" && mv "$0.reversed" "$0"' {} +`
-								: `find ${tablePath} -type f -name '*${this.fileExtension}' -exec sh -c 'tac "$0" > "$0.reversed" && mv "$0.reversed" "$0"' {} +`,
-						);
-					} catch {}
-				}
-				if (config.prepend && !table.config.prepend)
+			if (
+				config.prepend !== undefined &&
+				config.prepend !== table.config.prepend
+			) {
+				await UtilsServer.execFile(
+					"find",
+					[
+						tableName,
+						"-type",
+						"f",
+						"-name",
+						`*${this.fileExtension}${config.compression ? ".gz" : ""}`,
+						"-exec",
+						"sh",
+						"-c",
+						`for file; do ${
+							config.compression
+								? 'zcat "$file" | tac | gzip > "$file.reversed" && mv "$file.reversed" "$file"'
+								: 'tac "$file" > "$file.reversed" && mv "$file.reversed" "$file"'
+						}; done`,
+						"_",
+						"{}",
+						"+",
+					],
+					{ cwd: this.databasePath },
+				);
+				if (config.prepend)
 					await writeFile(join(tablePath, ".prepend.config"), "");
-				else if (!config.prepend && table.config.prepend)
-					await unlink(join(tablePath, ".prepend.config"));
+				else await unlink(join(tablePath, ".prepend.config"));
 			}
 		}
 
@@ -372,7 +399,7 @@ export default class Inibase {
 		const tablePath = join(this.databasePath, tableName);
 
 		if (!(await File.isExists(tablePath)))
-			this.throwError("TABLE_NOT_EXISTS", tableName);
+			throw this.throwError("TABLE_NOT_EXISTS", tableName);
 
 		if (!this.tables[tableName])
 			this.tables[tableName] = {
@@ -1738,11 +1765,9 @@ export default class Inibase {
 			await Promise.all(
 				Object.entries(pathesContents).map(async ([path, content]) =>
 					renameList.push(
-						await File.append(
-							path,
-							content,
-							this.tables[tableName].config.prepend,
-						),
+						this.tables[tableName].config.prepend
+							? await File.prepend(path, content)
+							: await File.append(path, content),
 					),
 				),
 			);
@@ -1999,8 +2024,7 @@ export default class Inibase {
 	 * Delete item(s) in a table
 	 *
 	 * @param {string} tableName
-	 * @param {(number | string)} [where]
-	 * @param {(string | string[])} [_id]
+	 * @param {(number | string | (number | string)[] | Criteria)} [where]
 	 * @return {*}  {(Promise<string | number | (string | number)[] | null>)}
 	 */
 	delete(
