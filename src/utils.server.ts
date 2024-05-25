@@ -16,10 +16,15 @@ import {
 	isValidID,
 } from "./utils.js";
 import { promisify } from "node:util";
-import { exec as execAsync } from "node:child_process";
+import {
+	exec as execAsync,
+	execFile as execFileAsync,
+} from "node:child_process";
 import { gunzip as gunzipAsync, gzip as gzipAsync } from "node:zlib";
 
 export const exec = promisify(execAsync);
+
+export const execFile = promisify(execFileAsync);
 
 export const gzip = promisify(gzipAsync);
 
