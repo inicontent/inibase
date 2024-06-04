@@ -7,15 +7,15 @@ const bulk = async () => {
 	const logger = new Console({
 			stdout: process.stdout,
 			stderr: process.stderr,
-		}),
-		db = new Inibase("test");
-	let startTime: number,
-		startMemory: number,
-		table: Record<string | number, string | number>[] = [];
+		});
+	const db = new Inibase("test");
+	let startTime: number;
+	let startMemory: number;
+	const table: Record<string | number, string | number>[] = [];
 	// Delete test folder
 	if (await isExists("test")) await rm("test", { recursive: true });
 
-	await db.setTableSchema("user", [
+	await db.createTable("user", [
 		{
 			key: "username",
 			type: "string",
@@ -235,8 +235,8 @@ const bulk = async () => {
 	).toFixed(2)} mb)`;
 
 	logger.table(
-		table.reduce((arr, { METHOD, ...x }) => {
-			arr[METHOD] = x as any;
+		table.reduce((arr: Record<string, Record<string|number, string|number>>, { METHOD, ...x }) => {
+			arr[METHOD] = x;
 			return arr;
 		}, {}),
 	);
