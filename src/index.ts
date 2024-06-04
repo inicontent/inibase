@@ -82,7 +82,7 @@ export type ComparisonOperator =
 	| "[]"
 	| "![]";
 
-type pageInfo = {
+export type pageInfo = {
 	total?: number;
 	totalPages?: number;
 } & Options;
