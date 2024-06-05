@@ -1177,7 +1177,7 @@ export default class Inibase {
 						),
 					),
 				);
-				delete criteria.and;
+				criteria.and = undefined;
 				RETURN_LineNumbers = lineNumbers;
 			} else return [null, null];
 		}
@@ -1190,7 +1190,7 @@ export default class Inibase {
 				criteria.or as Criteria,
 				false,
 			);
-			delete criteria.or;
+			criteria.or = undefined;
 			if (searchResult) {
 				RETURN = Utils.deepMerge(RETURN, searchResult);
 				RETURN_LineNumbers = lineNumbers;
@@ -1243,7 +1243,7 @@ export default class Inibase {
 							);
 							searchLogicalOperator = "or";
 						}
-						delete value.or;
+						value.or = undefined;
 					}
 					if (
 						(value as Criteria)?.and &&
@@ -1273,7 +1273,7 @@ export default class Inibase {
 							);
 							searchLogicalOperator = "and";
 						}
-						delete value.and;
+						value.and = undefined;
 					}
 				} else if (Array.isArray(value)) {
 					const searchCriteria = value
@@ -1688,6 +1688,7 @@ export default class Inibase {
 		data: Data | Data[],
 		options?: Options,
 		returnPostedData?: boolean,
+	// biome-ignore lint/suspicious/noConfusingVoidType: <explanation>
 	): Promise<Data | Data[] | null | void> {
 		if (!options)
 			options = {
