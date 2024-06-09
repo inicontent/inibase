@@ -15,7 +15,7 @@ const single = async () => {
 	// Delete test folder
 	if (await isExists("test")) await rm("test", { recursive: true });
 
-	await db.setTableSchema("user", [
+	await db.createTable("user", [
 		{
 			key: "username",
 			type: "string",
