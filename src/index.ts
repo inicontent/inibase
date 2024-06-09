@@ -1490,21 +1490,28 @@ export default class Inibase {
 					)[1],
 				);
 			else {
-				let [lastId, totalItems] = await File.get(
-					join(tablePath, `id${this.getFileExtension(tableName)}`),
-					-1,
-					"number",
-					undefined,
-					this.salt,
-					true,
+				const lastId = Number(
+					Object.keys(
+						(
+							await File.get(
+								join(tablePath, `id${this.getFileExtension(tableName)}`),
+								-1,
+								"number",
+								undefined,
+								this.salt,
+								true,
+							)
+						)?.[0] ?? 0,
+					),
 				);
-				if (lastId) lastId = Number(Object.keys(lastId)?.[0] ?? 0) as any;
 
-				this.totalItems[`${tableName}-*`] = totalItems;
+				this.totalItems[`${tableName}-*`] = await File.count(
+					join(tablePath, `id${this.getFileExtension(tableName)}`),
+				);
 
 				await writeFile(
 					join(tablePath, ".pagination"),
-					`${lastId},${totalItems}`,
+					`${lastId},${this.totalItems[`${tableName}-*`]}`,
 				);
 			}
 		} else if (
@@ -1688,7 +1695,7 @@ export default class Inibase {
 		data: Data | Data[],
 		options?: Options,
 		returnPostedData?: boolean,
-	// biome-ignore lint/suspicious/noConfusingVoidType: <explanation>
+		// biome-ignore lint/suspicious/noConfusingVoidType: <explanation>
 	): Promise<Data | Data[] | null | void> {
 		if (!options)
 			options = {
@@ -1708,7 +1715,6 @@ export default class Inibase {
 		);
 
 		let lastId = 0,
-			totalItems = 0,
 			renameList: string[][] = [];
 		try {
 			await File.lock(join(tablePath, ".tmp"), keys);
@@ -1719,22 +1725,30 @@ export default class Inibase {
 				)
 			) {
 				if (await File.isExists(join(tablePath, ".pagination")))
-					[lastId, totalItems] = (
+					[lastId, this.totalItems[`${tableName}-*`]] = (
 						await readFile(join(tablePath, ".pagination"), "utf8")
 					)
 						.split(",")
 						.map(Number);
 				else {
-					let lastIdObj = null;
-					[lastIdObj, totalItems] = await File.get(
-						join(tablePath, `id${this.getFileExtension(tableName)}`),
-						-1,
-						"number",
-						undefined,
-						this.salt,
-						true,
+					const lastId = Number(
+						Object.keys(
+							(
+								await File.get(
+									join(tablePath, `id${this.getFileExtension(tableName)}`),
+									-1,
+									"number",
+									undefined,
+									this.salt,
+									true,
+								)
+							)?.[0] ?? 0,
+						),
 					);
-					if (lastIdObj) lastId = Number(Object.keys(lastIdObj)?.[0] ?? 0);
+
+					this.totalItems[`${tableName}-*`] = await File.count(
+						join(tablePath, `id${this.getFileExtension(tableName)}`),
+					);
 				}
 			}
 
@@ -1779,12 +1793,14 @@ export default class Inibase {
 				),
 			);
 			renameList = [];
-			totalItems += Array.isArray(RETURN) ? RETURN.length : 1;
+			this.totalItems[`${tableName}-*`] += Array.isArray(RETURN)
+				? RETURN.length
+				: 1;
 
 			if (this.tables[tableName].config.cache) await this.clearCache(tableName);
 			await writeFile(
 				join(tablePath, ".pagination"),
-				`${lastId},${totalItems}`,
+				`${lastId},${this.totalItems[`${tableName}-*`]}`,
 			);
 
 			if (returnPostedData)
@@ -1795,8 +1811,10 @@ export default class Inibase {
 							? RETURN.map((_, index) => index + 1)
 							: 1
 						: Array.isArray(RETURN)
-							? RETURN.map((_, index) => totalItems - index)
-							: totalItems,
+							? RETURN.map(
+									(_, index) => this.totalItems[`${tableName}-*`] - index,
+								)
+							: this.totalItems[`${tableName}-*`],
 					options,
 					!Utils.isArrayOfObjects(data), // return only one item if data is not array of objects
 				);
