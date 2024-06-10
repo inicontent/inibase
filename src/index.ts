@@ -1730,7 +1730,7 @@ export default class Inibase {
 						.split(",")
 						.map(Number);
 				else {
-					const lastId = Number(
+					lastId = Number(
 						Object.keys(
 							(
 								await File.get(
@@ -1749,7 +1749,7 @@ export default class Inibase {
 						join(tablePath, `id${this.getFileExtension(tableName)}`),
 					);
 				}
-			}
+			} else this.totalItems[`${tableName}-*`] = 0;
 
 			if (Utils.isArrayOfObjects(data))
 				RETURN = data.map(({ id, updatedAt, createdAt, ...rest }) => ({
@@ -1792,11 +1792,12 @@ export default class Inibase {
 				),
 			);
 			renameList = [];
+
+			if (this.tables[tableName].config.cache) await this.clearCache(tableName);
+
 			this.totalItems[`${tableName}-*`] += Array.isArray(RETURN)
 				? RETURN.length
 				: 1;
-
-			if (this.tables[tableName].config.cache) await this.clearCache(tableName);
 			await writeFile(
 				join(tablePath, ".pagination"),
 				`${lastId},${this.totalItems[`${tableName}-*`]}`,
