@@ -149,7 +149,7 @@ export const isHTML = (input: any) =>
  */
 export const isString = (input: any): input is string =>
 	Object.prototype.toString.call(input) === "[object String]" &&
-	[isNumber, isBoolean, isEmail, isURL, isIP].every((fn) => !fn(input));
+	!isNumber(input);
 
 /**
  * Checks if the input is a valid IP address format.
