@@ -1695,7 +1695,6 @@ export default class Inibase {
 		data: Data | Data[],
 		options?: Options,
 		returnPostedData?: boolean,
-		// biome-ignore lint/suspicious/noConfusingVoidType: <explanation>
 	): Promise<Data | Data[] | null | void> {
 		if (!options)
 			options = {
