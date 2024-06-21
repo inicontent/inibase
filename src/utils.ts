@@ -292,24 +292,26 @@ export const validateFieldType = (
 	fieldChildrenType?: FieldType | FieldType[],
 ): boolean => {
 	if (value === null) return true;
-	if (Array.isArray(fieldType))
-		return detectFieldType(value, fieldType) !== undefined;
-	if (fieldType === "array" && fieldChildrenType && Array.isArray(value))
-		return value.every(
-			(v) =>
-				detectFieldType(
-					v,
-					Array.isArray(fieldChildrenType)
-						? fieldChildrenType
-						: [fieldChildrenType],
-				) !== undefined,
-		);
-
+	if (Array.isArray(fieldType)) {
+		const detectedFieldType = detectFieldType(value, fieldType);
+		if (!detectedFieldType) return false;
+		fieldType = detectedFieldType;
+	}
+	if (fieldType === "array" && fieldChildrenType)
+		return value.every((v: any) => {
+			let _fieldChildrenType = fieldChildrenType;
+			if (Array.isArray(_fieldChildrenType)) {
+				const detectedFieldType = detectFieldType(v, _fieldChildrenType);
+				if (!detectedFieldType) return false;
+				_fieldChildrenType = detectedFieldType;
+			}
+			return validateFieldType(v, _fieldChildrenType);
+		});
 	switch (fieldType) {
 		case "string":
 			return isString(value);
 		case "password":
-			return true; // accept
+			return !Array.isArray(value) && !isObject(value); // accept
 		case "number":
 			return isNumber(value);
 		case "html":
