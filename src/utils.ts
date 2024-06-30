@@ -191,7 +191,9 @@ export const isPassword = (input: any): input is string =>
  * @returns A boolean indicating whether the input is a valid date.
  */
 export const isDate = (input: any) =>
-	!Number.isNaN(new Date(input).getTime()) || !Number.isNaN(Date.parse(input));
+	!Number.isNaN(new Date(input).getTime()) ||
+	!Number.isNaN(Date.parse(input)) ||
+	!!input.match(/\b\d{2}[/.-]\d{2}[/.-]\d{4}\b/);
 
 /**
  * Checks if the input is a valid ID.
@@ -278,6 +280,78 @@ export const detectFieldType = (
 	return undefined;
 };
 
+export const isFieldType = (
+	compareAtType: string | string[],
+	fieldType?: FieldType | FieldType[],
+	fieldChildrenType?: FieldType | FieldType[] | Schema,
+) => {
+	if (fieldType) {
+		if (Array.isArray(fieldType)) {
+			if (
+				fieldType.some((type) =>
+					Array.isArray(compareAtType)
+						? compareAtType.includes(type)
+						: compareAtType === type,
+				)
+			)
+				return true;
+		} else if (
+			(Array.isArray(compareAtType) && compareAtType.includes(fieldType)) ||
+			compareAtType === fieldType
+		)
+			return true;
+	}
+	if (fieldChildrenType) {
+		if (Array.isArray(fieldChildrenType)) {
+			if (!isArrayOfObjects(fieldChildrenType)) {
+				if (
+					fieldChildrenType.some((type) =>
+						Array.isArray(compareAtType)
+							? compareAtType.includes(type)
+							: compareAtType === type,
+					)
+				)
+					return true;
+			}
+		} else if (
+			(Array.isArray(compareAtType) &&
+				compareAtType.includes(fieldChildrenType)) ||
+			compareAtType === fieldChildrenType
+		)
+			return true;
+	}
+	return false;
+};
+
+// Function to recursively flatten an array of objects and their nested children
+export const flattenSchema = (schema: Schema, keepParents = false) => {
+	const result: Schema = [];
+
+	function _flattenHelper(item: Field, parentKey: string) {
+		if (item.children && isArrayOfObjects(item.children)) {
+			if (keepParents) result.push((({ children, ...rest }) => rest)(item));
+			for (const child of item.children) _flattenHelper(child, item.key);
+		} else
+			result.push({
+				...item,
+				key: parentKey ? `${parentKey}.${item.key}` : item.key,
+			});
+	}
+	for (const item of schema) _flattenHelper(item, "");
+
+	return result;
+};
+
+export const filterSchema = (
+	schema: Schema,
+	callback: (arg0: Field) => boolean,
+) =>
+	schema.filter((field) => {
+		if (field.children && isArrayOfObjects(field.children))
+			field.children = filterSchema(field.children, callback);
+		return callback(field);
+	});
+
 /**
  * Validates if the given value matches the specified field type(s).
  *
@@ -360,7 +434,6 @@ export const validateFieldType = (
 
 export function FormatObjectCriteriaValue(
 	value: string,
-	isParentArray = false,
 ): [
 	ComparisonOperator,
 	string | number | boolean | null | (string | number | null)[],
@@ -400,15 +473,10 @@ export function FormatObjectCriteriaValue(
 							value.slice(1) as string | number,
 						];
 		case "=":
-			return isParentArray
-				? [
-						value.slice(0, 1) as ComparisonOperator,
-						value.slice(1) as string | number,
-					]
-				: [
-						value.slice(0, 1) as ComparisonOperator,
-						`${value.slice(1)},` as string,
-					];
+			return [
+				value.slice(0, 1) as ComparisonOperator,
+				value.slice(1) as string | number,
+			];
 		case "*":
 			return [
 				value.slice(0, 1) as ComparisonOperator,
