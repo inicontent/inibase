@@ -1,13 +1,19 @@
-import type { ComparisonOperator, FieldType, Schema } from "./index.js";
 import {
-	createCipheriv,
-	createDecipheriv,
-	randomBytes,
-	scryptSync,
+	exec as execAsync,
+	execFile as execFileAsync,
+} from "node:child_process";
+import {
 	type Cipher,
 	type Decipher,
+	createCipheriv,
+	createDecipheriv,
 	createHash,
+	randomBytes,
+	scryptSync,
 } from "node:crypto";
+import { promisify } from "node:util";
+import { gunzip as gunzipAsync, gzip as gzipAsync } from "node:zlib";
+import type { ComparisonOperator, Field, FieldType, Schema } from "./index.js";
 import {
 	detectFieldType,
 	isArrayOfObjects,
@@ -15,12 +21,6 @@ import {
 	isPassword,
 	isValidID,
 } from "./utils.js";
-import { promisify } from "node:util";
-import {
-	exec as execAsync,
-	execFile as execFileAsync,
-} from "node:child_process";
-import { gunzip as gunzipAsync, gzip as gzipAsync } from "node:zlib";
 
 export const exec = promisify(execAsync);
 
@@ -128,7 +128,7 @@ export const decodeID = (
 };
 
 // Function to recursively flatten an array of objects and their nested children
-export const flattenSchema = (
+export const extractIdsFromSchema = (
 	schema: Schema,
 	secretKeyOrSalt: string | number | Buffer,
 ): number[] => {
@@ -143,7 +143,7 @@ export const flattenSchema = (
 			);
 
 		if (field.children && isArrayOfObjects(field.children))
-			result.push(...flattenSchema(field.children, secretKeyOrSalt));
+			result.push(...extractIdsFromSchema(field.children, secretKeyOrSalt));
 	}
 
 	return result;
@@ -159,7 +159,7 @@ export const flattenSchema = (
 export const findLastIdNumber = (
 	schema: Schema,
 	secretKeyOrSalt: string | number | Buffer,
-): number => Math.max(...flattenSchema(schema, secretKeyOrSalt));
+): number => Math.max(...extractIdsFromSchema(schema, secretKeyOrSalt));
 
 /**
  * Adds or updates IDs in a schema, encoding them using a provided secret key or salt.
@@ -172,37 +172,33 @@ export const findLastIdNumber = (
  */
 export const addIdToSchema = (
 	schema: Schema,
-	oldIndex: number,
+	startWithID: number,
 	secretKeyOrSalt: string | number | Buffer,
 	encodeIDs?: boolean,
-) =>
-	schema.map((field) => {
+) => {
+	function _addIdToField(field: Field) {
 		if (!field.id) {
-			oldIndex++;
-			field.id = encodeIDs ? encodeID(oldIndex, secretKeyOrSalt) : oldIndex;
+			startWithID++;
+			field.id = encodeIDs
+				? encodeID(startWithID, secretKeyOrSalt)
+				: startWithID;
 		} else {
 			if (isValidID(field.id)) {
-				oldIndex = decodeID(field.id, secretKeyOrSalt);
-				if (!encodeIDs) field.id = oldIndex;
-			} else {
-				oldIndex = field.id;
-				if (encodeIDs) field.id = encodeID(field.id, secretKeyOrSalt);
-			}
+				if (!encodeIDs) field.id = decodeID(field.id, secretKeyOrSalt);
+			} else if (encodeIDs) field.id = encodeID(field.id, secretKeyOrSalt);
 		}
+
 		if (
 			(field.type === "array" || field.type === "object") &&
 			isArrayOfObjects(field.children)
-		) {
-			field.children = addIdToSchema(
-				field.children,
-				oldIndex,
-				secretKeyOrSalt,
-				encodeIDs,
-			);
-			oldIndex += field.children.length;
-		}
+		)
+			field.children = _addIdToSchema(field.children);
 		return field;
-	});
+	}
+	const _addIdToSchema = (schema: Schema) => schema.map(_addIdToField);
+
+	return _addIdToSchema(schema);
+};
 
 export const encodeSchemaID = (
 	schema: Schema,
