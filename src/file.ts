@@ -1,20 +1,20 @@
+import type { WriteStream } from "node:fs";
 import {
 	type FileHandle,
-	open,
 	access,
-	writeFile,
-	readFile,
-	constants as fsConstants,
-	unlink,
-	copyFile,
 	appendFile,
+	copyFile,
+	constants as fsConstants,
+	open,
+	readFile,
+	unlink,
+	writeFile,
 } from "node:fs/promises";
-import type { WriteStream } from "node:fs";
-import { createInterface, type Interface } from "node:readline";
+import { join } from "node:path";
+import { type Interface, createInterface } from "node:readline";
 import { Transform, type Transform as TransformType } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { createGzip, createGunzip } from "node:zlib";
-import { join } from "node:path";
+import { createGunzip, createGzip } from "node:zlib";
 
 import Inison from "inison";
 import type { ComparisonOperator, FieldType, Schema } from "./index.js";
@@ -25,7 +25,7 @@ import {
 	isNumber,
 	isObject,
 } from "./utils.js";
-import { encodeID, compare, exec, gzip, gunzip } from "./utils.server.js";
+import { compare, encodeID, exec, gunzip, gzip } from "./utils.server.js";
 
 export const lock = async (
 	folderPath: string,
@@ -674,7 +674,6 @@ export const search = async (
 
 	// Initialize counters for line number, found items, and processed items.
 	let linesCount = 0;
-	let foundItems = 0;
 	const linesNumbers: Set<number> = new Set();
 
 	let fileHandle = null;
@@ -720,13 +719,12 @@ export const search = async (
 			// If the line meets the conditions, process it.
 			if (meetsConditions) {
 				// Increment the found items counter.
-				foundItems++;
 				linesNumbers.add(linesCount);
 				// Check if the line should be skipped based on the offset.
-				if (offset && foundItems < offset) continue;
+				if (offset && linesNumbers.size < offset) continue;
 
 				// Check if the limit has been reached.
-				if (limit && foundItems > limit) {
+				if (limit && linesNumbers.size > limit + (offset ?? 0)) {
 					if (readWholeFile) continue;
 					break;
 				}
@@ -737,8 +735,8 @@ export const search = async (
 		}
 
 		// Convert the Map to an object using Object.fromEntries and return the result.
-		return foundItems
-			? [matchingLines, foundItems, linesNumbers.size ? linesNumbers : null]
+		return linesNumbers.size
+			? [matchingLines, linesNumbers.size, linesNumbers]
 			: [null, 0, null];
 	} finally {
 		// Close the file handle in the finally block to ensure it is closed even if an error occurs.
