@@ -607,7 +607,7 @@ export default class Inibase {
 					: UtilsServer.decodeID(value as string, this.salt);
 			case "json":
 				return typeof value !== "string" || !Utils.isJSON(value)
-					? Inison.stringify(value)
+					? Inison.stringify(value as any)
 					: value;
 			default:
 				return value;

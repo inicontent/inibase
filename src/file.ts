@@ -145,7 +145,7 @@ export const encode = (
 	Array.isArray(input)
 		? input.every((_input) => typeof _input === "string" && isJSON(_input))
 			? `[${input.join(",")}]`
-			: Inison.stringify(input)
+			: Inison.stringify(input as any)
 		: secureString(input);
 
 /**
@@ -243,7 +243,7 @@ export const decode = (
 	return decodeHelper(
 		typeof input === "string"
 			? isJSON(input)
-				? Inison.unstringify(input)
+				? (Inison.unstringify(input as any) as any)
 				: unSecureString(input)
 			: input,
 		fieldType,

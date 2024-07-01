@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 import "dotenv/config";
+import { readFileSync } from "node:fs";
+import { basename, join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
-import { basename, join } from "node:path";
-import { readFileSync } from "node:fs";
 import Inison from "inison";
 
+import { isExists } from "./file.js";
 import Inibase, { type Criteria, type Data } from "./index.js";
 import { isJSON, isNumber, setField, unsetField } from "./utils.js";
-import { isExists } from "./file.js";
 
 const textGreen = (input: string) => `\u001b[1;32m${input}\u001b[0m`;
 const textRed = (input: string) => `\u001b[1;31m${input}\u001b[0m`;
@@ -240,7 +240,7 @@ console.log(`   ${textGreen("config")} | ${textGreen("c")}
 						where = -1 as any;
 					else if (isNumber(parsedArgs.where)) where = Number(parsedArgs.where);
 					else if (isJSON(parsedArgs.where))
-						where = Inison.unstringify(parsedArgs.where);
+						where = Inison.unstringify(parsedArgs.where) as any;
 				}
 				page = Number(parsedArgs.page) ?? undefined;
 				perPage = Number(parsedArgs.perPage) ?? undefined;
