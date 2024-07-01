@@ -665,7 +665,7 @@ export default class Inibase {
 			const RETURN: Data = {};
 			for (const field of schema) {
 				if (!Object.hasOwn(data, field.key)) {
-					if (formatOnlyAvailiableKeys || !field.required) continue;
+					if (formatOnlyAvailiableKeys) continue;
 					RETURN[field.key] = this.getDefaultValue(field);
 					continue;
 				}
@@ -1762,6 +1762,7 @@ export default class Inibase {
 						: RETURN
 					: RETURN,
 			);
+
 			await Promise.all(
 				Object.entries(pathesContents).map(async ([path, content]) =>
 					renameList.push(
