@@ -155,7 +155,8 @@ export const encode = (
  * @returns Decoded string or null if input is empty.
  */
 const unSecureString = (input: string): string | number | null => {
-	if (isNumber(input)) return Number(input);
+	if (isNumber(input))
+		return String(input).at(0) === "0" ? input : Number(input);
 
 	if (typeof input === "string") return input.replace(/\\n/g, "\n") || null;
 

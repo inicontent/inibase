@@ -1,8 +1,8 @@
 import type {
-	FieldType,
-	Data,
 	ComparisonOperator,
+	Data,
 	Field,
+	FieldType,
 	Schema,
 } from "./index.js";
 
@@ -149,7 +149,7 @@ export const isHTML = (input: any) =>
  */
 export const isString = (input: any): input is string =>
 	Object.prototype.toString.call(input) === "[object String]" &&
-	!isNumber(input);
+	(!isNumber(input) || String(input).at(0) === "0");
 
 /**
  * Checks if the input is a valid IP address format.
@@ -260,6 +260,8 @@ export const detectFieldType = (
 				if (availableTypes.includes("table")) return "table";
 				if (availableTypes.includes("date")) return "date";
 				if (availableTypes.includes("number")) return "number";
+				if (availableTypes.includes("string") && String(input).at(0) === "0")
+					return "string";
 			} else if (typeof input === "string") {
 				if (availableTypes.includes("table") && isValidID(input))
 					return "table";
