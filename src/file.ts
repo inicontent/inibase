@@ -112,7 +112,11 @@ const secureString = (
 ): string | number | boolean | null => {
 	if (["true", "false"].includes(String(input))) return input ? 1 : 0;
 
-	if (typeof input !== "string") return input;
+	if (typeof input !== "string") {
+		if (input === null || input === undefined) return "";
+		return input;
+	}
+
 	let decodedInput = null;
 	try {
 		decodedInput = decodeURIComponent(input);
