@@ -497,10 +497,13 @@ export function FormatObjectCriteriaValue(
  * @param {Schema} schema
  */
 export function getField(keyPath: string, schema: Schema) {
-	let RETURN: Field | Schema | null = null;
+	let RETURN: Field | Schema | null = schema;
 	const keyPathSplited = keyPath.split(".");
 	for (const [index, key] of keyPathSplited.entries()) {
-		const foundItem = schema.find((item) => item.key === key);
+		if (!isArrayOfObjects(RETURN)) return null;
+		const foundItem: Field | undefined = (RETURN as Schema).find(
+			(item) => item.key === key,
+		);
 		if (!foundItem) return null;
 		if (index === keyPathSplited.length - 1) RETURN = foundItem;
 		if (
