@@ -56,7 +56,10 @@ export interface Options {
 	page?: number;
 	perPage?: number;
 	columns?: string[] | string;
-	order?: Record<string, "asc" | "desc">;
+	sort?:
+		| Record<string, 1 | -1 | "asc" | "ASC" | "desc" | "DESC">
+		| string[]
+		| string;
 }
 
 export interface Config {
@@ -1371,26 +1374,37 @@ export default class Inibase {
 	 * @param {string} tableName
 	 * @param {(string | number | (string | number)[] | Criteria | undefined)} [where]
 	 * @param {(Options | undefined)} [options]
-	 * @param {true} [onlyOne]
-	 * @param {undefined} [onlyLinesNumbers]
-	 * @param {boolean} [_skipIdColumn]
+	 * @param {boolean} [onlyOne]
+	 * @param {boolean} [onlyLinesNumbers]
 	 * @return {*}  {(Promise<Data[] | Data | number[] | null>)}
 	 */
 	get(
 		tableName: string,
-		where?: string | number | (string | number)[] | Criteria | undefined,
-		options?: Options | undefined,
-		onlyOne?: true,
-		onlyLinesNumbers?: undefined,
-		_skipIdColumn?: boolean,
+		where: string | number | (string | number)[] | Criteria | undefined,
+		options: Options | undefined,
+		onlyOne: true,
+		onlyLinesNumbers?: false,
 	): Promise<Data | null>;
 	get(
 		tableName: string,
-		where?: string | number | (string | number)[] | Criteria | undefined,
-		options?: Options | undefined,
-		onlyOne?: boolean | undefined,
-		onlyLinesNumbers?: true,
-		_skipIdColumn?: boolean,
+		where: string | number,
+		options?: Options,
+		onlyOne?: boolean,
+		onlyLinesNumbers?: false,
+	): Promise<Data | null>;
+	get(
+		tableName: string,
+		where?: string | number | (string | number)[] | Criteria,
+		options?: Options,
+		onlyOne?: boolean,
+		onlyLinesNumbers?: false,
+	): Promise<Data[] | null>;
+	get(
+		tableName: string,
+		where: string | number | (string | number)[] | Criteria | undefined,
+		options: Options | undefined,
+		onlyOne: boolean | undefined,
+		onlyLinesNumbers: true,
 	): Promise<number[]>;
 	public async get(
 		tableName: string,
@@ -1401,7 +1415,6 @@ export default class Inibase {
 		},
 		onlyOne?: boolean,
 		onlyLinesNumbers?: boolean,
-		_skipIdColumn?: boolean,
 	): Promise<Data[] | Data | number[] | null> {
 		const tablePath = join(this.databasePath, tableName);
 
@@ -1411,11 +1424,7 @@ export default class Inibase {
 				? options.columns
 				: [options.columns];
 
-			if (
-				!_skipIdColumn &&
-				options.columns.length &&
-				!options.columns.includes("id")
-			)
+			if (options.columns.length && !options.columns.includes("id"))
 				options.columns.push("id");
 		}
 
@@ -1444,6 +1453,164 @@ export default class Inibase {
 				(Utils.isObject(where) && !Object.keys(where).length))
 		)
 			where = undefined;
+
+		if (options.sort) {
+			let sortArray: [string, boolean][],
+				isLineNumbers = true,
+				keepItems: number[] = [];
+
+			if (Utils.isObject(options.sort) && !Array.isArray(options.sort)) {
+				// {name: "ASC", age: "DESC"}
+				sortArray = Object.entries(options.sort).map(([key, value]) => [
+					key,
+					typeof value === "string" ? value.toLowerCase() === "asc" : value > 0,
+				]);
+			} else
+				sortArray = ([] as string[])
+					.concat(options.sort as string | string[])
+					.map((column) => [column, true]);
+
+			let cacheKey = "";
+			// Criteria
+			if (this.tables[tableName].config.cache)
+				cacheKey = UtilsServer.hashString(inspect(sortArray, { sorted: true }));
+
+			if (where) {
+				const lineNumbers = await this.get(
+					tableName,
+					where,
+					undefined,
+					undefined,
+					true,
+				);
+				keepItems = Object.values(
+					(await File.get(
+						join(tablePath, `id${this.getFileExtension(tableName)}`),
+						lineNumbers,
+						"number",
+						undefined,
+						this.salt,
+					)) ?? {},
+				).map(Number);
+				isLineNumbers = false;
+				if (!keepItems.length) throw this.throwError("NO_RESULTS", tableName);
+				keepItems = keepItems.slice(
+					((options.page as number) - 1) * (options.perPage as number),
+					(options.page as number) * (options.perPage as number),
+				);
+			}
+
+			if (!keepItems.length)
+				keepItems = Array.from(
+					{ length: options.perPage },
+					(_, index) =>
+						((options.page as number) - 1) * (options.perPage as number) +
+						index +
+						1,
+				);
+
+			const filesPathes = [["id", true], ...sortArray].map((column) =>
+				join(tablePath, `${column[0]}${this.getFileExtension(tableName)}`),
+			);
+			for await (const path of filesPathes.slice(1))
+				if (!(await File.isExists(path))) return null;
+
+			// Construct the paste command to merge files and filter lines by IDs
+			const pasteCommand = `paste ${filesPathes.join(" ")}`;
+
+			// Construct the sort command dynamically based on the number of files for sorting
+			const index = 2;
+			const sortColumns = sortArray
+				.map(([key, ascending], i) => {
+					const field = Utils.getField(key, schema);
+					if (field)
+						return `-k${i + index},${i + index}${
+							Utils.isFieldType(
+								["id", "number", "date"],
+								field.type,
+								field.children,
+							)
+								? "n"
+								: ""
+						}${!ascending ? "r" : ""}`;
+					return "";
+				})
+				.join(" ");
+			const sortCommand = `sort ${sortColumns} -T=${join(tablePath, ".tmp")}`;
+
+			// Construct the awk command to keep only the specified lines after sorting
+			const awkCommand = isLineNumbers
+				? `awk '${keepItems.map((lineNumber) => `NR==${lineNumber}`).join(" || ")}'`
+				: `awk '${keepItems.map((id) => `$1 ~ /^${id} */`).join(" || ")}'`;
+
+			try {
+				if (cacheKey) await File.lock(join(tablePath, ".tmp"), cacheKey);
+				// Combine && Execute the commands synchronously
+				const lines = (
+					await UtilsServer.exec(
+						this.tables[tableName].config.cache
+							? (await File.isExists(
+									join(tablePath, ".cache", `${cacheKey}${this.fileExtension}`),
+								))
+								? `${awkCommand} ${join(
+										tablePath,
+										".cache",
+										`${cacheKey}${this.fileExtension}`,
+									)}`
+								: `${pasteCommand} | ${sortCommand} -o ${join(
+										tablePath,
+										".cache",
+										`${cacheKey}${this.fileExtension}`,
+									)} && ${awkCommand} ${join(
+										tablePath,
+										".cache",
+										`${cacheKey}${this.fileExtension}`,
+									)}`
+							: `${pasteCommand} | ${sortCommand} | ${awkCommand}`,
+						{
+							encoding: "utf-8",
+						},
+					)
+				).stdout
+					.trim()
+					.split("\n");
+
+				// Parse the result and extract the specified lines
+				const outputArray: Data[] = lines.map((line) => {
+					const splitedFileColumns = line.split("\t"); // Assuming tab-separated columns
+					const outputObject: Record<string, any> = {};
+
+					// Extract values for each file, including `id${this.getFileExtension(tableName)}`
+					filesPathes.forEach((fileName, index) => {
+						const field = Utils.getField(parse(fileName).name, schema);
+						if (field)
+							outputObject[field.key as string] = File.decode(
+								splitedFileColumns[index],
+								field?.type,
+								field?.children as any,
+								this.salt,
+							);
+					});
+
+					return outputObject;
+				});
+
+				const restOfColumns = await this.get(
+					tableName,
+					outputArray.map(({ id }) => id as string),
+					(({ sort, ...rest }) => rest)(options),
+				);
+
+				return restOfColumns
+					? outputArray.map((item) => ({
+							...item,
+							...restOfColumns.find(({ id }) => id === item.id),
+						}))
+					: outputArray;
+			} finally {
+				if (cacheKey) await File.unlock(join(tablePath, ".tmp"), cacheKey);
+			}
+		}
 
 		if (!where) {
 			// Display all data
@@ -1543,6 +1710,13 @@ export default class Inibase {
 				return Object.keys(lineNumbers).length
 					? Object.keys(lineNumbers).map(Number)
 					: null;
+
+			if (options.columns) {
+				options.columns = (options.columns as string[]).filter(
+					(column) => column !== "id",
+				);
+				if (!options.columns?.length) options.columns = undefined;
+			}
 
 			RETURN = Object.values(
 				(await this.getItemsFromSchema(
@@ -2291,191 +2465,5 @@ export default class Inibase {
 			}
 		}
 		return RETURN;
-	}
-
-	/**
-	 * Sort column(s) of a table
-	 *
-	 * @param {string} tableName
-	 * @param {(string
-	 * 			| string[]
-	 * 			| Record<string, 1 | -1 | "asc" | "ASC" | "desc" | "DESC">)} columns
-	 * @param {(string | number | (string | number)[] | Criteria)} [where]
-	 * @param {Options} [options={
-	 * 			page: 1,
-	 * 			perPage: 15,
-	 * 		}]
-	 */
-	public async sort(
-		tableName: string,
-		columns:
-			| string
-			| string[]
-			| Record<string, 1 | -1 | "asc" | "ASC" | "desc" | "DESC">,
-		where?: string | number | (string | number)[] | Criteria,
-		options: Options = {
-			page: 1,
-			perPage: 15,
-		},
-	) {
-		const tablePath = join(this.databasePath, tableName),
-			schema = (await this.throwErrorIfTableEmpty(tableName)).schema as Schema;
-
-		// Default values for page and perPage
-		options.page = options.page || 1;
-		options.perPage = options.perPage || 15;
-
-		let sortArray: [string, boolean][],
-			isLineNumbers = true,
-			keepItems: number[] = [];
-
-		if (Utils.isObject(columns) && !Array.isArray(columns)) {
-			// {name: "ASC", age: "DESC"}
-			sortArray = Object.entries(columns).map(([key, value]) => [
-				key,
-				typeof value === "string" ? value.toLowerCase() === "asc" : value > 0,
-			]);
-		} else {
-			if (!Array.isArray(columns)) columns = [columns];
-			sortArray = columns.map((column) => [column, true]);
-		}
-
-		let cacheKey = "";
-		// Criteria
-		if (this.tables[tableName].config.cache)
-			cacheKey = UtilsServer.hashString(inspect(sortArray, { sorted: true }));
-
-		if (where) {
-			const lineNumbers = await this.get(
-				tableName,
-				where,
-				undefined,
-				undefined,
-				true,
-			);
-			keepItems = Object.values(
-				(await File.get(
-					join(tablePath, `id${this.getFileExtension(tableName)}`),
-					lineNumbers,
-					"number",
-					undefined,
-					this.salt,
-				)) ?? {},
-			).map(Number);
-			isLineNumbers = false;
-			if (!keepItems.length) throw this.throwError("NO_RESULTS", tableName);
-			keepItems = keepItems.slice(
-				((options.page as number) - 1) * (options.perPage as number),
-				(options.page as number) * (options.perPage as number),
-			);
-		}
-
-		if (!keepItems.length)
-			keepItems = Array.from(
-				{ length: options.perPage },
-				(_, index) =>
-					((options.page as number) - 1) * (options.perPage as number) +
-					index +
-					1,
-			);
-
-		const filesPathes = [["id", true], ...sortArray].map((column) =>
-			join(tablePath, `${column[0]}${this.getFileExtension(tableName)}`),
-		);
-		// Construct the paste command to merge files and filter lines by IDs
-		const pasteCommand = `paste ${filesPathes.join(" ")}`;
-
-		// Construct the sort command dynamically based on the number of files for sorting
-		const index = 2;
-		const sortColumns = sortArray
-			.map(([key, ascending], i) => {
-				const field = Utils.getField(key, schema);
-				if (field)
-					return `-k${i + index},${i + index}${
-						field.type === "number" ? "n" : ""
-					}${!ascending ? "r" : ""}`;
-				return "";
-			})
-			.join(" ");
-		const sortCommand = `sort ${sortColumns}`;
-
-		// Construct the awk command to keep only the specified lines after sorting
-		const awkCommand = isLineNumbers
-			? `awk '${keepItems.map((line) => `NR==${line}`).join(" || ")}'`
-			: `awk 'NR==${keepItems[0]}${keepItems
-					.map((num) => `||NR==${num}`)
-					.join("")}'`;
-
-		try {
-			if (cacheKey) await File.lock(join(tablePath, ".tmp"), cacheKey);
-
-			// Combine the commands
-			// Execute the command synchronously
-			const lines = (
-				await UtilsServer.exec(
-					this.tables[tableName].config.cache
-						? (await File.isExists(
-								join(tablePath, ".cache", `${cacheKey}${this.fileExtension}`),
-							))
-							? `${awkCommand} ${join(
-									tablePath,
-									".cache",
-									`${cacheKey}${this.fileExtension}`,
-								)}`
-							: `${pasteCommand} | ${sortCommand} -o ${join(
-									tablePath,
-									".cache",
-									`${cacheKey}${this.fileExtension}`,
-								)} && ${awkCommand} ${join(
-									tablePath,
-									".cache",
-									`${cacheKey}${this.fileExtension}`,
-								)}`
-						: `${pasteCommand} | ${sortCommand} | ${awkCommand}`,
-					{
-						encoding: "utf-8",
-					},
-				)
-			).stdout
-				.trim()
-				.split("\n");
-
-			// Parse the result and extract the specified lines
-			const outputArray = lines.map((line) => {
-				const splitedFileColumns = line.split("\t"); // Assuming tab-separated columns
-				const outputObject: Record<string, any> = {};
-
-				// Extract values for each file, including `id${this.getFileExtension(tableName)}`
-				filesPathes.forEach((fileName, index) => {
-					const field = Utils.getField(parse(fileName).name, schema);
-					if (field)
-						outputObject[field.key as string] = File.decode(
-							splitedFileColumns[index],
-							field?.type,
-							field?.children as any,
-							this.salt,
-						);
-				});
-
-				return outputObject;
-			});
-			const restOfColumns = await this.get(
-				tableName,
-				outputArray.map(({ id }) => id),
-				options,
-				undefined,
-				undefined,
-				true,
-			);
-
-			return restOfColumns
-				? outputArray.map((item, index) => ({
-						...item,
-						...restOfColumns[index],
-					}))
-				: outputArray;
-		} finally {
-			if (cacheKey) await File.unlock(join(tablePath, ".tmp"), cacheKey);
-		}
 	}
 }

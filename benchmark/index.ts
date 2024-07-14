@@ -1,7 +1,7 @@
 import { rm } from "node:fs/promises";
 import { Bench } from "tinybench";
-import { isExists } from "../src/file";
 import Inibase from "../src";
+import { isExists } from "../src/file";
 
 const bench = new Bench();
 
@@ -67,10 +67,10 @@ bench
 				i++;
 			},
 		},
-	)
-	.add("DELETE", async () => {
-		await db.delete("user", 1);
-	});
+	);
+// .add("DELETE", async () => {
+// 	await db.delete("user", 1);
+// });
 
 await bench.warmup(); // make results more reliable, ref: https://github.com/tinylibs/tinybench/pull/50
 await bench.run();

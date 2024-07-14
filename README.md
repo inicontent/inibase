@@ -632,11 +632,11 @@ import Inibase from "inibase";
 const db = new Inibase("/databaseName");
 
 // order users by the age column
-await db.sort("user", "age");
+await db.get("user", undefined, { sort: "age" });
 
 // order users by the age and username columns
-await db.sort("user", ["age","username"]);
-await db.sort("user", {age: -1, username: "asc"});
+await db.get("user", undefined, { sort: ["age", "username"] });
+await db.get("user", undefined, { sort: {age: -1, username: "asc"} });
 ```
 </blockquote>
 </details>

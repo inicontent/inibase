@@ -7,7 +7,7 @@ import { parseArgs } from "node:util";
 import Inison from "inison";
 
 import { isExists } from "./file.js";
-import Inibase, { type Criteria, type Data } from "./index.js";
+import Inibase, { type Options, type Criteria, type Data } from "./index.js";
 import { isJSON, isNumber, setField, unsetField } from "./utils.js";
 
 const textGreen = (input: string) => `\u001b[1;32m${input}\u001b[0m`;
@@ -219,9 +219,10 @@ console.log(`   ${textGreen("config")} | ${textGreen("c")}
 
 			let where: undefined | string | number | Criteria | (string | number)[] =
 					undefined,
-				page: undefined | number = undefined,
-				perPage: undefined | number = undefined,
-				columns: undefined | string | string[] = undefined,
+				page: undefined | Options["page"] = undefined,
+				perPage: undefined | Options["perPage"] = undefined,
+				columns: undefined | Options["columns"] = undefined,
+				order: undefined | Options["order"] = undefined,
 				data: undefined | Data = undefined;
 
 			if (splitedInput.toSpliced(0, 1).length) {
@@ -231,6 +232,7 @@ console.log(`   ${textGreen("config")} | ${textGreen("c")}
 						where: { type: "string", short: "w" },
 						page: { type: "string", short: "p" },
 						perPage: { type: "string", short: "l" },
+						order: { type: "string", short: "o" },
 						columns: { type: "string", short: "c", multiple: true },
 						data: { type: "string", short: "d" },
 					},
@@ -241,6 +243,11 @@ console.log(`   ${textGreen("config")} | ${textGreen("c")}
 					else if (isNumber(parsedArgs.where)) where = Number(parsedArgs.where);
 					else if (isJSON(parsedArgs.where))
 						where = Inison.unstringify(parsedArgs.where) as any;
+				}
+				if (parsedArgs.order) {
+					if (isJSON(parsedArgs.order))
+						order = Inison.unstringify(parsedArgs.order) as any;
+					else order = parsedArgs.order;
 				}
 				page = Number(parsedArgs.page) ?? undefined;
 				perPage = Number(parsedArgs.perPage) ?? undefined;
@@ -257,6 +264,7 @@ console.log(`   ${textGreen("config")} | ${textGreen("c")}
 							page: Number(page) ?? 1,
 							perPage: Number(perPage) ?? 15,
 							columns,
+							order,
 						}),
 					);
 					break;
