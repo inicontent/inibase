@@ -222,7 +222,7 @@ console.log(`   ${textGreen("config")} | ${textGreen("c")}
 				page: undefined | Options["page"] = undefined,
 				perPage: undefined | Options["perPage"] = undefined,
 				columns: undefined | Options["columns"] = undefined,
-				order: undefined | Options["order"] = undefined,
+				sort: undefined | Options["sort"] = undefined,
 				data: undefined | Data = undefined;
 
 			if (splitedInput.toSpliced(0, 1).length) {
@@ -232,7 +232,7 @@ console.log(`   ${textGreen("config")} | ${textGreen("c")}
 						where: { type: "string", short: "w" },
 						page: { type: "string", short: "p" },
 						perPage: { type: "string", short: "l" },
-						order: { type: "string", short: "o" },
+						sort: { type: "string", short: "s" },
 						columns: { type: "string", short: "c", multiple: true },
 						data: { type: "string", short: "d" },
 					},
@@ -244,10 +244,10 @@ console.log(`   ${textGreen("config")} | ${textGreen("c")}
 					else if (isJSON(parsedArgs.where))
 						where = Inison.unstringify(parsedArgs.where) as any;
 				}
-				if (parsedArgs.order) {
-					if (isJSON(parsedArgs.order))
-						order = Inison.unstringify(parsedArgs.order) as any;
-					else order = parsedArgs.order;
+				if (parsedArgs.sort) {
+					if (isJSON(parsedArgs.sort))
+						sort = Inison.unstringify(parsedArgs.sort) as any;
+					else sort = parsedArgs.sort;
 				}
 				page = Number(parsedArgs.page) ?? undefined;
 				perPage = Number(parsedArgs.perPage) ?? undefined;
@@ -264,7 +264,7 @@ console.log(`   ${textGreen("config")} | ${textGreen("c")}
 							page: Number(page) ?? 1,
 							perPage: Number(perPage) ?? 15,
 							columns,
-							order,
+							sort,
 						}),
 					);
 					break;
