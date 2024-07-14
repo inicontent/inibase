@@ -427,32 +427,34 @@ export default class Inibase {
 		const schemaFile = await readFile(tableSchemaPath, "utf8");
 
 		if (!schemaFile) return undefined;
-		const schema = JSON.parse(schemaFile),
-			lastIdNumber = UtilsServer.findLastIdNumber(schema, this.salt);
 
-		if (!encodeIDs) return schema;
+		let schema = JSON.parse(schemaFile);
+		const lastIdNumber = UtilsServer.findLastIdNumber(schema, this.salt);
 
-		return [
+		schema = [
 			{
-				id: UtilsServer.encodeID(0, this.salt),
+				id: 0,
 				key: "id",
 				type: "id",
 				required: true,
 			},
-			...UtilsServer.encodeSchemaID(schema, this.salt),
+			...schema,
 			{
-				id: UtilsServer.encodeID(lastIdNumber + 1, this.salt),
+				id: lastIdNumber + 1,
 				key: "createdAt",
 				type: "date",
 				required: true,
 			},
 			{
-				id: UtilsServer.encodeID(lastIdNumber + 2, this.salt),
+				id: lastIdNumber + 2,
 				key: "updatedAt",
 				type: "date",
 				required: false,
 			},
 		];
+
+		if (!encodeIDs) return schema;
+		return UtilsServer.encodeSchemaID(schema, this.salt);
 	}
 
 	private async throwErrorIfTableEmpty(
