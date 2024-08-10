@@ -1458,8 +1458,7 @@ export default class Inibase {
 
 		if (options.sort) {
 			let sortArray: [string, boolean][],
-				isLineNumbers = true,
-				keepItems: number[] = [];
+				awkCommand = "";
 
 			if (Utils.isObject(options.sort) && !Array.isArray(options.sort)) {
 				// {name: "ASC", age: "DESC"}
@@ -1485,7 +1484,8 @@ export default class Inibase {
 					undefined,
 					true,
 				);
-				keepItems = Object.values(
+				if (!lineNumbers.length) throw this.throwError("NO_RESULTS", tableName);
+				const itemsIDs = Object.values(
 					(await File.get(
 						join(tablePath, `id${this.getFileExtension(tableName)}`),
 						lineNumbers,
@@ -1494,22 +1494,17 @@ export default class Inibase {
 						this.salt,
 					)) ?? {},
 				).map(Number);
-				isLineNumbers = false;
-				if (!keepItems.length) throw this.throwError("NO_RESULTS", tableName);
-				keepItems = keepItems.slice(
-					((options.page as number) - 1) * (options.perPage as number),
-					(options.page as number) * (options.perPage as number),
-				);
-			}
-
-			if (!keepItems.length)
-				keepItems = Array.from(
+				awkCommand = `awk '${itemsIDs.map((id) => `$1 == ${id}`).join(" || ")}'`;
+			} else
+				awkCommand = `awk '${Array.from(
 					{ length: options.perPage },
 					(_, index) =>
 						((options.page as number) - 1) * (options.perPage as number) +
 						index +
 						1,
-				);
+				)
+					.map((lineNumber) => `NR==${lineNumber}`)
+					.join(" || ")}'`;
 
 			const filesPathes = [["id", true], ...sortArray].map((column) =>
 				join(tablePath, `${column[0]}${this.getFileExtension(tableName)}`),
@@ -1540,15 +1535,11 @@ export default class Inibase {
 				.join(" ");
 			const sortCommand = `sort ${sortColumns} -T=${join(tablePath, ".tmp")}`;
 
-			// Construct the awk command to keep only the specified lines after sorting
-			const awkCommand = isLineNumbers
-				? `awk '${keepItems.map((lineNumber) => `NR==${lineNumber}`).join(" || ")}'`
-				: `awk '${keepItems.map((id) => `$1 ~ /^${id} */`).join(" || ")}'`;
-
 			try {
 				if (cacheKey) await File.lock(join(tablePath, ".tmp"), cacheKey);
 				// Combine && Execute the commands synchronously
-				const lines = (
+
+				let lines = (
 					await UtilsServer.exec(
 						this.tables[tableName].config.cache
 							? (await File.isExists(
@@ -1576,6 +1567,18 @@ export default class Inibase {
 				).stdout
 					.trim()
 					.split("\n");
+
+				if (where)
+					lines = lines.slice(
+						((options.page as number) - 1) * (options.perPage as number),
+						(options.page as number) * (options.perPage as number),
+					);
+				else if (!this.totalItems[`${tableName}-*`])
+					this.totalItems[`${tableName}-*`] = await File.count(
+						join(tablePath, `id${this.getFileExtension(tableName)}`),
+					);
+
+				if (!lines.length) return null;
 
 				// Parse the result and extract the specified lines
 				const outputArray: Data[] = lines.map((line) => {
@@ -1630,13 +1633,14 @@ export default class Inibase {
 					options,
 				),
 			);
-			if (await File.isExists(join(tablePath, ".cache", ".pagination")))
-				this.totalItems[`${tableName}-*`] = Number(
-					(
-						await readFile(join(tablePath, ".cache", ".pagination"), "utf8")
-					).split(",")[1],
-				);
-			else {
+			if (await File.isExists(join(tablePath, ".cache", ".pagination"))) {
+				if (!this.totalItems[`${tableName}-*`])
+					this.totalItems[`${tableName}-*`] = Number(
+						(
+							await readFile(join(tablePath, ".cache", ".pagination"), "utf8")
+						).split(",")[1],
+					);
+			} else {
 				const lastId = Number(
 					Object.keys(
 						(
@@ -1652,9 +1656,10 @@ export default class Inibase {
 					),
 				);
 
-				this.totalItems[`${tableName}-*`] = await File.count(
-					join(tablePath, `id${this.getFileExtension(tableName)}`),
-				);
+				if (!this.totalItems[`${tableName}-*`])
+					this.totalItems[`${tableName}-*`] = await File.count(
+						join(tablePath, `id${this.getFileExtension(tableName)}`),
+					);
 
 				await writeFile(
 					join(tablePath, ".cache", ".pagination"),
@@ -1669,6 +1674,9 @@ export default class Inibase {
 			let lineNumbers = where as number | number[];
 			if (!Array.isArray(lineNumbers)) lineNumbers = [lineNumbers];
 
+			if (!this.totalItems[`${tableName}-*`])
+				this.totalItems[`${tableName}-*`] = lineNumbers.length;
+
 			// useless
 			if (onlyLinesNumbers) return lineNumbers;
 
@@ -1680,9 +1688,6 @@ export default class Inibase {
 					options,
 				)) ?? {},
 			);
-
-			if (!this.totalItems[`${tableName}-*`])
-				this.totalItems[`${tableName}-*`] = lineNumbers.length;
 
 			if (RETURN?.length && !Array.isArray(where))
 				RETURN = (RETURN as Data[])[0];
@@ -1708,6 +1713,9 @@ export default class Inibase {
 			);
 			if (!lineNumbers) throw this.throwError("NO_RESULTS", tableName);
 
+			if (!this.totalItems[`${tableName}-*`])
+				this.totalItems[`${tableName}-*`] = countItems;
+
 			if (onlyLinesNumbers)
 				return Object.keys(lineNumbers).length
 					? Object.keys(lineNumbers).map(Number)
@@ -1729,9 +1737,6 @@ export default class Inibase {
 				)) ?? {},
 			);
 
-			if (!this.totalItems[`${tableName}-*`])
-				this.totalItems[`${tableName}-*`] = countItems;
-
 			if (RETURN?.length && !Array.isArray(where))
 				RETURN = (RETURN as Data[])[0];
 		} else if (Utils.isObject(where)) {
@@ -1751,7 +1756,8 @@ export default class Inibase {
 				(await File.isExists(cachedFilePath))
 			) {
 				const cachedItems = (await readFile(cachedFilePath, "utf8")).split(",");
-				this.totalItems[`${tableName}-*`] = cachedItems.length;
+				if (!this.totalItems[`${tableName}-*`])
+					this.totalItems[`${tableName}-*`] = cachedItems.length;
 				if (onlyLinesNumbers) return cachedItems.map(Number);
 
 				return this.get(
@@ -1773,7 +1779,9 @@ export default class Inibase {
 				where as Criteria,
 			);
 			if (RETURN && linesNumbers) {
-				if (onlyLinesNumbers) return Object.keys(RETURN).map(Number);
+				if (!this.totalItems[`${tableName}-*`])
+					this.totalItems[`${tableName}-*`] = linesNumbers.size;
+				if (onlyLinesNumbers) return Array.from(linesNumbers);
 				const alreadyExistsColumns = Object.keys(Object.values(RETURN)[0]),
 					alreadyExistsColumnsIDs = Utils.flattenSchema(schema)
 						.filter(({ key }) => alreadyExistsColumns.includes(key))
@@ -1906,10 +1914,10 @@ export default class Inibase {
 							)?.[0] ?? 0,
 						),
 					);
-
-					this.totalItems[`${tableName}-*`] = await File.count(
-						join(tablePath, `id${this.getFileExtension(tableName)}`),
-					);
+					if (!this.totalItems[`${tableName}-*`])
+						this.totalItems[`${tableName}-*`] = await File.count(
+							join(tablePath, `id${this.getFileExtension(tableName)}`),
+						);
 				}
 			} else this.totalItems[`${tableName}-*`] = 0;
 
