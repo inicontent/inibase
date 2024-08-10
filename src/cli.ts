@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import "dotenv/config";
 import { readFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
 import Inison from "inison";
@@ -15,10 +15,11 @@ const textRed = (input: string) => `\u001b[1;31m${input}\u001b[0m`;
 const textBlue = (input: string) => `\u001b[1;34m${input}\u001b[0m`;
 const textMagenta = (input: string) => `\u001b[1;35m${input}\u001b[0m`;
 
-let { path, version } = parseArgs({
+let { path, version, table } = parseArgs({
 	options: {
 		path: { type: "string", short: "p" },
 		version: { type: "boolean", short: "v" },
+		table: { type: "string", short: "t" },
 	},
 }).values;
 
@@ -38,17 +39,18 @@ const setPath = async (firstTime?: boolean) => {
 		path = await rl.question(
 			firstTime ? "Database path: " : "Please type a valid database path: ",
 		);
-	if (!path || !(await isExists(basename(path)))) await setPath();
+	if (!path || !(await isExists(path))) await setPath();
 };
 console.clear();
 
 await setPath(true);
-const db = new Inibase(basename(path as string));
+
+const db = new Inibase(path as string);
 
 process.stdout.write("\u001b[3J\u001b[2J\u001b[1J");
 console.clear();
 rl.prompt();
-let table: string;
+
 rl.on("line", async (input) => {
 	const splitedInput = input
 		.trim()
@@ -80,6 +82,7 @@ console.log(`   ${textGreen("config")} | ${textGreen("c")}
 	${textMagenta("--page")} | ${textMagenta("-p")}  number?	
 	${textMagenta("--per-page")} | ${textMagenta("-l")}  number?
 	${textMagenta("--columns")} | ${textMagenta("-c")}  columnName[]?
+	${textMagenta("--sort")} | ${textMagenta("-s")}  (string|string[]|Inison.stringify(sortObject))?
 	${textMagenta("--data")} | ${textMagenta("-d")}  Inison.stringify(Data) ${textRed("* POST & PUT")}`
 );
 			break;
