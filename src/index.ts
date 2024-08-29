@@ -993,7 +993,7 @@ export default class Inibase {
 								RETURN[index][field.key] = item
 									? await this.get(
 											field.table as string,
-											item as number,
+											UtilsServer.encodeID(item as number, this.salt),
 											options,
 										)
 									: this.getDefaultValue(field);
@@ -1080,7 +1080,11 @@ export default class Inibase {
 						for await (const [index, item] of Object.entries(items)) {
 							if (!RETURN[index]) RETURN[index] = {};
 							RETURN[index][field.key] = item
-								? await this.get(field.table as string, item as number, options)
+								? await this.get(
+										field.table as string,
+										UtilsServer.encodeID(item as number, this.salt),
+										options,
+									)
 								: this.getDefaultValue(field);
 						}
 				}
