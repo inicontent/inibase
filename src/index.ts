@@ -986,14 +986,13 @@ export default class Inibase {
 							field.children,
 							this.salt,
 						);
-
 						if (items)
 							for await (const [index, item] of Object.entries(items)) {
 								if (!RETURN[index]) RETURN[index] = {};
 								RETURN[index][field.key] = item
 									? await this.get(
 											field.table as string,
-											UtilsServer.encodeID(item as number, this.salt),
+											item as string | string[],
 											options,
 										)
 									: this.getDefaultValue(field);
