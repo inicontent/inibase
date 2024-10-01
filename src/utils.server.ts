@@ -224,7 +224,7 @@ export const hashString = (str: string): string =>
  *
  * @param operator - The comparison operator (e.g., '=', '!=', '>', '<', '>=', '<=', '[]', '![]', '*', '!*').
  * @param originalValue - The value to compare, can be a single value or an array of values.
- * @param comparedAtValue - The value or values to compare against.
+ * @param comparedValue - The value or values to compare against.
  * @param fieldType - Optional type of the field to guide comparison (e.g., 'password', 'boolean').
  * @param fieldChildrenType - Optional type for child elements in array inputs.
  * @returns boolean - Result of the comparison operation.
@@ -239,7 +239,7 @@ export const compare = (
 		| boolean
 		| null
 		| (string | number | boolean | null)[],
-	comparedAtValue:
+	comparedValue:
 		| string
 		| number
 		| boolean
@@ -254,9 +254,9 @@ export const compare = (
 	}
 
 	// Handle comparisons involving arrays.
-	if (Array.isArray(comparedAtValue) && !["[]", "![]"].includes(operator)) {
-		return comparedAtValue.some((comparedAtValueSingle) =>
-			compare(operator, originalValue, comparedAtValueSingle, fieldType),
+	if (Array.isArray(comparedValue) && !["[]", "![]"].includes(operator)) {
+		return comparedValue.some((value) =>
+			compare(operator, originalValue, value, fieldType),
 		);
 	}
 
@@ -264,59 +264,59 @@ export const compare = (
 	switch (operator) {
 		// Equal (Case Insensitive for strings, specific handling for passwords and booleans).
 		case "=":
-			return isEqual(originalValue, comparedAtValue, fieldType);
+			return isEqual(originalValue, comparedValue, fieldType);
 
 		// Not Equal.
 		case "!=":
-			return !isEqual(originalValue, comparedAtValue, fieldType);
+			return !isEqual(originalValue, comparedValue, fieldType);
 
 		// Greater Than.
 		case ">":
-			return (
-				originalValue !== null &&
-				comparedAtValue !== null &&
-				originalValue > comparedAtValue
+			return compareNonNullValues(
+				originalValue,
+				comparedValue,
+				(a, b) => a > b,
 			);
 
 		// Less Than.
 		case "<":
-			return (
-				originalValue !== null &&
-				comparedAtValue !== null &&
-				originalValue < comparedAtValue
+			return compareNonNullValues(
+				originalValue,
+				comparedValue,
+				(a, b) => a < b,
 			);
 
 		// Greater Than or Equal.
 		case ">=":
-			return (
-				originalValue !== null &&
-				comparedAtValue !== null &&
-				originalValue >= comparedAtValue
+			return compareNonNullValues(
+				originalValue,
+				comparedValue,
+				(a, b) => a >= b,
 			);
 
 		// Less Than or Equal.
 		case "<=":
-			return (
-				originalValue !== null &&
-				comparedAtValue !== null &&
-				originalValue <= comparedAtValue
+			return compareNonNullValues(
+				originalValue,
+				comparedValue,
+				(a, b) => a <= b,
 			);
 
 		// Array Contains (equality check for arrays).
 		case "[]":
-			return isArrayEqual(originalValue, comparedAtValue);
+			return isArrayEqual(originalValue, comparedValue);
 
 		// Array Does Not Contain.
 		case "![]":
-			return !isArrayEqual(originalValue, comparedAtValue);
+			return !isArrayEqual(originalValue, comparedValue);
 
 		// Wildcard Match (using regex pattern).
 		case "*":
-			return isWildcardMatch(originalValue, comparedAtValue);
+			return isWildcardMatch(originalValue, comparedValue);
 
 		// Not Wildcard Match.
 		case "!*":
-			return !isWildcardMatch(originalValue, comparedAtValue);
+			return !isWildcardMatch(originalValue, comparedValue);
 
 		// Unsupported operator.
 		default:
@@ -325,10 +325,25 @@ export const compare = (
 };
 
 /**
+ * Helper function to handle non-null comparisons.
+ */
+const compareNonNullValues = (
+	originalValue: any,
+	comparedValue: any,
+	comparator: (a: any, b: any) => boolean,
+): boolean => {
+	return (
+		originalValue !== null &&
+		comparedValue !== null &&
+		comparator(originalValue, comparedValue)
+	);
+};
+
+/**
  * Helper function to check equality based on the field type.
  *
  * @param originalValue - The original value.
- * @param comparedAtValue - The value to compare against.
+ * @param comparedValue - The value to compare against.
  * @param fieldType - Type of the field.
  * @returns boolean - Result of the equality check.
  */
@@ -339,29 +354,23 @@ export const isEqual = (
 		| boolean
 		| null
 		| (string | number | boolean | null)[],
-	comparedAtValue:
+	comparedValue:
 		| string
 		| number
 		| boolean
 		| null
 		| (string | number | boolean | null)[],
-	fieldType?: FieldType | FieldType[],
+	fieldType?: FieldType,
 ): boolean => {
-	// Switch based on the field type for specific handling.
 	switch (fieldType) {
-		// Password comparison.
 		case "password":
-			return isPassword(originalValue) && typeof comparedAtValue === "string"
-				? comparePassword(originalValue, comparedAtValue)
+			return isPassword(originalValue) && typeof comparedValue === "string"
+				? comparePassword(originalValue, comparedValue)
 				: false;
-
-		// Boolean comparison.
 		case "boolean":
-			return Number(originalValue) === Number(comparedAtValue);
-
-		// Default comparison.
+			return Number(originalValue) === Number(comparedValue);
 		default:
-			return originalValue == comparedAtValue;
+			return originalValue == comparedValue;
 	}
 };
 
@@ -369,7 +378,7 @@ export const isEqual = (
  * Helper function to check array equality.
  *
  * @param originalValue - The original value.
- * @param comparedAtValue - The value to compare against.
+ * @param comparedValue - The value to compare against.
  * @returns boolean - Result of the array equality check.
  */
 export const isArrayEqual = (
@@ -379,34 +388,32 @@ export const isArrayEqual = (
 		| boolean
 		| null
 		| (string | number | boolean | null)[],
-	comparedAtValue:
+	comparedValue:
 		| string
 		| number
 		| boolean
 		| null
 		| (string | number | boolean | null)[],
 ): boolean => {
-	return (
-		(Array.isArray(originalValue) &&
-			Array.isArray(comparedAtValue) &&
-			originalValue.some((v) => comparedAtValue.includes(v))) ||
-		(Array.isArray(originalValue) &&
-			!Array.isArray(comparedAtValue) &&
-			originalValue.includes(comparedAtValue)) ||
-		(!Array.isArray(originalValue) &&
-			Array.isArray(comparedAtValue) &&
-			comparedAtValue.includes(originalValue)) ||
-		(!Array.isArray(originalValue) &&
-			!Array.isArray(comparedAtValue) &&
-			comparedAtValue === originalValue)
-	);
+	if (Array.isArray(originalValue) && Array.isArray(comparedValue)) {
+		return originalValue.some((v) => comparedValue.includes(v));
+	}
+	if (Array.isArray(originalValue)) {
+		return originalValue.includes(
+			comparedValue as string | number | boolean | null,
+		);
+	}
+	if (Array.isArray(comparedValue)) {
+		return comparedValue.includes(originalValue);
+	}
+	return originalValue === comparedValue;
 };
 
 /**
  * Helper function to check wildcard pattern matching using regex.
  *
  * @param originalValue - The original value.
- * @param comparedAtValue - The value with wildcard pattern.
+ * @param comparedValue - The value with wildcard pattern.
  * @returns boolean - Result of the wildcard pattern matching.
  */
 export const isWildcardMatch = (
@@ -416,16 +423,23 @@ export const isWildcardMatch = (
 		| boolean
 		| null
 		| (string | number | boolean | null)[],
-	comparedAtValue:
+	comparedValue:
 		| string
 		| number
 		| boolean
 		| null
 		| (string | number | boolean | null)[],
 ): boolean => {
-	const wildcardPattern = `^${(String(comparedAtValue).includes("%")
-		? String(comparedAtValue)
-		: `%${String(comparedAtValue)}%`
+	const comparedValueStr = String(comparedValue);
+	const originalValueStr = String(originalValue);
+	if (
+		!comparedValueStr.includes("%") &&
+		(comparedValueStr === originalValueStr ||
+			comparedValueStr.toLowerCase() === originalValueStr.toLowerCase())
+	)
+		return true;
+	const wildcardPattern = `^${(
+		comparedValueStr.includes("%") ? comparedValueStr : `%${comparedValueStr}%`
 	).replace(/%/g, ".*")}$`;
-	return new RegExp(wildcardPattern, "i").test(String(originalValue));
+	return new RegExp(wildcardPattern, "i").test(originalValueStr);
 };
