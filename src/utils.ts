@@ -68,7 +68,7 @@ export const deepMerge = (target: any, source: any): any => {
 		if (Object.hasOwn(source, key)) {
 			if (isObject(source[key]) && isObject(target[key]))
 				target[key] = deepMerge(target[key], source[key]);
-			else target[key] = source[key];
+			else if (source[key] !== null) target[key] = source[key];
 		}
 	}
 	return target;
