@@ -973,11 +973,6 @@ export default class Inibase {
 							),
 						))
 					) {
-						if (options.columns)
-							options.columns = (options.columns as string[])
-								.filter((column) => column.includes(`${field.key}.`))
-								.map((column) => column.replace(`${field.key}.`, ""));
-
 						const items = await File.get(
 							join(
 								tablePath,
@@ -997,7 +992,12 @@ export default class Inibase {
 									RETURN[index][field.key] = await this.get(
 										field.table as string,
 										item as string | string[],
-										options,
+										{
+											...options,
+											columns: (options.columns as string[] | undefined)
+												?.filter((column) => column.includes(`${field.key}.`))
+												.map((column) => column.replace(`${field.key}.`, "")),
+										},
 									);
 							}
 					}
@@ -1060,11 +1060,6 @@ export default class Inibase {
 						),
 					))
 				) {
-					if (options.columns)
-						options.columns = (options.columns as string[])
-							.filter((column) => column.includes(`${field.key}.`))
-							.map((column) => column.replace(`${field.key}.`, ""));
-
 					const items = await File.get(
 						join(
 							tablePath,
@@ -1085,7 +1080,12 @@ export default class Inibase {
 								RETURN[index][field.key] = await this.get(
 									field.table as string,
 									UtilsServer.encodeID(item as number, this.salt),
-									options,
+									{
+										...options,
+										columns: (options.columns as string[] | undefined)
+											?.filter((column) => column.includes(`${field.key}.`))
+											.map((column) => column.replace(`${field.key}.`, "")),
+									},
 								);
 						}
 				}
