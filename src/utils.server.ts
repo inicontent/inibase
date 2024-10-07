@@ -222,16 +222,14 @@ export const compare = (
 	fieldType?: FieldType | FieldType[],
 ): boolean => {
 	// Determine the field type if it's an array of potential types.
-	if (Array.isArray(fieldType)) {
+	if (Array.isArray(fieldType))
 		fieldType = detectFieldType(String(originalValue), fieldType);
-	}
 
 	// Handle comparisons involving arrays.
-	if (Array.isArray(comparedValue) && !["[]", "![]"].includes(operator)) {
+	if (Array.isArray(comparedValue) && !["[]", "![]"].includes(operator))
 		return comparedValue.some((value) =>
 			compare(operator, originalValue, value, fieldType),
 		);
-	}
 
 	// Switch statement for different comparison operators.
 	switch (operator) {
@@ -368,18 +366,18 @@ export const isArrayEqual = (
 		| null
 		| (string | number | boolean | null)[],
 ): boolean => {
-	if (Array.isArray(originalValue) && Array.isArray(comparedValue)) {
+	if (Array.isArray(originalValue) && Array.isArray(comparedValue))
 		return originalValue.some((v) => comparedValue.includes(v));
-	}
-	if (Array.isArray(originalValue)) {
+
+	if (Array.isArray(originalValue))
 		return originalValue.includes(
 			comparedValue as string | number | boolean | null,
 		);
-	}
-	if (Array.isArray(comparedValue)) {
+
+	if (Array.isArray(comparedValue))
 		return comparedValue.includes(originalValue);
-	}
-	return originalValue === comparedValue;
+
+	return originalValue == comparedValue;
 };
 
 /**

@@ -98,6 +98,10 @@ export type Criteria =
 	  })
 	| null;
 
+type Entries<T> = {
+	[K in keyof T]: [K, T[K]];
+}[keyof T][];
+
 declare global {
 	interface ObjectConstructor {
 		entries<T extends object>(o: T): Entries<T>;
@@ -2227,7 +2231,13 @@ export default class Inibase {
 					returnUpdatedData,
 				);
 
-			await this.put(tableName, data, lineNumbers, options, returnUpdatedData);
+			await this.put(
+				tableName,
+				data,
+				lineNumbers,
+				options,
+				returnUpdatedData as false | undefined,
+			);
 		} else throw this.throwError("INVALID_PARAMETERS");
 	}
 
