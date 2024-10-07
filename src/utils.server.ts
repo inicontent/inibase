@@ -1,18 +1,14 @@
+import { exec as execSync, execFile as execFileSync } from "node:child_process";
 import {
-	exec as execAsync,
-	execFile as execFileAsync,
-} from "node:child_process";
-import {
-	type Cipher,
-	type Decipher,
 	createCipheriv,
 	createDecipheriv,
 	createHash,
 	randomBytes,
 	scryptSync,
 } from "node:crypto";
+import { gunzip as gunzipSync, gzip as gzipSync } from "node:zlib";
 import { promisify } from "node:util";
-import { gunzip as gunzipAsync, gzip as gzipAsync } from "node:zlib";
+
 import type { ComparisonOperator, Field, FieldType, Schema } from "./index.js";
 import {
 	detectFieldType,
@@ -22,13 +18,13 @@ import {
 	isValidID,
 } from "./utils.js";
 
-export const exec = promisify(execAsync);
+export const exec = promisify(execSync);
 
-export const execFile = promisify(execFileAsync);
+export const execFile = promisify(execFileSync);
 
-export const gzip = promisify(gzipAsync);
+export const gzip = promisify(gzipSync);
 
-export const gunzip = promisify(gunzipAsync);
+export const gunzip = promisify(gunzipSync);
 
 /**
  * Generates a hashed password using SHA-256.
@@ -51,80 +47,58 @@ export const hashPassword = (password: string) => {
  * @param inputPassword - The plain text input password to compare against the hashed password.
  * @returns A boolean indicating whether the input password matches the hashed password.
  */
-export const comparePassword = (
-	hashedPassword: string,
-	inputPassword: string,
-) => {
-	const [salt, originalHash] = hashedPassword.split(":");
+export const comparePassword = (hash: string, password: string) => {
+	const [salt, originalHash] = hash.split(":");
 	const inputHash = createHash("sha256")
-		.update(inputPassword + salt)
+		.update(password + salt)
 		.digest("hex");
 	return inputHash === originalHash;
 };
 
-/**
- * Encodes an ID using AES-256-CBC encryption.
- *
- * @param id - The ID to encode, either a number or a string.
- * @param secretKeyOrSalt - The secret key or salt for encryption, can be a string, number, or Buffer.
- * @returns The encoded ID as a hexadecimal string.
- */
+// Cache for derived keys if using scrypt
+const derivedKeyCache = new Map<string, Buffer>();
+
+// Helper function to create cipher or decipher
+const getKeyAndIv = (
+	secretKeyOrSalt: string | number | Buffer,
+): { key: Buffer; iv: Buffer } => {
+	if (Buffer.isBuffer(secretKeyOrSalt)) {
+		return { key: secretKeyOrSalt, iv: secretKeyOrSalt.subarray(0, 16) };
+	}
+	const cacheKey = secretKeyOrSalt.toString();
+	let key = derivedKeyCache.get(cacheKey);
+
+	if (!key) {
+		key = scryptSync(cacheKey, `${INIBASE_SECRET}`, 32);
+		derivedKeyCache.set(cacheKey, key); // Cache the derived key
+	}
+
+	return { key, iv: key.subarray(0, 16) };
+};
+
+// Ensure the environment variable is read once
+const INIBASE_SECRET = process.env.INIBASE_SECRET ?? "inibase";
+
+// Optimized encodeID
 export const encodeID = (
 	id: number | string,
 	secretKeyOrSalt: string | number | Buffer,
 ): string => {
-	let cipher: Cipher;
-
-	if (Buffer.isBuffer(secretKeyOrSalt))
-		cipher = createCipheriv(
-			"aes-256-cbc",
-			secretKeyOrSalt,
-			secretKeyOrSalt.subarray(0, 16),
-		);
-	else {
-		const salt = scryptSync(
-			secretKeyOrSalt.toString(),
-			`${process.env.INIBASE_SECRET ?? "inibase"}_salt`,
-			32,
-		);
-		cipher = createCipheriv("aes-256-cbc", salt, salt.subarray(0, 16));
-	}
+	const { key, iv } = getKeyAndIv(secretKeyOrSalt);
+	const cipher = createCipheriv("aes-256-cbc", key, iv);
 
 	return cipher.update(id.toString(), "utf8", "hex") + cipher.final("hex");
 };
 
-/**
- * Decodes an encrypted ID using AES-256-CBC decryption.
- *
- * @param input - The encrypted ID as a hexadecimal string.
- * @param secretKeyOrSalt - The secret key or salt used for decryption, can be a string, number, or Buffer.
- * @returns The decoded ID as a number.
- */
-
+// Optimized decodeID
 export const decodeID = (
 	input: string,
 	secretKeyOrSalt: string | number | Buffer,
 ): number => {
-	let decipher: Decipher;
+	const { key, iv } = getKeyAndIv(secretKeyOrSalt);
+	const decipher = createDecipheriv("aes-256-cbc", key, iv);
 
-	if (Buffer.isBuffer(secretKeyOrSalt))
-		decipher = createDecipheriv(
-			"aes-256-cbc",
-			secretKeyOrSalt,
-			secretKeyOrSalt.subarray(0, 16),
-		);
-	else {
-		const salt = scryptSync(
-			secretKeyOrSalt.toString(),
-			`${process.env.INIBASE_SECRET ?? "inibase"}_salt`,
-			32,
-		);
-		decipher = createDecipheriv("aes-256-cbc", salt, salt.subarray(0, 16));
-	}
-
-	return Number(
-		decipher.update(input as string, "hex", "utf8") + decipher.final("utf8"),
-	);
+	return Number(decipher.update(input, "hex", "utf8") + decipher.final("utf8"));
 };
 
 // Function to recursively flatten an array of objects and their nested children
@@ -231,7 +205,7 @@ export const hashString = (str: string): string =>
  *
  * Note: Handles various data types and comparison logic, including special handling for passwords and regex patterns.
  */
-export const compare = (
+export const compare = async (
 	operator: ComparisonOperator,
 	originalValue:
 		| string
@@ -247,7 +221,7 @@ export const compare = (
 		| (string | number | boolean | null)[],
 	fieldType?: FieldType | FieldType[],
 	fieldChildrenType?: FieldType | FieldType[],
-): boolean => {
+): Promise<boolean> => {
 	// Determine the field type if it's an array of potential types.
 	if (Array.isArray(fieldType)) {
 		fieldType = detectFieldType(String(originalValue), fieldType);

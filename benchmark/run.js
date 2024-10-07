@@ -12,7 +12,7 @@ const isBun = typeof Bun !== "undefined";
 
 const spawn = async (command) => {
 	if (isBun) {
-		const proc = (await import("bun")).spawn(command);
+		const proc = Bun.spawn(command);
 		console.log(await new Response(proc.stdout).text());
 		await proc.exited;
 	} else

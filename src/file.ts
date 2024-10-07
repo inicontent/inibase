@@ -394,7 +394,6 @@ export async function get(
 					? `zcat ${filePath} | sed -n '${lineNumbers.join("p;")}p'`
 					: `sed -n '${lineNumbers.join("p;")}p' ${filePath}`,
 				foundedLines = (await exec(command)).stdout.trim().split("\n");
-
 			let index = 0;
 			for (const line of foundedLines) {
 				lines[lineNumbers[index]] = decode(
