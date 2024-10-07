@@ -205,7 +205,7 @@ export const hashString = (str: string): string =>
  *
  * Note: Handles various data types and comparison logic, including special handling for passwords and regex patterns.
  */
-export const compare = async (
+export const compare = (
 	operator: ComparisonOperator,
 	originalValue:
 		| string
@@ -220,8 +220,7 @@ export const compare = async (
 		| null
 		| (string | number | boolean | null)[],
 	fieldType?: FieldType | FieldType[],
-	fieldChildrenType?: FieldType | FieldType[],
-): Promise<boolean> => {
+): boolean => {
 	// Determine the field type if it's an array of potential types.
 	if (Array.isArray(fieldType)) {
 		fieldType = detectFieldType(String(originalValue), fieldType);

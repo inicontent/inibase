@@ -38,7 +38,7 @@ export const lock = async (
 		return;
 	} catch ({ message }: any) {
 		if (message.split(":")[0] === "EEXIST")
-			return await new Promise<void>((resolve, reject) =>
+			return await new Promise<void>((resolve) =>
 				setTimeout(() => resolve(lock(folderPath, prefix)), 13),
 			);
 	} finally {
@@ -450,7 +450,7 @@ export const replace = async (
 				rl,
 				fileTempHandle.createWriteStream(),
 				new Transform({
-					transform(line, encoding, callback) {
+					transform(line, _, callback) {
 						linesCount++;
 						const replacement = isObject(replacements)
 							? Object.hasOwn(replacements, linesCount)
