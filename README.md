@@ -1,10 +1,10 @@
-[![Inibase banner](./.github/assets/banner.jpg)](https://github.com/inicontent/inibase)
-
 # Inibase :pencil:
 
-[![npmjs](https://img.shields.io/npm/dm/inibase.svg?style=flat)](https://www.npmjs.org/package/inibase) [![License](https://img.shields.io/github/license/inicontent/inibase.svg?style=flat&colorA=18181B&colorB=28CF8D)](./LICENSE) [![Activity](https://img.shields.io/github/commit-activity/m/inicontent/inibase)](https://github.com/inicontent/inibase/pulse) [![GitHub stars](https://img.shields.io/github/stars/inicontent/inibase?style=social)](https://github.com/inicontent/inibase)
-
 > A file-based & memory-efficient, serverless, ACID compliant, relational database management system :fire:
+
+[![Inibase banner](./.github/assets/banner.jpg)](https://github.com/inicontent/inibase)
+
+[![npmjs](https://img.shields.io/npm/dm/inibase.svg?style=flat)](https://www.npmjs.org/package/inibase) [![License](https://img.shields.io/github/license/inicontent/inibase.svg?style=flat&colorA=18181B&colorB=28CF8D)](./LICENSE) [![Activity](https://img.shields.io/github/commit-activity/m/inicontent/inibase)](https://github.com/inicontent/inibase/pulse) [![GitHub stars](https://img.shields.io/github/stars/inicontent/inibase?style=social)](https://github.com/inicontent/inibase)
 
 ## Features
 
@@ -13,7 +13,7 @@
 - **100% TypeScript** :large_blue_diamond:
 - **Super-Fast** :zap: (built-in caching system)
 - **ATOMIC** :lock: File lock for writing
-- **Built-in form-validation** included :sunglasses:
+- **Built-in** form validation (+unique values :new: ) :sunglasses:
 - **Suitable for large data** :page_with_curl: (tested with 4M records)
 - **Support Compression** :eight_spoked_asterisk: (using built-in nodejs zlib)
 - **Support Table Joins** :link:
@@ -42,6 +42,7 @@ const users = await db.get("user", undefined, {
 // Get items from "user" table where "favoriteFoods" does not includes "Pizza" or "Burger"
 const users = await db.get("user", { favoriteFoods: "![]Pizza,Burger" });
 ```
+
 > [!NOTE]
 > Enjoy using Inibase? Consider sponsoring us via [PayPal](https://paypal.me/KarimAmahtil) <br>
 > Your support helps us maintain and improve our services. <br>
@@ -55,7 +56,7 @@ const users = await db.get("user", { favoriteFoods: "![]Pizza,Burger" });
 
 ## How it works?
 
-`Inibase` organizes data into databases, tables, and columns, each stored in separate files. 
+`Inibase` organizes data into databases, tables, and columns, each stored in separate files.
 
 - **POST**: New data is appended to column files efficiently.
 - **GET**: Data retrieval is optimized by reading files line-by-line.
@@ -88,6 +89,7 @@ interface {
   prepend: boolean;
 }
 ```
+
 </blockquote>
 </details>
 
@@ -125,6 +127,7 @@ interface ObjectOrArrayOfObjects {
   children: Schema;
 }
 ```
+
 </blockquote>
 </details>
 
@@ -210,6 +213,7 @@ const userTableSchema = [
 
 await db.createTable("user", userTableSchema, userTableConfig);
 ```
+
 </blockquote>
 </details>
 
@@ -218,18 +222,17 @@ await db.createTable("user", userTableSchema, userTableConfig);
 <blockquote>
   
 <details>
-<summary>Add field</summary>
+<summary>Change Name</summary>
 <blockquote>
 
 ```js
 import Inibase from "inibase";
 const db = new Inibase("/databaseName");
 
-const userTableSchema = (await db.getTable("user")).schema;
-const newUserTableSchema = [...userTableSchema, {key: "phone2", type: "number", required: false}];
-
-await db.updateTable("user", newUserTableSchema);
+// this will change table name also in joined tables
+await db.updateTable("user", undefined, {name: "userV2"});
 ```
+
 </blockquote>
 </details>
 
@@ -247,6 +250,7 @@ const userTableSchema = (await db.getTable("user")).schema;
 setField("username", userTableSchema, {key: "fullName"});
 await db.updateTable("user", newUserTableSchema);
 ```
+
 </blockquote>
 </details>
 
@@ -264,6 +268,7 @@ const userTableSchema = (await db.getTable("user")).schema;
 unsetField("fullName", userTableSchema);
 await db.updateTable("user", newUserTableSchema);
 ```
+
 </blockquote>
 </details>
 
@@ -336,11 +341,16 @@ const product = await db.post("product", productTableData);
 //   }
 // ]
 ```
+
 </blockquote>
 </details>
 
 </blockquote>
 </details>
+
+<details>
+<summary>Methods</summary>
+<blockquote>
 
 <details>
 <summary>POST</summary>
@@ -467,6 +477,7 @@ const user = await db.get("user", "1d88385d4b1581f8fb059334dec30f4c");
 //     }
 // }
 ```
+
 </blockquote>
 </details>
 
@@ -510,6 +521,7 @@ const users = await db.get("user", { favoriteFoods: "[]Pizza" });
 //   ...
 // ]
 ```
+
 </blockquote>
 </details>
 
@@ -526,6 +538,7 @@ const users = await db.get("user", undefined, {
   columns: ["!username", "!address.street"],
 });
 ```
+
 </blockquote>
 </details>
 
@@ -549,6 +562,7 @@ await db.put("user", { isActive: false }, "1d88385d4b1581f8fb059334dec30f4c");
 // set "isActive" to "true" in table "user" by criteria (where "isActive" is equal to "true")
 await db.put("user", { isActive: false }, { isActive: true });
 ```
+
 </blockquote>
 </details>
 
@@ -569,6 +583,7 @@ await db.put("user", "1d88385d4b1581f8fb059334dec30f4c");
 // delete "user" by criteria (where "isActive" is equal to "false")
 await db.put("user", { isActive: false });
 ```
+
 </blockquote>
 </details>
 
@@ -586,6 +601,7 @@ await db.sum("user", "age");
 // get the sum of column "age" by criteria (where "isActive" is equal to "false") in "user" table
 await db.sum("user", ["age", ...], { isActive: false });
 ```
+
 </blockquote>
 </details>
 
@@ -603,6 +619,7 @@ await db.max("user", "age");
 // get the biggest number of column "age" by criteria (where "isActive" is equal to "false") in "user" table
 await db.max("user", ["age", ...], { isActive: false });
 ```
+
 </blockquote>
 </details>
 
@@ -620,6 +637,7 @@ await db.min("user", "age");
 // get the smallest number of column "age" by criteria (where "isActive" is equal to "false") in "user" table
 await db.min("user", ["age", ...], { isActive: false });
 ```
+
 </blockquote>
 </details>
 
@@ -638,6 +656,10 @@ await db.get("user", undefined, { sort: "age" });
 await db.get("user", undefined, { sort: ["age", "username"] });
 await db.get("user", undefined, { sort: {age: -1, username: "asc"} });
 ```
+
+</blockquote>
+</details>
+
 </blockquote>
 </details>
 
@@ -661,8 +683,8 @@ await db.get("user", undefined, { sort: {age: -1, username: "asc"} });
 | PUT    | 33 ms (10.29 mb)  | 312 ms (11.06 mb)  | 3539 ms (14.87 mb) |
 | DELETE | 134 ms (13.50 mb) | 1224 ms (16.57 mb) | 7339 ms (11.46 mb) |
 
-> Testing by default with `user` table, with username, email, password fields _so results include password encryption process_ <br>
-> To run benchmarks, install *typescript* & *[tsx](https://github.com/privatenumber/tsx)* globally and run `benchmark` `benchmark:bulk` `benchmark:single`
+> Default testing uses a table with username, email, and password fields, ensuring password encryption is included in the process<br>
+> To run benchmarks, install _typescript_ & _[tsx](https://github.com/privatenumber/tsx)_ globally and run `benchmark` by default bulk, for single use `benchmark --single|-s`
 
 ## Roadmap
 
@@ -678,7 +700,7 @@ await db.get("user", undefined, { sort: {age: -1, username: "asc"} });
   - [x] SUM
   - [x] MAX
   - [x] MIN
-- [ ] Schema supported types:
+- [x] Schema supported types:
   - [x] String
   - [x] Number
   - [x] Boolean
@@ -694,9 +716,10 @@ await db.get("user", undefined, { sort: {age: -1, username: "asc"} });
   - [x] Id
   - [x] JSON
 - [ ] TO-DO:
-  - [x] Improve caching
+  - [ ] Ability to search in JSON fields
+  - [ ] Re-check used exec functions
+  - [ ] Use smart caching (based on N° of queries)
   - [ ] Commenting the code
-  - [x] Add property "unique" for schema fields
   - [ ] Add Backup feature (generate a tar.gz)
   - [ ] Add Custom field validation property to schema (using RegEx?)
 - [ ] Features:

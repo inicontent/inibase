@@ -6,6 +6,7 @@ import {
 	readFile,
 	readdir,
 	rename,
+	stat,
 	unlink,
 	writeFile,
 } from "node:fs/promises";
@@ -113,7 +114,6 @@ export type ErrorCodes =
 	| "FIELD_REQUIRED"
 	| "NO_SCHEMA"
 	| "NO_ITEMS"
-	| "NO_RESULTS"
 	| "INVALID_ID"
 	| "INVALID_TYPE"
 	| "INVALID_PARAMETERS"
@@ -163,7 +163,6 @@ export default class Inibase {
 				TABLE_NOT_EXISTS: "Table {variable} doesn't exist",
 				NO_SCHEMA: "Table {variable} does't have a schema",
 				NO_ITEMS: "Table {variable} is empty",
-				NO_RESULTS: "No results found for table {variable}",
 				INVALID_ID: "The given ID(s) is/are not valid(s)",
 				INVALID_TYPE:
 					"Expect {variable} to be {variable}, got {variable} instead",
@@ -190,7 +189,7 @@ export default class Inibase {
 		);
 	}
 
-	private getFileExtension = (tableName: string | number) => {
+	private getFileExtension = (tableName: string) => {
 		let mainExtension = this.fileExtension;
 		// TODO: ADD ENCRYPTION
 		// if(this.tables[tableName].config.encryption)
@@ -200,7 +199,7 @@ export default class Inibase {
 	};
 
 	private _schemaToIdsPath = (
-		tableName: string | number,
+		tableName: string,
 		schema: Schema,
 		prefix = "",
 	) => {
@@ -230,19 +229,19 @@ export default class Inibase {
 	/**
 	 * Create a new table inside database, with predefined schema and config
 	 *
-	 * @param {(string|number)} tableName
+	 * @param {string} tableName
 	 * @param {Schema} [schema]
 	 * @param {Config} [config]
 	 */
 	public async createTable(
-		tableName: string | number,
+		tableName: string,
 		schema?: Schema,
 		config?: Config,
 	) {
-		const tablePath = join(this.databasePath, tableName.toString());
+		const tablePath = join(this.databasePath, tableName);
 
 		if (await File.isExists(tablePath))
-			throw this.throwError("TABLE_EXISTS", tableName.toString());
+			throw this.throwError("TABLE_EXISTS", tableName);
 
 		await mkdir(join(tablePath, ".tmp"), { recursive: true });
 		await mkdir(join(tablePath, ".cache"));
@@ -273,81 +272,58 @@ export default class Inibase {
 			);
 	}
 
+	// Function to replace the string in one schema.json file
+	private async replaceStringInFile(
+		filePath: string,
+		targetString: string,
+		replaceString: string,
+	) {
+		const data = await readFile(filePath, "utf8");
+
+		if (data.includes(targetString)) {
+			const updatedContent = data.replaceAll(targetString, replaceString);
+			await writeFile(filePath, updatedContent, "utf8");
+		}
+	}
+
+	// Function to process schema files one by one (sequentially)
+	private async replaceStringInSchemas(
+		directoryPath: string,
+		targetString: string,
+		replaceString: string,
+	) {
+		const files = await readdir(directoryPath);
+
+		for (const file of files) {
+			const fullPath = join(directoryPath, file);
+			const fileStat = await stat(fullPath);
+
+			if (fileStat.isDirectory()) {
+				await this.replaceStringInSchemas(
+					fullPath,
+					targetString,
+					replaceString,
+				);
+			} else if (file === "schema.json") {
+				await this.replaceStringInFile(fullPath, targetString, replaceString);
+			}
+		}
+	}
+
 	/**
 	 * Update table schema or config
 	 *
-	 * @param {(string|number)} tableName
+	 * @param {string} tableName
 	 * @param {Schema} [schema]
-	 * @param {Config} [config]
+	 * @param {(Config&{name?: string})} [config]
 	 */
 	public async updateTable(
-		tableName: string | number,
+		tableName: string,
 		schema?: Schema,
-		config?: Config,
+		config?: Config & { name?: string },
 	) {
 		const table = await this.getTable(tableName),
-			tablePath = join(this.databasePath, tableName.toString());
-
-		if (config) {
-			if (
-				config.compression !== undefined &&
-				config.compression !== table.config.compression
-			) {
-				await UtilsServer.execFile(
-					"find",
-					[
-						tableName.toString(),
-						"-type",
-						"f",
-						"-name",
-						`*${this.fileExtension}${config.compression ? "" : ".gz"}`,
-						"-exec",
-						config.compression ? "gzip" : "gunzip",
-						"-f",
-						"{}",
-						"+",
-					],
-					{ cwd: this.databasePath },
-				);
-				if (config.compression)
-					await writeFile(join(tablePath, ".compression.config"), "");
-				else await unlink(join(tablePath, ".compression.config"));
-			}
-			if (config.cache !== undefined && config.cache !== table.config.cache) {
-				if (config.cache) await writeFile(join(tablePath, ".cache.config"), "");
-				else await unlink(join(tablePath, ".cache.config"));
-			}
-			if (
-				config.prepend !== undefined &&
-				config.prepend !== table.config.prepend
-			) {
-				await UtilsServer.execFile(
-					"find",
-					[
-						tableName.toString(),
-						"-type",
-						"f",
-						"-name",
-						`*${this.fileExtension}${config.compression ? ".gz" : ""}`,
-						"-exec",
-						"sh",
-						"-c",
-						`for file; do ${
-							config.compression
-								? 'zcat "$file" | tac | gzip > "$file.reversed" && mv "$file.reversed" "$file"'
-								: 'tac "$file" > "$file.reversed" && mv "$file.reversed" "$file"'
-						}; done`,
-						"_",
-						"{}",
-						"+",
-					],
-					{ cwd: this.databasePath },
-				);
-				if (config.prepend)
-					await writeFile(join(tablePath, ".prepend.config"), "");
-				else await unlink(join(tablePath, ".prepend.config"));
-			}
-		}
+			tablePath = join(this.databasePath, tableName);
 
 		if (schema) {
 			// remove id from schema
@@ -388,20 +364,90 @@ export default class Inibase {
 				JSON.stringify(schema, null, 2),
 			);
 		}
+
+		if (config) {
+			if (
+				config.compression !== undefined &&
+				config.compression !== table.config.compression
+			) {
+				await UtilsServer.execFile(
+					"find",
+					[
+						tableName,
+						"-type",
+						"f",
+						"-name",
+						`*${this.fileExtension}${config.compression ? "" : ".gz"}`,
+						"-exec",
+						config.compression ? "gzip" : "gunzip",
+						"-f",
+						"{}",
+						"+",
+					],
+					{ cwd: this.databasePath },
+				);
+				if (config.compression)
+					await writeFile(join(tablePath, ".compression.config"), "");
+				else await unlink(join(tablePath, ".compression.config"));
+			}
+			if (config.cache !== undefined && config.cache !== table.config.cache) {
+				if (config.cache) await writeFile(join(tablePath, ".cache.config"), "");
+				else await unlink(join(tablePath, ".cache.config"));
+			}
+			if (
+				config.prepend !== undefined &&
+				config.prepend !== table.config.prepend
+			) {
+				await UtilsServer.execFile(
+					"find",
+					[
+						tableName,
+						"-type",
+						"f",
+						"-name",
+						`*${this.fileExtension}${config.compression ? ".gz" : ""}`,
+						"-exec",
+						"sh",
+						"-c",
+						`for file; do ${
+							config.compression
+								? 'zcat "$file" | tac | gzip > "$file.reversed" && mv "$file.reversed" "$file"'
+								: 'tac "$file" > "$file.reversed" && mv "$file.reversed" "$file"'
+						}; done`,
+						"_",
+						"{}",
+						"+",
+					],
+					{ cwd: this.databasePath },
+				);
+				if (config.prepend)
+					await writeFile(join(tablePath, ".prepend.config"), "");
+				else await unlink(join(tablePath, ".prepend.config"));
+			}
+			if (config.name) {
+				await this.replaceStringInSchemas(
+					this.databasePath,
+					`"table": "${tableName}"`,
+					`"table": "${config.name}"`,
+				);
+				await rename(tablePath, join(this.databasePath, config.name));
+			}
+		}
+
 		delete this.tables[tableName];
 	}
 
 	/**
 	 * Get table schema and config
 	 *
-	 * @param {(string|number)} tableName
+	 * @param {string} tableName
 	 * @return {*}  {Promise<TableObject>}
 	 */
-	public async getTable(tableName: string | number): Promise<TableObject> {
-		const tablePath = join(this.databasePath, tableName.toString());
+	public async getTable(tableName: string): Promise<TableObject> {
+		const tablePath = join(this.databasePath, tableName);
 
 		if (!(await File.isExists(tablePath)))
-			throw this.throwError("TABLE_NOT_EXISTS", tableName.toString());
+			throw this.throwError("TABLE_NOT_EXISTS", tableName);
 
 		if (!this.tables[tableName])
 			this.tables[tableName] = {
@@ -418,14 +464,10 @@ export default class Inibase {
 	}
 
 	public async getTableSchema(
-		tableName: string | number,
+		tableName: string,
 		encodeIDs = true,
 	): Promise<Schema | undefined> {
-		const tableSchemaPath = join(
-			this.databasePath,
-			tableName.toString(),
-			"schema.json",
-		);
+		const tableSchemaPath = join(this.databasePath, tableName, "schema.json");
 		if (!(await File.isExists(tableSchemaPath))) return undefined;
 
 		const schemaFile = await readFile(tableSchemaPath, "utf8");
@@ -462,22 +504,22 @@ export default class Inibase {
 	}
 
 	private async throwErrorIfTableEmpty(
-		tableName: string | number,
+		tableName: string,
 	): Promise<TableObject> {
 		const table = await this.getTable(tableName);
 
-		if (!table.schema) throw this.throwError("NO_SCHEMA", tableName.toString());
+		if (!table.schema) throw this.throwError("NO_SCHEMA", tableName);
 
 		if (
 			!(await File.isExists(
 				join(
 					this.databasePath,
-					tableName.toString(),
+					tableName,
 					`id${this.getFileExtension(tableName)}`,
 				),
 			))
 		)
-			throw this.throwError("NO_ITEMS", tableName.toString());
+			throw this.throwError("NO_ITEMS", tableName);
 		return table;
 	}
 
@@ -624,8 +666,8 @@ export default class Inibase {
 		return null;
 	}
 
-	private async checkUnique(tableName: string | number, schema: Schema) {
-		const tablePath = join(this.databasePath, tableName.toString());
+	private async checkUnique(tableName: string, schema: Schema) {
+		const tablePath = join(this.databasePath, tableName);
 		for await (const [key, values] of Object.entries(this.checkIFunique)) {
 			const field = Utils.getField(key, schema);
 			if (!field) continue;
@@ -786,8 +828,8 @@ export default class Inibase {
 		return RETURN;
 	};
 
-	private joinPathesContents(tableName: string | number, data: Data | Data[]) {
-		const tablePath = join(this.databasePath, tableName.toString()),
+	private joinPathesContents(tableName: string, data: Data | Data[]) {
+		const tablePath = join(this.databasePath, tableName),
 			combinedData = this._CombineData(data);
 		const newCombinedData: Record<string, any> = {};
 
@@ -856,13 +898,13 @@ export default class Inibase {
 		}
 	}
 	private async getItemsFromSchema(
-		tableName: string | number,
+		tableName: string,
 		schema: Schema,
 		linesNumber: number[],
 		options: Options,
 		prefix?: string,
 	) {
-		const tablePath = join(this.databasePath, tableName.toString());
+		const tablePath = join(this.databasePath, tableName);
 		const RETURN: Record<number, Data> = {};
 
 		for await (const field of schema) {
@@ -1127,13 +1169,13 @@ export default class Inibase {
 	}
 
 	private async applyCriteria(
-		tableName: string | number,
+		tableName: string,
 		schema: Schema,
 		options: Options,
 		criteria?: Criteria,
 		allTrue?: boolean,
 	): Promise<[Record<number, Data> | null, Set<number> | null]> {
-		const tablePath = join(this.databasePath, tableName.toString());
+		const tablePath = join(this.databasePath, tableName);
 
 		let RETURN: Record<number, Data> = {},
 			RETURN_LineNumbers = null;
@@ -1365,14 +1407,10 @@ export default class Inibase {
 	/**
 	 * Clear table cache
 	 *
-	 * @param {(string|number)} tableName
+	 * @param {string} tableName
 	 */
-	public async clearCache(tableName: string | number) {
-		const cacheFolderPath = join(
-			this.databasePath,
-			tableName.toString(),
-			".cache",
-		);
+	public async clearCache(tableName: string) {
+		const cacheFolderPath = join(this.databasePath, tableName, ".cache");
 		await Promise.all(
 			(await readdir(cacheFolderPath))
 				.filter((file) => file !== ".pagination")
@@ -1383,7 +1421,7 @@ export default class Inibase {
 	/**
 	 * Retrieve item(s) from a table
 	 *
-	 * @param {(string|number)} tableName
+	 * @param {string} tableName
 	 * @param {(string | number | (string | number)[] | Criteria)} [where]
 	 * @param {Options} [options]
 	 * @param {boolean} [onlyOne]
@@ -1391,42 +1429,42 @@ export default class Inibase {
 	 * @return {*}  {(Promise<Data | number | (Data | number)[] | null>)}
 	 */
 	get(
-		tableName: string | number,
+		tableName: string,
 		where: string | number | (string | number)[] | Criteria | undefined,
 		options: Options | undefined,
 		onlyOne: true,
 		onlyLinesNumbers?: false,
 	): Promise<Data | null>;
 	get(
-		tableName: string | number,
+		tableName: string,
 		where: string | number,
 		options?: Options,
 		onlyOne?: boolean,
 		onlyLinesNumbers?: false,
 	): Promise<Data | null>;
 	get(
-		tableName: string | number,
+		tableName: string,
 		where?: string | number | (string | number)[] | Criteria,
 		options?: Options,
 		onlyOne?: boolean,
 		onlyLinesNumbers?: false,
 	): Promise<Data[] | null>;
 	get(
-		tableName: string | number,
+		tableName: string,
 		where: string | number | (string | number)[] | Criteria | undefined,
 		options: Options | undefined,
 		onlyOne: false | undefined,
 		onlyLinesNumbers: true,
 	): Promise<number[] | null>;
 	get(
-		tableName: string | number,
+		tableName: string,
 		where: string | number | (string | number)[] | Criteria | undefined,
 		options: Options | undefined,
 		onlyOne: true,
 		onlyLinesNumbers: true,
 	): Promise<number | null>;
 	public async get(
-		tableName: string | number,
+		tableName: string,
 		where?: string | number | (string | number)[] | Criteria,
 		options: Options = {
 			page: 1,
@@ -1435,7 +1473,7 @@ export default class Inibase {
 		onlyOne?: boolean,
 		onlyLinesNumbers?: boolean,
 	): Promise<Data | number | (Data | number)[] | null> {
-		const tablePath = join(this.databasePath, tableName.toString());
+		const tablePath = join(this.databasePath, tableName);
 
 		// Ensure options.columns is an array
 		if (options.columns) {
@@ -1454,7 +1492,7 @@ export default class Inibase {
 		let RETURN!: Data | Data[] | null;
 		let schema = (await this.getTable(tableName)).schema;
 
-		if (!schema) throw this.throwError("NO_SCHEMA", tableName.toString());
+		if (!schema) throw this.throwError("NO_SCHEMA", tableName);
 
 		if (
 			!(await File.isExists(
@@ -1501,8 +1539,7 @@ export default class Inibase {
 					undefined,
 					true,
 				);
-				if (!lineNumbers?.length)
-					throw this.throwError("NO_RESULTS", tableName.toString());
+				if (!lineNumbers?.length) return null;
 				const itemsIDs = Object.values(
 					(await File.get(
 						join(tablePath, `id${this.getFileExtension(tableName)}`),
@@ -1728,8 +1765,7 @@ export default class Inibase {
 				!this.totalItems[`${tableName}-*`],
 				this.salt,
 			);
-			if (!lineNumbers)
-				throw this.throwError("NO_RESULTS", tableName.toString());
+			if (!lineNumbers) return null;
 
 			if (!this.totalItems[`${tableName}-*`])
 				this.totalItems[`${tableName}-*`] = countItems;
@@ -1859,32 +1895,32 @@ export default class Inibase {
 	/**
 	 * Create new item(s) in a table
 	 *
-	 * @param {(string|number)} tableName
+	 * @param {string} tableName
 	 * @param {(Data | Data[])} data Can be array of objects or a single object
 	 * @param {Options} [options] Pagination options, useful when the returnPostedData param is true
 	 * @param {boolean} [returnPostedData] By default function returns void, if you want to get the posted data, set this param to true
 	 * @return {*}  {Promise<Data | Data[] | null | void>}
 	 */
 	post(
-		tableName: string | number,
+		tableName: string,
 		data: Data | Data[],
 		options?: Options,
 		returnPostedData?: boolean,
 	): Promise<void>;
 	post(
-		tableName: string | number,
+		tableName: string,
 		data: Data,
 		options: Options | undefined,
 		returnPostedData: true,
 	): Promise<Data | null>;
 	post(
-		tableName: string | number,
+		tableName: string,
 		data: Data[],
 		options: Options | undefined,
 		returnPostedData: true,
 	): Promise<Data[] | null>;
 	public async post(
-		tableName: string | number,
+		tableName: string,
 		data: Data | Data[],
 		options?: Options,
 		returnPostedData?: boolean,
@@ -1894,10 +1930,10 @@ export default class Inibase {
 				page: 1,
 				perPage: 15,
 			};
-		const tablePath = join(this.databasePath, tableName.toString()),
+		const tablePath = join(this.databasePath, tableName),
 			schema = (await this.getTable(tableName)).schema;
 
-		if (!schema) throw this.throwError("NO_SCHEMA", tableName.toString());
+		if (!schema) throw this.throwError("NO_SCHEMA", tableName);
 
 		if (!returnPostedData) returnPostedData = false;
 		let RETURN: Data | Data[] | null | undefined;
@@ -2024,7 +2060,7 @@ export default class Inibase {
 	/**
 	 * Update item(s) in a table
 	 *
-	 * @param {(string|number)} tableName
+	 * @param {string} tableName
 	 * @param {(Data | Data[])} data
 	 * @param {(number | string | (number | string)[] | Criteria)} [where]
 	 * @param {Options} [options]
@@ -2032,28 +2068,28 @@ export default class Inibase {
 	 * @return {*}  {Promise<Data | Data[] | null | undefined | void>}
 	 */
 	put(
-		tableName: string | number,
+		tableName: string,
 		data: Data | Data[],
 		where?: number | string | (number | string)[] | Criteria,
 		options?: Options,
 		returnUpdatedData?: false,
 	): Promise<void>;
 	put(
-		tableName: string | number,
+		tableName: string,
 		data: Data,
 		where: number | string | (number | string)[] | Criteria | undefined,
 		options: Options | undefined,
 		returnUpdatedData: true,
 	): Promise<Data | null>;
 	put(
-		tableName: string | number,
+		tableName: string,
 		data: Data[],
 		where: number | string | (number | string)[] | Criteria | undefined,
 		options: Options | undefined,
 		returnUpdatedData: true,
 	): Promise<Data[] | null>;
 	public async put(
-		tableName: string | number,
+		tableName: string,
 		data: Data | Data[],
 		where?: number | string | (number | string)[] | Criteria,
 		options: Options = {
@@ -2063,7 +2099,7 @@ export default class Inibase {
 		returnUpdatedData?: boolean,
 	): Promise<Data | Data[] | null | undefined | void> {
 		let renameList: string[][] = [];
-		const tablePath = join(this.databasePath, tableName.toString()),
+		const tablePath = join(this.databasePath, tableName),
 			schema = (await this.throwErrorIfTableEmpty(tableName)).schema as Schema;
 
 		this.validateData(data, schema, true);
@@ -2244,18 +2280,18 @@ export default class Inibase {
 	/**
 	 * Delete item(s) in a table
 	 *
-	 * @param {(string|number)} tableName
+	 * @param {string} tableName
 	 * @param {(number | string | (number | string)[] | Criteria)} [where]
 	 * @return {boolean | null}  {(Promise<boolean | null>)}
 	 */
 	public async delete(
-		tableName: string | number,
+		tableName: string,
 		where?: number | string | (number | string)[] | Criteria,
 		_id?: string | string[],
 	): Promise<boolean | null> {
 		const renameList: string[][] = [];
 
-		const tablePath = join(this.databasePath, tableName.toString());
+		const tablePath = join(this.databasePath, tableName);
 		await this.throwErrorIfTableEmpty(tableName);
 
 		if (!where) {
@@ -2355,28 +2391,28 @@ export default class Inibase {
 	/**
 	 * Generate sum of column(s) in a table
 	 *
-	 * @param {(string|number)} tableName
+	 * @param {string} tableName
 	 * @param {string} columns
 	 * @param {(number | string | (number | string)[] | Criteria)} [where]
 	 * @return {*}  {Promise<number | Record<string, number>>}
 	 */
 	sum(
-		tableName: string | number,
+		tableName: string,
 		columns: string,
 		where?: number | string | (number | string)[] | Criteria,
 	): Promise<number>;
 	sum(
-		tableName: string | number,
+		tableName: string,
 		columns: string[],
 		where?: number | string | (number | string)[] | Criteria,
 	): Promise<Record<string, number>>;
 	public async sum(
-		tableName: string | number,
+		tableName: string,
 		columns: string | string[],
 		where?: number | string | (number | string)[] | Criteria,
 	): Promise<number | Record<string, number>> {
 		const RETURN: Record<string, number> = {};
-		const tablePath = join(this.databasePath, tableName.toString());
+		const tablePath = join(this.databasePath, tableName);
 		await this.throwErrorIfTableEmpty(tableName);
 
 		if (!Array.isArray(columns)) columns = [columns];
@@ -2407,28 +2443,28 @@ export default class Inibase {
 	/**
 	 * Generate max of column(s) in a table
 	 *
-	 * @param {(string|number)} tableName
+	 * @param {string} tableName
 	 * @param {string} columns
 	 * @param {(number | string | (number | string)[] | Criteria)} [where]
 	 * @return {*}  {Promise<number>}
 	 */
 	max(
-		tableName: string | number,
+		tableName: string,
 		columns: string,
 		where?: number | string | (number | string)[] | Criteria,
 	): Promise<number>;
 	max(
-		tableName: string | number,
+		tableName: string,
 		columns: string[],
 		where?: number | string | (number | string)[] | Criteria,
 	): Promise<Record<string, number>>;
 	public async max(
-		tableName: string | number,
+		tableName: string,
 		columns: string | string[],
 		where?: number | string | (number | string)[] | Criteria,
 	): Promise<number | Record<string, number>> {
 		const RETURN: Record<string, number> = {};
-		const tablePath = join(this.databasePath, tableName.toString());
+		const tablePath = join(this.databasePath, tableName);
 		await this.throwErrorIfTableEmpty(tableName);
 
 		if (!Array.isArray(columns)) columns = [columns];
@@ -2458,28 +2494,28 @@ export default class Inibase {
 	/**
 	 * Generate min of column(s) in a table
 	 *
-	 * @param {(string|number)} tableName
+	 * @param {string} tableName
 	 * @param {string} columns
 	 * @param {(number | string | (number | string)[] | Criteria)} [where]
 	 * @return {*}  {Promise<number>}
 	 */
 	min(
-		tableName: string | number,
+		tableName: string,
 		columns: string,
 		where?: number | string | (number | string)[] | Criteria,
 	): Promise<number>;
 	min(
-		tableName: string | number,
+		tableName: string,
 		columns: string[],
 		where?: number | string | (number | string)[] | Criteria,
 	): Promise<Record<string, number>>;
 	public async min(
-		tableName: string | number,
+		tableName: string,
 		columns: string | string[],
 		where?: number | string | (number | string)[] | Criteria,
 	): Promise<number | Record<string, number>> {
 		const RETURN: Record<string, number> = {};
-		const tablePath = join(this.databasePath, tableName.toString());
+		const tablePath = join(this.databasePath, tableName);
 		await this.throwErrorIfTableEmpty(tableName);
 
 		if (!Array.isArray(columns)) columns = [columns];
