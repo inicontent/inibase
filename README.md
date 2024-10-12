@@ -51,7 +51,7 @@ const users = await db.get("user", { favoriteFoods: "![]Pizza,Burger" });
 ## Install
 
 ```js
-<npm|pnpm|yarn> install inibase
+<npm|pnpm|yarn|bun> install inibase
 ```
 
 ## How it works?
