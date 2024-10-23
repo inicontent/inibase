@@ -2192,6 +2192,10 @@ export default class Inibase {
 			Utils.isNumber(where)
 		) {
 			// "where" in this case, is the line(s) number(s) and not id(s)
+			this.validateData(data, schema, true);
+			await this.checkUnique(tableName, schema);
+			data = this.formatData(data, schema, true);
+
 			const pathesContents = Object.fromEntries(
 				Object.entries(
 					this.joinPathesContents(
