@@ -2099,12 +2099,9 @@ export default class Inibase {
 		returnUpdatedData?: boolean,
 	): Promise<Data | Data[] | null | undefined | void> {
 		let renameList: string[][] = [];
-		const tablePath = join(this.databasePath, tableName),
-			schema = (await this.throwErrorIfTableEmpty(tableName)).schema as Schema;
-
-		this.validateData(data, schema, true);
-		await this.checkUnique(tableName, schema);
-		data = this.formatData(data, schema, true);
+		const tablePath = join(this.databasePath, tableName);
+		const schema = (await this.throwErrorIfTableEmpty(tableName))
+			.schema as Schema;
 
 		if (!where) {
 			if (Utils.isArrayOfObjects(data)) {
@@ -2119,9 +2116,7 @@ export default class Inibase {
 				return this.put(
 					tableName,
 					data,
-					data
-						.filter(({ id }) => id !== undefined)
-						.map(({ id }) => id as string),
+					data.map(({ id }) => id),
 				);
 			}
 			if (Object.hasOwn(data, "id")) {
@@ -2140,6 +2135,10 @@ export default class Inibase {
 				totalItems = await File.count(
 					join(tablePath, `id${this.getFileExtension(tableName)}`),
 				);
+
+			this.validateData(data, schema, true);
+			await this.checkUnique(tableName, schema);
+			data = this.formatData(data, schema, true);
 
 			const pathesContents = this.joinPathesContents(tableName, {
 				...(({ id, ...restOfData }) => restOfData)(data as Data),
