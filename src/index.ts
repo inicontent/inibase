@@ -2070,9 +2070,9 @@ export default class Inibase {
 	put(
 		tableName: string,
 		data: Data | Data[],
-		where?: number | string | (number | string)[] | Criteria,
-		options?: Options,
-		returnUpdatedData?: false,
+		where: number | string | (number | string)[] | Criteria | undefined,
+		options: Options | undefined,
+		returnUpdatedData: false,
 	): Promise<void>;
 	put(
 		tableName: string,
@@ -2117,12 +2117,20 @@ export default class Inibase {
 					tableName,
 					data,
 					data.map(({ id }) => id),
+					options,
+					returnUpdatedData || undefined,
 				);
 			}
 			if (Object.hasOwn(data, "id")) {
 				if (!Utils.isValidID(data.id))
 					throw this.throwError("INVALID_ID", data.id);
-				return this.put(tableName, data, data.id);
+				return this.put(
+					tableName,
+					data,
+					data.id,
+					options,
+					returnUpdatedData || undefined,
+				);
 			}
 			let totalItems: number;
 			if (await File.isExists(join(tablePath, ".cache", ".pagination")))
@@ -2186,7 +2194,13 @@ export default class Inibase {
 				undefined,
 				true,
 			);
-			return this.put(tableName, data, lineNumbers);
+			return this.put(
+				tableName,
+				data,
+				lineNumbers,
+				options,
+				returnUpdatedData || undefined,
+			);
 		} else if (
 			(Array.isArray(where) && where.every(Utils.isNumber)) ||
 			Utils.isNumber(where)
@@ -2261,21 +2275,12 @@ export default class Inibase {
 				undefined,
 				true,
 			);
-			if (returnUpdatedData)
-				return this.put(
-					tableName,
-					data,
-					lineNumbers,
-					options,
-					returnUpdatedData,
-				);
-
-			await this.put(
+			return this.put(
 				tableName,
 				data,
 				lineNumbers,
 				options,
-				returnUpdatedData as false | undefined,
+				returnUpdatedData || undefined,
 			);
 		} else throw this.throwError("INVALID_PARAMETERS");
 	}
