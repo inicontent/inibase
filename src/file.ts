@@ -362,7 +362,7 @@ export async function get(
 			const command = filePath.endsWith(".gz")
 					? `zcat ${filePath} | sed -n '$p'`
 					: `sed -n '$p' ${filePath}`,
-				foundedLine = (await exec(command)).stdout.trim();
+				foundedLine = (await exec(command)).stdout.trimEnd();
 			if (foundedLine)
 				lines[linesCount] = decode(
 					foundedLine,
@@ -393,7 +393,8 @@ export async function get(
 			const command = filePath.endsWith(".gz")
 					? `zcat ${filePath} | sed -n '${lineNumbers.join("p;")}p'`
 					: `sed -n '${lineNumbers.join("p;")}p' ${filePath}`,
-				foundedLines = (await exec(command)).stdout.trim().split("\n");
+				foundedLines = (await exec(command)).stdout.trimEnd().split("\n");
+
 			let index = 0;
 			for (const line of foundedLines) {
 				lines[lineNumbers[index]] = decode(
@@ -757,7 +758,7 @@ export const search = async (
  * Note: Reads through the file line by line to count the total number of lines.
  */
 export const count = async (filePath: string): Promise<number> => {
-	// Number((await exec(`wc -l < ${filePath}`)).stdout.trim());
+	// Number((await exec(`wc -l < ${filePath}`)).stdout.trimEnd());
 	let linesCount = 0;
 	if (await isExists(filePath)) {
 		let fileHandle = null;

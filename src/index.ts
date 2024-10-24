@@ -1015,7 +1015,7 @@ export default class Inibase {
 							),
 						))
 					) {
-						const items = await File.get(
+						const itemsIDs = await File.get(
 							join(
 								tablePath,
 								`${(prefix ?? "") + field.key}${this.getFileExtension(
@@ -1027,21 +1027,38 @@ export default class Inibase {
 							field.children,
 							this.salt,
 						);
-						if (items)
-							for await (const [index, item] of Object.entries(items)) {
+						if (itemsIDs) {
+							const searchableIDs: Record<number, string[]> = {};
+							for (const [index, item] of Object.entries(itemsIDs)) {
 								if (!RETURN[index]) RETURN[index] = {};
 								if (item !== null && item !== undefined)
-									RETURN[index][field.key] = await this.get(
-										field.table as string,
-										item as string | string[],
-										{
-											...options,
-											columns: (options.columns as string[] | undefined)
-												?.filter((column) => column.includes(`${field.key}.`))
-												.map((column) => column.replace(`${field.key}.`, "")),
-										},
-									);
+									searchableIDs[index] = item as string[];
 							}
+							if (Object.keys(searchableIDs).length) {
+								const items = await this.get(
+									field.table,
+									[].concat(...Object.values(searchableIDs)),
+									{
+										...options,
+										perPage: Number.POSITIVE_INFINITY,
+										columns: (options.columns as string[] | undefined)
+											?.filter((column) => column.includes(`${field.key}.`))
+											.map((column) => column.replace(`${field.key}.`, "")),
+									},
+								);
+
+								if (items) {
+									let cursor = 0;
+									for (const [index, Ids] of Object.entries(searchableIDs)) {
+										RETURN[index][field.key] = items.slice(
+											cursor,
+											cursor + Ids.length,
+										);
+										cursor += Ids.length;
+									}
+								}
+							}
+						}
 					}
 				} else if (
 					await File.isExists(
@@ -1102,7 +1119,7 @@ export default class Inibase {
 						),
 					))
 				) {
-					const items = await File.get(
+					const itemsIDs = await File.get(
 						join(
 							tablePath,
 							`${(prefix ?? "") + field.key}${this.getFileExtension(
@@ -1110,26 +1127,39 @@ export default class Inibase {
 							)}`,
 						),
 						linesNumber,
-						"number",
-						undefined,
+						field.type,
+						field.children,
 						this.salt,
 					);
-
-					if (items)
-						for await (const [index, item] of Object.entries(items)) {
+					if (itemsIDs) {
+						const searchableIDs: Record<number, string> = {};
+						for (const [index, item] of Object.entries(itemsIDs)) {
 							if (!RETURN[index]) RETURN[index] = {};
 							if (item !== null && item !== undefined)
-								RETURN[index][field.key] = await this.get(
-									field.table as string,
-									UtilsServer.encodeID(item as number, this.salt),
-									{
-										...options,
-										columns: (options.columns as string[] | undefined)
-											?.filter((column) => column.includes(`${field.key}.`))
-											.map((column) => column.replace(`${field.key}.`, "")),
-									},
-								);
+								searchableIDs[index] = item as string;
 						}
+						if (Object.keys(searchableIDs).length) {
+							const items = await this.get(
+								field.table,
+								Object.values(searchableIDs),
+								{
+									...options,
+									perPage: Number.POSITIVE_INFINITY,
+									columns: (options.columns as string[] | undefined)
+										?.filter((column) => column.includes(`${field.key}.`))
+										.map((column) => column.replace(`${field.key}.`, "")),
+								},
+							);
+
+							if (items) {
+								let cursor = 0;
+								for (const [index] of Object.entries(searchableIDs)) {
+									RETURN[index][field.key] = items[cursor];
+									cursor++;
+								}
+							}
+						}
+					}
 				}
 			} else if (
 				await File.isExists(
@@ -1619,7 +1649,7 @@ export default class Inibase {
 						},
 					)
 				).stdout
-					.trim()
+					.trimEnd()
 					.split("\n");
 
 				if (where)
