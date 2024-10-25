@@ -575,6 +575,16 @@ export default class Inibase {
 		}
 	}
 
+	private cleanObject<T extends Record<string, any>>(obj: T): T | null {
+		const cleanedObject = Object.entries(obj).reduce((acc, [key, value]) => {
+			if (value !== undefined && value !== null && value !== "")
+				acc[key] = value;
+			return acc;
+		}, {} as T);
+
+		return Object.keys(cleanedObject).length > 0 ? cleanedObject : null;
+	}
+
 	private formatField(
 		value: Data | number | string,
 		fieldType?: FieldType | FieldType[],
@@ -597,6 +607,7 @@ export default class Inibase {
 			fieldType = (Utils.detectFieldType(value, fieldType) ??
 				fieldType[0]) as any;
 		if (!value) return null;
+		if (fieldType !== "array" && Array.isArray(value)) value = value[0];
 		switch (fieldType) {
 			case "array":
 				if (!fieldChildrenType) return null;
@@ -607,11 +618,11 @@ export default class Inibase {
 						fieldChildrenType,
 						_formatOnlyAvailiableKeys,
 					);
+				if (!value.length) return null;
 				return (value as (string | number | Data)[]).map((_value) =>
 					this.formatField(_value, fieldChildrenType),
 				);
 			case "object":
-				if (Array.isArray(value)) value = value[0];
 				if (Utils.isArrayOfObjects(fieldChildrenType))
 					return this.formatData(
 						value as Data,
@@ -620,7 +631,6 @@ export default class Inibase {
 					);
 				break;
 			case "table":
-				if (Array.isArray(value)) value = value[0];
 				if (Utils.isObject(value)) {
 					if (
 						Object.hasOwn(value, "id") &&
@@ -636,30 +646,27 @@ export default class Inibase {
 						: UtilsServer.decodeID(value, this.salt);
 				break;
 			case "password":
-				if (Array.isArray(value)) value = value[0];
 				return Utils.isPassword(value)
 					? value
 					: UtilsServer.hashPassword(String(value));
 			case "number":
-				if (Array.isArray(value)) value = value[0];
 				return Utils.isNumber(value) ? Number(value) : null;
 			case "date": {
-				if (Array.isArray(value)) value = value[0];
-
 				if (Utils.isNumber(value)) return value;
-
 				const dateToTimestamp = Date.parse(value as string);
 				return Number.isNaN(dateToTimestamp) ? null : dateToTimestamp;
 			}
 			case "id":
-				if (Array.isArray(value)) value = value[0];
 				return Utils.isNumber(value)
 					? value
 					: UtilsServer.decodeID(value as string, this.salt);
-			case "json":
-				return typeof value !== "string" || !Utils.isJSON(value)
-					? Inison.stringify(value as any)
-					: value;
+			case "json": {
+				if (typeof value === "string" && Utils.isStringified(value))
+					return value;
+				const cleanedObject = this.cleanObject(value as Data);
+				if (cleanedObject) return Inison.stringify(cleanedObject);
+				return null;
+			}
 			default:
 				return value;
 		}
@@ -2142,7 +2149,6 @@ export default class Inibase {
 				)
 					throw this.throwError("INVALID_ID");
 
-				// TODO: Reduce I/O
 				return this.put(
 					tableName,
 					data,

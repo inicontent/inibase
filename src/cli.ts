@@ -8,7 +8,7 @@ import Inison from "inison";
 
 import { isExists } from "./file.js";
 import Inibase, { type Options, type Criteria, type Data } from "./index.js";
-import { isJSON, isNumber, setField, unsetField } from "./utils.js";
+import { isStringified, isNumber, setField, unsetField } from "./utils.js";
 
 const textGreen = (input: string) => `\u001b[1;32m${input}\u001b[0m`;
 const textRed = (input: string) => `\u001b[1;31m${input}\u001b[0m`;
@@ -244,18 +244,18 @@ console.log(`   ${textGreen("config")} | ${textGreen("c")}
 					if (parsedArgs.where === "'-1'" || parsedArgs.where === '"-1"')
 						where = -1 as any;
 					else if (isNumber(parsedArgs.where)) where = Number(parsedArgs.where);
-					else if (isJSON(parsedArgs.where))
+					else if (isStringified(parsedArgs.where))
 						where = Inison.unstringify(parsedArgs.where) as any;
 				}
 				if (parsedArgs.sort) {
-					if (isJSON(parsedArgs.sort))
+					if (isStringified(parsedArgs.sort))
 						sort = Inison.unstringify(parsedArgs.sort) as any;
 					else sort = parsedArgs.sort;
 				}
 				page = Number(parsedArgs.page) ?? undefined;
 				perPage = Number(parsedArgs.perPage) ?? undefined;
 				columns = parsedArgs.columns as string[];
-				if (parsedArgs.data && isJSON(parsedArgs.data))
+				if (parsedArgs.data && isStringified(parsedArgs.data))
 					data = Inison.unstringify(parsedArgs.data) as Data;
 			}
 

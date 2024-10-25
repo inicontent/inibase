@@ -212,7 +212,7 @@ export const isValidID = (input: any): input is string => {
  * @param {string} str - The string to be checked.
  * @returns {boolean} Returns true if the string is valid JSON, otherwise false.
  */
-export const isJSON = (str: string): boolean =>
+export const isStringified = (str: string): boolean =>
 	str === "null" || str === "undefined" || str[0] === "{" || str[0] === "[";
 
 /**
@@ -271,7 +271,8 @@ export const detectFieldType = (
 				if (availableTypes.includes("url") && isURL(input)) return "url";
 				if (availableTypes.includes("password") && isPassword(input))
 					return "password";
-				if (availableTypes.includes("json") && isJSON(input)) return "json";
+				if (availableTypes.includes("json") && isStringified(input))
+					return "json";
 				if (availableTypes.includes("json") && isDate(input)) return "json";
 				if (availableTypes.includes("string") && isString(input))
 					return "string";
@@ -428,7 +429,7 @@ export const validateFieldType = (
 		case "id":
 			return isNumber(value) || isValidID(value);
 		case "json":
-			return isJSON(value) || Array.isArray(value) || isObject(value);
+			return isStringified(value) || Array.isArray(value) || isObject(value);
 		default:
 			return false;
 	}

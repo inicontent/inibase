@@ -21,7 +21,7 @@ import type { ComparisonOperator, FieldType, Schema } from "./index.js";
 import {
 	detectFieldType,
 	isArrayOfObjects,
-	isJSON,
+	isStringified,
 	isNumber,
 	isObject,
 } from "./utils.js";
@@ -147,7 +147,9 @@ export const encode = (
 		| (string | number | boolean | null)[],
 ): string | number | boolean | null =>
 	Array.isArray(input)
-		? input.every((_input) => typeof _input === "string" && isJSON(_input))
+		? input.every(
+				(_input) => typeof _input === "string" && isStringified(_input),
+			)
 			? `[${input.join(",")}]`
 			: Inison.stringify(input as any)
 		: secureString(input);
@@ -246,7 +248,7 @@ export const decode = (
 	// Decode the input using the decodeHelper function.
 	return decodeHelper(
 		typeof input === "string"
-			? isJSON(input)
+			? isStringified(input)
 				? (Inison.unstringify(input as any) as any)
 				: unSecureString(input)
 			: input,
