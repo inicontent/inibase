@@ -663,8 +663,10 @@ export default class Inibase {
 			case "json": {
 				if (typeof value === "string" && Utils.isStringified(value))
 					return value;
-				const cleanedObject = this.cleanObject(value as Data);
-				if (cleanedObject) return Inison.stringify(cleanedObject);
+				if (Utils.isObject(value)) {
+					const cleanedObject = this.cleanObject(value as Data);
+					if (cleanedObject) return Inison.stringify(cleanedObject);
+				} else return Inison.stringify(value);
 				return null;
 			}
 			default:
