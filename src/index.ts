@@ -2075,12 +2075,12 @@ export default class Inibase {
 					tableName,
 					this.tables[tableName].config.prepend
 						? Array.isArray(RETURN)
-							? RETURN.map((_, index) => index + 1)
+							? RETURN.map((_, index) => index + 1).toReversed()
 							: 1
 						: Array.isArray(RETURN)
 							? RETURN.map(
 									(_, index) => this.totalItems[`${tableName}-*`] - index,
-								)
+								).toReversed()
 							: this.totalItems[`${tableName}-*`],
 					options,
 					!Utils.isArrayOfObjects(data), // return only one item if data is not array of objects
@@ -2107,9 +2107,9 @@ export default class Inibase {
 	put(
 		tableName: string,
 		data: Data | Data[],
-		where: number | string | (number | string)[] | Criteria | undefined,
-		options: Options | undefined,
-		returnUpdatedData: false,
+		where?: number | string | (number | string)[] | Criteria,
+		options?: Options,
+		returnUpdatedData?: false,
 	): Promise<void>;
 	put(
 		tableName: string,
