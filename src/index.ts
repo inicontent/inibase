@@ -607,7 +607,8 @@ export default class Inibase {
 			fieldType = (Utils.detectFieldType(value, fieldType) ??
 				fieldType[0]) as any;
 		if (!value) return null;
-		if (fieldType !== "array" && Array.isArray(value)) value = value[0];
+		if (fieldType !== "array" && fieldType !== "json" && Array.isArray(value))
+			value = value[0];
 		switch (fieldType) {
 			case "array":
 				if (!fieldChildrenType) return null;
