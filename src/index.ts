@@ -604,10 +604,9 @@ export default class Inibase {
 		_formatOnlyAvailiableKeys?: boolean,
 	): Data | Data[] | number | string | null {
 		if (Array.isArray(fieldType))
-			fieldType = (Utils.detectFieldType(value, fieldType) ??
-				fieldType[0]) as any;
+			fieldType = Utils.detectFieldType(value, fieldType) ?? fieldType[0];
 		if (!value) return null;
-		if (fieldType !== "array" && fieldType !== "json" && Array.isArray(value))
+		if (Array.isArray(value) && !["array", "json"].includes(fieldType))
 			value = value[0];
 		switch (fieldType) {
 			case "array":

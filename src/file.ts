@@ -151,7 +151,7 @@ export const encode = (
 				(_input) => typeof _input === "string" && isStringified(_input),
 			)
 			? `[${input.join(",")}]`
-			: Inison.stringify(input as any)
+			: Inison.stringify(input)
 		: secureString(input);
 
 /**
