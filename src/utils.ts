@@ -51,8 +51,8 @@ export const isArrayOfNulls = (input: any): input is null[] | null[][] =>
  */
 export const isObject = (obj: any): obj is Record<any, any> =>
 	obj != null &&
-	(obj.constructor.name === "Object" ||
-		(typeof obj === "object" && !Array.isArray(obj)));
+	((typeof obj === "object" && !Array.isArray(obj)) ||
+		obj.constructor?.name === "Object");
 
 /**
  * Recursively merges properties from a source object into a target object. If a property exists in both, the source's value overwrites the target's.
@@ -190,10 +190,21 @@ export const isPassword = (input: any): input is string =>
  * @param input - The input to be checked, can be of any type.
  * @returns A boolean indicating whether the input is a valid date.
  */
-export const isDate = (input: any) =>
-	!Number.isNaN(new Date(input).getTime()) ||
-	!Number.isNaN(Date.parse(input)) ||
-	!!input.match(/\b\d{2}[/.-]\d{2}[/.-]\d{4}\b/);
+export function isDate(input?: any) {
+	// Check if the input is null, undefined, or an empty string
+	if (input == null || input === "") return false;
+
+	// Convert to number and check if it's a valid number
+	const numTimestamp = Number(input);
+	// Check if the converted number is NaN or not finite
+	if (Number.isNaN(numTimestamp) || !Number.isFinite(numTimestamp))
+		return false;
+
+	// Create a Date object from the timestamp
+	const date = new Date(numTimestamp);
+	// Check if the date is valid
+	return date.getTime() === numTimestamp;
+}
 
 /**
  * Checks if the input is a valid ID.

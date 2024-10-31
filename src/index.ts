@@ -143,13 +143,13 @@ export default class Inibase {
 				existsSync(".env") &&
 				readFileSync(".env").includes("INIBASE_SECRET=")
 			)
-				throw this.throwError("NO_ENV");
+				throw this.Error("NO_ENV");
 			this.salt = scryptSync(randomBytes(16), randomBytes(16), 32);
 			appendFileSync(".env", `\nINIBASE_SECRET=${this.salt.toString("hex")}\n`);
 		} else this.salt = Buffer.from(process.env.INIBASE_SECRET, "hex");
 	}
 
-	private throwError(
+	private Error(
 		code: ErrorCodes,
 		variable?: string | number | (string | number)[],
 		language: ErrorLang = "en",
@@ -241,7 +241,7 @@ export default class Inibase {
 		const tablePath = join(this.databasePath, tableName);
 
 		if (await File.isExists(tablePath))
-			throw this.throwError("TABLE_EXISTS", tableName);
+			throw this.Error("TABLE_EXISTS", tableName);
 
 		await mkdir(join(tablePath, ".tmp"), { recursive: true });
 		await mkdir(join(tablePath, ".cache"));
@@ -447,7 +447,7 @@ export default class Inibase {
 		const tablePath = join(this.databasePath, tableName);
 
 		if (!(await File.isExists(tablePath)))
-			throw this.throwError("TABLE_NOT_EXISTS", tableName);
+			throw this.Error("TABLE_NOT_EXISTS", tableName);
 
 		if (!this.tables[tableName])
 			this.tables[tableName] = {
@@ -508,7 +508,7 @@ export default class Inibase {
 	): Promise<TableObject> {
 		const table = await this.getTable(tableName);
 
-		if (!table.schema) throw this.throwError("NO_SCHEMA", tableName);
+		if (!table.schema) throw this.Error("NO_SCHEMA", tableName);
 
 		if (
 			!(await File.isExists(
@@ -519,7 +519,7 @@ export default class Inibase {
 				),
 			))
 		)
-			throw this.throwError("NO_ITEMS", tableName);
+			throw this.Error("NO_ITEMS", tableName);
 		return table;
 	}
 
@@ -536,15 +536,15 @@ export default class Inibase {
 				if (
 					!Object.hasOwn(data, field.key) ||
 					data[field.key] === null ||
-					data[field.key] === undefined
+					data[field.key] === undefined ||
+					data[field.key] === ""
 				) {
 					if (field.required && !skipRequiredField)
-						throw this.throwError("FIELD_REQUIRED", field.key);
+						throw this.Error("FIELD_REQUIRED", field.key);
 					return;
 				}
 
 				if (
-					Object.hasOwn(data, field.key) &&
 					!Utils.validateFieldType(
 						data[field.key],
 						field.type,
@@ -555,7 +555,7 @@ export default class Inibase {
 							: undefined,
 					)
 				)
-					throw this.throwError("INVALID_TYPE", [
+					throw this.Error("INVALID_TYPE", [
 						field.key,
 						Array.isArray(field.type) ? field.type.join(", ") : field.type,
 						data[field.key],
@@ -651,11 +651,6 @@ export default class Inibase {
 					: UtilsServer.hashPassword(String(value));
 			case "number":
 				return Utils.isNumber(value) ? Number(value) : null;
-			case "date": {
-				if (Utils.isNumber(value)) return value;
-				const dateToTimestamp = Date.parse(value as string);
-				return Number.isNaN(dateToTimestamp) ? null : dateToTimestamp;
-			}
 			case "id":
 				return Utils.isNumber(value)
 					? value
@@ -694,7 +689,7 @@ export default class Inibase {
 			);
 
 			if (searchResult && totalLines > 0)
-				throw this.throwError("FIELD_UNIQUE", [
+				throw this.Error("FIELD_UNIQUE", [
 					field.key,
 					Array.isArray(values) ? values.join(", ") : values,
 				]);
@@ -1195,13 +1190,6 @@ export default class Inibase {
 						if (item !== null && item !== undefined)
 							RETURN[index][field.key] = item;
 					}
-				// else
-				// 	RETURN = Object.fromEntries(
-				// 		Object.entries(RETURN).map(([index, data]) => [
-				// 			index,
-				// 			{ ...data, [field.key]: this.getDefaultValue(field) },
-				// 		]),
-				// 	);
 			}
 		}
 		return RETURN;
@@ -1531,7 +1519,7 @@ export default class Inibase {
 		let RETURN!: Data | Data[] | null;
 		let schema = (await this.getTable(tableName)).schema;
 
-		if (!schema) throw this.throwError("NO_SCHEMA", tableName);
+		if (!schema) throw this.Error("NO_SCHEMA", tableName);
 
 		if (
 			!(await File.isExists(
@@ -1972,14 +1960,16 @@ export default class Inibase {
 		const tablePath = join(this.databasePath, tableName),
 			schema = (await this.getTable(tableName)).schema;
 
-		if (!schema) throw this.throwError("NO_SCHEMA", tableName);
+		if (!schema) throw this.Error("NO_SCHEMA", tableName);
 
 		if (!returnPostedData) returnPostedData = false;
-		let RETURN: Data | Data[] | null | undefined;
 
 		const keys = UtilsServer.hashString(
 			Object.keys(Array.isArray(data) ? data[0] : data).join("."),
 		);
+
+		// Skip Id and (created|updated)At
+		this.validateData(data, schema.slice(1, -2));
 
 		let lastId = 0,
 			renameList: string[][] = [];
@@ -2020,29 +2010,28 @@ export default class Inibase {
 			} else this.totalItems[`${tableName}-*`] = 0;
 
 			if (Utils.isArrayOfObjects(data))
-				RETURN = data.map(({ id, updatedAt, createdAt, ...rest }) => ({
-					id: ++lastId,
-					...rest,
-					createdAt: Date.now(),
-				}));
-			else
-				RETURN = (({ id, updatedAt, createdAt, ...rest }) => ({
-					id: ++lastId,
-					...rest,
-					createdAt: Date.now(),
-				}))(data);
+				for (let index = 0; index < data.length; index++) {
+					const element = data[index];
+					element.id = ++lastId;
+					element.createdAt = Date.now();
+					element.updatedAt = undefined;
+				}
+			else {
+				data.id = ++lastId;
+				data.createdAt = Date.now();
+				data.updatedAt = undefined;
+			}
 
-			this.validateData(RETURN, schema);
 			await this.checkUnique(tableName, schema);
-			RETURN = this.formatData(RETURN, schema);
+			data = this.formatData(data, schema);
 
 			const pathesContents = this.joinPathesContents(
 				tableName,
 				this.tables[tableName].config.prepend
-					? Array.isArray(RETURN)
-						? RETURN.toReversed()
-						: RETURN
-					: RETURN,
+					? Array.isArray(data)
+						? data.toReversed()
+						: data
+					: data,
 			);
 
 			await Promise.all(
@@ -2064,8 +2053,8 @@ export default class Inibase {
 
 			if (this.tables[tableName].config.cache) await this.clearCache(tableName);
 
-			this.totalItems[`${tableName}-*`] += Array.isArray(RETURN)
-				? RETURN.length
+			this.totalItems[`${tableName}-*`] += Array.isArray(data)
+				? data.length
 				: 1;
 			await writeFile(
 				join(tablePath, ".cache", ".pagination"),
@@ -2076,13 +2065,13 @@ export default class Inibase {
 				return this.get(
 					tableName,
 					this.tables[tableName].config.prepend
-						? Array.isArray(RETURN)
-							? RETURN.map((_, index) => index + 1).toReversed()
+						? Array.isArray(data)
+							? data.map((_, index) => index + 1).toReversed()
 							: 1
-						: Array.isArray(RETURN)
-							? RETURN.map(
-									(_, index) => this.totalItems[`${tableName}-*`] - index,
-								).toReversed()
+						: Array.isArray(data)
+							? data
+									.map((_, index) => this.totalItems[`${tableName}-*`] - index)
+									.toReversed()
 							: this.totalItems[`${tableName}-*`],
 					options,
 					!Utils.isArrayOfObjects(data), // return only one item if data is not array of objects
@@ -2149,7 +2138,7 @@ export default class Inibase {
 						(item) => Object.hasOwn(item, "id") && Utils.isValidID(item.id),
 					)
 				)
-					throw this.throwError("INVALID_ID");
+					throw this.Error("INVALID_ID");
 
 				return this.put(
 					tableName,
@@ -2160,8 +2149,7 @@ export default class Inibase {
 				);
 			}
 			if (Object.hasOwn(data, "id")) {
-				if (!Utils.isValidID(data.id))
-					throw this.throwError("INVALID_ID", data.id);
+				if (!Utils.isValidID(data.id)) throw this.Error("INVALID_ID", data.id);
 				return this.put(
 					tableName,
 					data,
@@ -2320,7 +2308,7 @@ export default class Inibase {
 				options,
 				returnUpdatedData || undefined,
 			);
-		} else throw this.throwError("INVALID_PARAMETERS");
+		} else throw this.Error("INVALID_PARAMETERS");
 	}
 
 	/**
@@ -2430,7 +2418,7 @@ export default class Inibase {
 				true,
 			);
 			return this.delete(tableName, lineNumbers);
-		} else throw this.throwError("INVALID_PARAMETERS");
+		} else throw this.Error("INVALID_PARAMETERS");
 		return false;
 	}
 
