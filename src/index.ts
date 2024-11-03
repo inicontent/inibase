@@ -1032,16 +1032,20 @@ export default class Inibase {
 							this.salt,
 						);
 						if (itemsIDs) {
-							const searchableIDs: Record<number, string[]> = {};
-							for (const [index, item] of Object.entries(itemsIDs)) {
-								if (!RETURN[index]) RETURN[index] = {};
-								if (item !== null && item !== undefined)
-									searchableIDs[index] = item as string[];
+							const searchableIDs = new Map();
+							for (const [lineNumber, lineContent] of Object.entries(
+								itemsIDs,
+							)) {
+								if (!RETURN[lineNumber]) RETURN[lineNumber] = {};
+								if (lineContent !== null && lineContent !== undefined)
+									searchableIDs.set(lineNumber, lineContent);
 							}
-							if (Object.keys(searchableIDs).length) {
+							if (searchableIDs.size) {
 								const items = await this.get(
 									field.table,
-									[].concat(...Object.values(searchableIDs)),
+									Array.from(
+										new Set(Array.from(searchableIDs.values()).flat()),
+									),
 									{
 										...options,
 										perPage: Number.POSITIVE_INFINITY,
@@ -1052,13 +1056,15 @@ export default class Inibase {
 								);
 
 								if (items) {
-									let cursor = 0;
-									for (const [index, Ids] of Object.entries(searchableIDs)) {
-										RETURN[index][field.key] = items.slice(
-											cursor,
-											cursor + Ids.length,
+									for (const [
+										lineNumber,
+										lineContent,
+									] of searchableIDs.entries()) {
+										const foundedItems = items.filter(({ id }) =>
+											lineContent.includes(id),
 										);
-										cursor += Ids.length;
+										if (foundedItems)
+											RETURN[lineNumber][field.key] = foundedItems;
 									}
 								}
 							}
@@ -1136,16 +1142,16 @@ export default class Inibase {
 						this.salt,
 					);
 					if (itemsIDs) {
-						const searchableIDs: Record<number, string> = {};
-						for (const [index, item] of Object.entries(itemsIDs)) {
-							if (!RETURN[index]) RETURN[index] = {};
-							if (item !== null && item !== undefined)
-								searchableIDs[index] = item as string;
+						const searchableIDs = new Map();
+						for (const [lineNumber, lineContent] of Object.entries(itemsIDs)) {
+							if (!RETURN[lineNumber]) RETURN[lineNumber] = {};
+							if (lineContent !== null && lineContent !== undefined)
+								searchableIDs.set(lineNumber, lineContent);
 						}
-						if (Object.keys(searchableIDs).length) {
+						if (searchableIDs.size) {
 							const items = await this.get(
 								field.table,
-								Object.values(searchableIDs),
+								Array.from(new Set(searchableIDs.values())),
 								{
 									...options,
 									perPage: Number.POSITIVE_INFINITY,
@@ -1156,10 +1162,14 @@ export default class Inibase {
 							);
 
 							if (items) {
-								let cursor = 0;
-								for (const [index] of Object.entries(searchableIDs)) {
-									RETURN[index][field.key] = items[cursor];
-									cursor++;
+								for (const [
+									lineNumber,
+									lineContent,
+								] of searchableIDs.entries()) {
+									const foundedItem = items.find(
+										({ id }) => id === lineContent,
+									);
+									if (foundedItem) RETURN[lineNumber][field.key] = foundedItem;
 								}
 							}
 						}
