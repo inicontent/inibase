@@ -127,7 +127,7 @@ const secureString = (
 	}
 
 	// Replace characters using a single regular expression.
-	return decodedInput.replace(/\\n/g, "\n").replace(/\n/g, "\\n");
+	return decodedInput.replace(/\r\n|\r|\n/g, "\\n");
 };
 
 /**
