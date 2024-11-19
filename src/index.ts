@@ -2329,14 +2329,35 @@ export default class Inibase {
 		where?: number | string | (number | string)[] | Criteria,
 		_id?: string | string[],
 	): Promise<boolean | null> {
-		const renameList: string[][] = [];
-
 		const tablePath = join(this.databasePath, tableName);
 		await this.throwErrorIfTableEmpty(tableName);
 
 		if (!where) {
 			try {
 				await File.lock(join(tablePath, ".tmp"));
+				let lastId: number;
+				if (await File.isExists(join(tablePath, ".cache", ".pagination")))
+					lastId = (
+						await readFile(join(tablePath, ".cache", ".pagination"), "utf8")
+					)
+						.split(",")
+						.map(Number)[0];
+				else
+					lastId = Number(
+						Object.keys(
+							(
+								await File.get(
+									join(tablePath, `id${this.getFileExtension(tableName)}`),
+									-1,
+									"number",
+									undefined,
+									this.salt,
+									true,
+								)
+							)?.[0] ?? 0,
+						),
+					);
+
 				await Promise.all(
 					(await readdir(tablePath))
 						?.filter((fileName: string) =>
@@ -2347,6 +2368,12 @@ export default class Inibase {
 
 				if (this.tables[tableName].config.cache)
 					await this.clearCache(tableName);
+
+				await writeFile(
+					join(tablePath, ".cache", ".pagination"),
+					`${lastId},0`,
+				);
+
 				return true;
 			} finally {
 				await File.unlock(join(tablePath, ".tmp"));
@@ -2375,37 +2402,74 @@ export default class Inibase {
 			);
 
 			if (files.length) {
+				const renameList: string[][] = [];
 				try {
 					await File.lock(join(tablePath, ".tmp"));
-
-					await Promise.all(
-						files.map(async (file) =>
-							renameList.push(await File.remove(join(tablePath, file), where)),
-						),
-					);
-
-					await Promise.all(
-						renameList.map(async ([tempPath, filePath]) =>
-							rename(tempPath, filePath),
-						),
-					);
-
-					if (this.tables[tableName].config.cache)
-						await this.clearCache(tableName);
-					if (await File.isExists(join(tablePath, ".cache", ".pagination"))) {
-						const [lastId, totalItems] = (
+					let lastId: number;
+					if (await File.isExists(join(tablePath, ".cache", ".pagination")))
+						[lastId, this.totalItems[`${tableName}-*`]] = (
 							await readFile(join(tablePath, ".cache", ".pagination"), "utf8")
 						)
 							.split(",")
 							.map(Number);
-
-						await writeFile(
-							join(tablePath, ".cache", ".pagination"),
-							`${lastId},${
-								totalItems - (Array.isArray(where) ? where.length : 1)
-							}`,
+					else {
+						lastId = Number(
+							Object.keys(
+								(
+									await File.get(
+										join(tablePath, `id${this.getFileExtension(tableName)}`),
+										-1,
+										"number",
+										undefined,
+										this.salt,
+										true,
+									)
+								)?.[0] ?? 0,
+							),
 						);
+						if (!this.totalItems[`${tableName}-*`])
+							this.totalItems[`${tableName}-*`] = await File.count(
+								join(tablePath, `id${this.getFileExtension(tableName)}`),
+							);
 					}
+					if (
+						this.totalItems[`${tableName}-*`] &&
+						this.totalItems[`${tableName}-*`] -
+							(Array.isArray(where) ? where.length : 1) >
+							0
+					) {
+						await Promise.all(
+							files.map(async (file) =>
+								renameList.push(
+									await File.remove(join(tablePath, file), where),
+								),
+							),
+						);
+
+						await Promise.all(
+							renameList.map(async ([tempPath, filePath]) =>
+								rename(tempPath, filePath),
+							),
+						);
+					} else
+						await Promise.all(
+							(await readdir(tablePath))
+								?.filter((fileName: string) =>
+									fileName.endsWith(this.getFileExtension(tableName)),
+								)
+								.map(async (file) => unlink(join(tablePath, file))),
+						);
+
+					if (this.tables[tableName].config.cache)
+						await this.clearCache(tableName);
+
+					await writeFile(
+						join(tablePath, ".cache", ".pagination"),
+						`${lastId},${
+							this.totalItems[`${tableName}-*`] -
+							(Array.isArray(where) ? where.length : 1)
+						}`,
+					);
 					return true;
 				} finally {
 					if (renameList.length)
