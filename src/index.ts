@@ -769,13 +769,13 @@ export default class Inibase {
 		}
 	}
 
-	private _combineObjectsToArray = (
+	private _combineObjectsToArray(
 		input: any[],
 	): Record<
 		string,
 		string | boolean | number | null | (string | boolean | number | null)[]
-	> =>
-		input.reduce((result, current) => {
+	> {
+		return input.reduce((result, current) => {
 			for (const [key, value] of Object.entries(current))
 				if (Object.hasOwn(result, key) && Array.isArray(result[key]))
 					result[key].push(value);
@@ -783,13 +783,14 @@ export default class Inibase {
 
 			return result;
 		}, {});
-	private _CombineData = (
+	}
+	private _CombineData(
 		data: Data | Data[],
 		prefix?: string,
 	): Record<
 		string,
 		string | boolean | number | null | (string | boolean | number | null)[]
-	> => {
+	> {
 		if (Utils.isArrayOfObjects(data))
 			return this._combineObjectsToArray(
 				data.map((single_data) => this._CombineData(single_data)),
@@ -826,7 +827,7 @@ export default class Inibase {
 		}
 
 		return RETURN;
-	};
+	}
 
 	private joinPathesContents(tableName: string, data: Data | Data[]) {
 		const tablePath = join(this.databasePath, tableName),
