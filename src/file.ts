@@ -1,4 +1,4 @@
-import type { WriteStream } from "node:fs";
+import { createWriteStream, type WriteStream } from "node:fs";
 import {
 	type FileHandle,
 	access,
@@ -26,6 +26,7 @@ import {
 	isObject,
 } from "./utils.js";
 import { compare, encodeID, exec, gunzip, gzip } from "./utils.server.js";
+import { spawn } from "node:child_process";
 
 export const lock = async (
 	folderPath: string,
@@ -437,60 +438,107 @@ export const replace = async (
 				number,
 				string | boolean | number | null | (string | boolean | number | null)[]
 		  >,
+	totalItems?: number,
 ): Promise<string[]> => {
 	const fileTempPath = filePath.replace(/([^/]+)\/?$/, ".tmp/$1");
+	const isReplacementsObject = isObject(replacements);
+	const isReplacementsObjectHasLineNumbers =
+		isReplacementsObject && !Number.isNaN(Number(Object.keys(replacements)[0]));
 	if (await isExists(filePath)) {
-		let fileHandle = null;
-		let fileTempHandle = null;
-		try {
-			let linesCount = 0;
-			fileHandle = await open(filePath, "r");
-			fileTempHandle = await open(fileTempPath, "w");
-			const rl = createReadLineInternface(filePath, fileHandle);
+		if (isReplacementsObjectHasLineNumbers) {
+			let fileHandle = null;
+			let fileTempHandle = null;
+			try {
+				let linesCount = 0;
+				fileHandle = await open(filePath, "r");
+				fileTempHandle = await open(fileTempPath, "w");
+				const rl = createReadLineInternface(filePath, fileHandle);
 
-			await _pipeline(
-				filePath,
-				rl,
-				fileTempHandle.createWriteStream(),
-				new Transform({
-					transform(line, _, callback) {
-						linesCount++;
-						const replacement = isObject(replacements)
-							? Object.hasOwn(replacements, linesCount)
-								? replacements[linesCount]
-								: line
-							: replacements;
-						return callback(null, `${replacement}\n`);
-					},
-				}),
-			);
+				await _pipeline(
+					filePath,
+					rl,
+					fileTempHandle.createWriteStream(),
+					new Transform({
+						transform(line, _, callback) {
+							linesCount++;
+							const replacement = isReplacementsObject
+								? Object.hasOwn(replacements, linesCount)
+									? replacements[linesCount]
+									: line
+								: replacements;
+							return callback(null, `${replacement}\n`);
+						},
+					}),
+				);
 
-			return [fileTempPath, filePath];
-		} finally {
-			// Ensure that file handles are closed, even if an error occurred
-			await fileHandle?.close();
-			await fileTempHandle?.close();
+				return [fileTempPath, filePath];
+			} catch {
+				return [fileTempPath, null];
+			} finally {
+				// Ensure that file handles are closed, even if an error occurred
+				await fileHandle?.close();
+				await fileTempHandle?.close();
+			}
+		} else {
+			return new Promise((resolve) => {
+				const sedProcess = spawn("sed", [
+					"-e",
+					`s/.*/${replacements}/`,
+					"-e",
+					`/^$/s/^/${replacements}/`,
+					filePath,
+				]);
+
+				const outputStream = createWriteStream(fileTempPath); // Temp file for output
+
+				// Pipe sed output to the temporary file
+				sedProcess.stdout.pipe(outputStream);
+
+				// Handle the process close
+				sedProcess.on("close", (code) => {
+					if (code === 0) resolve([fileTempPath, filePath]);
+					else resolve([fileTempPath, null]);
+				});
+
+				// Handle errors in spawning the sed process
+				sedProcess.on("error", () => {
+					resolve([fileTempPath, null]);
+				});
+			});
 		}
-	} else if (isObject(replacements)) {
-		const replacementsKeys = Object.keys(replacements)
-			.map(Number)
-			.toSorted((a, b) => a - b);
+	} else if (isReplacementsObject) {
+		try {
+			if (isReplacementsObjectHasLineNumbers) {
+				const replacementsKeys = Object.keys(replacements)
+					.map(Number)
+					.toSorted((a, b) => a - b);
 
-		await write(
-			fileTempPath,
-			`${
-				"\n".repeat(replacementsKeys[0] - 1) +
-				replacementsKeys
-					.map((lineNumber, index) =>
-						index === 0 || lineNumber - replacementsKeys[index - 1] - 1 === 0
-							? replacements[lineNumber]
-							: "\n".repeat(lineNumber - replacementsKeys[index - 1] - 1) +
-								replacements[lineNumber],
-					)
-					.join("\n")
-			}\n`,
-		);
-		return [fileTempPath, filePath];
+				await write(
+					fileTempPath,
+					`${
+						"\n".repeat(replacementsKeys[0] - 1) +
+						replacementsKeys
+							.map((lineNumber, index) =>
+								index === 0 ||
+								lineNumber - replacementsKeys[index - 1] - 1 === 0
+									? replacements[lineNumber]
+									: "\n".repeat(lineNumber - replacementsKeys[index - 1] - 1) +
+										replacements[lineNumber],
+							)
+							.join("\n")
+					}\n`,
+				);
+			} else {
+				if (!totalItems) throw new Error("INVALID_PARAMETERS");
+				await write(
+					fileTempPath,
+					`${`${replacements}\n`.repeat(totalItems)}\n`,
+				);
+			}
+			return [fileTempPath, filePath];
+		} catch {
+			return [fileTempPath, null];
+		}
 	}
 	return [];
 };
@@ -508,26 +556,30 @@ export const append = async (
 	data: string | number | (string | number)[],
 ): Promise<string[]> => {
 	const fileTempPath = filePath.replace(/([^/]+)\/?$/, ".tmp/$1");
-	if (await isExists(filePath)) {
-		await copyFile(filePath, fileTempPath);
-		if (!filePath.endsWith(".gz")) {
-			await appendFile(
+	try {
+		if (await isExists(filePath)) {
+			await copyFile(filePath, fileTempPath);
+			if (!filePath.endsWith(".gz")) {
+				await appendFile(
+					fileTempPath,
+					`${Array.isArray(data) ? data.join("\n") : data}\n`,
+				);
+			} else {
+				await exec(
+					`echo $'${(Array.isArray(data) ? data.join("\n") : data)
+						.toString()
+						.replace(/'/g, "\\'")}' | gzip - >> ${fileTempPath}`,
+				);
+			}
+		} else
+			await write(
 				fileTempPath,
 				`${Array.isArray(data) ? data.join("\n") : data}\n`,
 			);
-		} else {
-			await exec(
-				`echo $'${(Array.isArray(data) ? data.join("\n") : data)
-					.toString()
-					.replace(/'/g, "\\'")}' | gzip - >> ${fileTempPath}`,
-			);
-		}
-	} else
-		await write(
-			fileTempPath,
-			`${Array.isArray(data) ? data.join("\n") : data}\n`,
-		);
-	return [fileTempPath, filePath];
+		return [fileTempPath, filePath];
+	} catch {
+		return [fileTempPath, null];
+	}
 };
 
 /**
@@ -572,6 +624,8 @@ export const prepend = async (
 						},
 					}),
 				);
+			} catch {
+				return [fileTempPath, null];
 			} finally {
 				// Ensure that file handles are closed, even if an error occurred
 				await fileHandle?.close();
@@ -585,15 +639,22 @@ export const prepend = async (
 					`${Array.isArray(data) ? data.join("\n") : data}\n`,
 				);
 				await exec(`cat ${fileChildTempPath} ${filePath} > ${fileTempPath}`);
+			} catch {
+				return [fileTempPath, null];
 			} finally {
 				await unlink(fileChildTempPath);
 			}
 		}
-	} else
-		await write(
-			fileTempPath,
-			`${Array.isArray(data) ? data.join("\n") : data}\n`,
-		);
+	} else {
+		try {
+			await write(
+				fileTempPath,
+				`${Array.isArray(data) ? data.join("\n") : data}\n`,
+			);
+		} catch {
+			return [fileTempPath, null];
+		}
+	}
 	return [fileTempPath, filePath];
 };
 
@@ -617,15 +678,18 @@ export const remove = async (
 	if (linesToDelete.some(Number.isNaN)) throw new Error("UNVALID_LINE_NUMBERS");
 
 	const fileTempPath = filePath.replace(/([^/]+)\/?$/, ".tmp/$1");
+	try {
+		const command = filePath.endsWith(".gz")
+			? `zcat ${filePath} | sed "${linesToDelete.join(
+					"d;",
+				)}d" | gzip > ${fileTempPath}`
+			: `sed "${linesToDelete.join("d;")}d" ${filePath} > ${fileTempPath}`;
+		await exec(command);
 
-	const command = filePath.endsWith(".gz")
-		? `zcat ${filePath} | sed "${linesToDelete.join(
-				"d;",
-			)}d" | gzip > ${fileTempPath}`
-		: `sed "${linesToDelete.join("d;")}d" ${filePath} > ${fileTempPath}`;
-	await exec(command);
-
-	return [fileTempPath, filePath];
+		return [fileTempPath, filePath];
+	} catch {
+		return [fileTempPath, null];
+	}
 };
 
 /**
