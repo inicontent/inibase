@@ -15,6 +15,7 @@ import { type Interface, createInterface } from "node:readline";
 import { Transform, type Transform as TransformType } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createGunzip, createGzip } from "node:zlib";
+import { spawn as spawnSync } from "node:child_process";
 
 import Inison from "inison";
 import type { ComparisonOperator, FieldType, Schema } from "./index.js";
@@ -26,7 +27,6 @@ import {
 	isObject,
 } from "./utils.js";
 import { compare, encodeID, exec, gunzip, gzip } from "./utils.server.js";
-import { spawn } from "node:child_process";
 
 export const lock = async (
 	folderPath: string,
@@ -61,6 +61,11 @@ export const read = async (filePath: string) =>
 	filePath.endsWith(".gz")
 		? (await gunzip(await readFile(filePath, "utf8"))).toString()
 		: await readFile(filePath, "utf8");
+
+// Escaping function to safely handle special characters
+function _escapeDoubleQuotes(arg: string) {
+	return arg.replace(/(["$`\\])/g, "\\$1"); // Escape double quotes, $, `, and \
+}
 
 const _pipeline = async (
 	filePath: string,
@@ -362,9 +367,10 @@ export async function get(
 				);
 			}
 		} else if (lineNumbers == -1) {
+			const escapedFilePath = `"${_escapeDoubleQuotes(filePath)}"`;
 			const command = filePath.endsWith(".gz")
-					? `zcat ${filePath} | sed -n '$p'`
-					: `sed -n '$p' ${filePath}`,
+					? `zcat ${escapedFilePath} | sed -n '$p'`
+					: `sed -n '$p' ${escapedFilePath}`,
 				foundedLine = (await exec(command)).stdout.trimEnd();
 			if (foundedLine)
 				lines[linesCount] = decode(
@@ -393,9 +399,10 @@ export async function get(
 				return [lines, linesCount];
 			}
 
+			const escapedFilePath = `"${_escapeDoubleQuotes(filePath)}"`;
 			const command = filePath.endsWith(".gz")
-					? `zcat ${filePath} | sed -n '${lineNumbers.join("p;")}p'`
-					: `sed -n '${lineNumbers.join("p;")}p' ${filePath}`,
+					? `zcat "${escapedFilePath}" | sed -n '${lineNumbers.join("p;")}p'`
+					: `sed -n '${lineNumbers.join("p;")}p' "${escapedFilePath}"`,
 				foundedLines = (await exec(command)).stdout.trimEnd().split("\n");
 
 			let index = 0;
@@ -481,7 +488,7 @@ export const replace = async (
 			}
 		} else {
 			return new Promise((resolve) => {
-				const sedProcess = spawn("sed", [
+				const sedProcess = spawnSync("sed", [
 					"-e",
 					`s/.*/${replacements}/`,
 					"-e",
@@ -565,10 +572,11 @@ export const append = async (
 					`${Array.isArray(data) ? data.join("\n") : data}\n`,
 				);
 			} else {
+				const escapedFileTempPath = `"${_escapeDoubleQuotes(fileTempPath)}"`;
 				await exec(
 					`echo $'${(Array.isArray(data) ? data.join("\n") : data)
 						.toString()
-						.replace(/'/g, "\\'")}' | gzip - >> ${fileTempPath}`,
+						.replace(/'/g, "\\'")}' | gzip - >> ${escapedFileTempPath}`,
 				);
 			}
 		} else
@@ -638,7 +646,14 @@ export const prepend = async (
 					fileChildTempPath,
 					`${Array.isArray(data) ? data.join("\n") : data}\n`,
 				);
-				await exec(`cat ${fileChildTempPath} ${filePath} > ${fileTempPath}`);
+
+				const escapedFilePath = `"${_escapeDoubleQuotes(filePath)}"`;
+				const escapedFileTempPath = `"${_escapeDoubleQuotes(fileTempPath)}"`;
+				const escapedFileChildTempPath = `"${_escapeDoubleQuotes(fileChildTempPath)}"`;
+
+				await exec(
+					`cat ${escapedFileChildTempPath} ${escapedFilePath} > ${escapedFileTempPath}`,
+				);
 			} catch {
 				return [fileTempPath, null];
 			} finally {
@@ -679,11 +694,14 @@ export const remove = async (
 
 	const fileTempPath = filePath.replace(/([^/]+)\/?$/, ".tmp/$1");
 	try {
+		const escapedFilePath = `"${_escapeDoubleQuotes(filePath)}"`;
+		const escapedFileTempPath = `"${_escapeDoubleQuotes(fileTempPath)}"`;
+
 		const command = filePath.endsWith(".gz")
-			? `zcat ${filePath} | sed "${linesToDelete.join(
+			? `zcat ${escapedFilePath} | sed "${linesToDelete.join(
 					"d;",
 				)}d" | gzip > ${fileTempPath}`
-			: `sed "${linesToDelete.join("d;")}d" ${filePath} > ${fileTempPath}`;
+			: `sed "${linesToDelete.join("d;")}d" ${escapedFilePath} > ${escapedFileTempPath}`;
 		await exec(command);
 
 		return [fileTempPath, filePath];
