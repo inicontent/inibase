@@ -10,7 +10,7 @@ import {
 	unlink,
 	writeFile,
 } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { type Interface, createInterface } from "node:readline";
 import { Transform, type Transform as TransformType } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -62,9 +62,12 @@ export const read = async (filePath: string) =>
 		? (await gunzip(await readFile(filePath, "utf8"))).toString()
 		: await readFile(filePath, "utf8");
 
-// Escaping function to safely handle special characters
-function _escapeDoubleQuotes(arg: string) {
-	return arg.replace(/(["$`\\])/g, "\\$1"); // Escape double quotes, $, `, and \
+export function escapeShellPath(filePath: string) {
+	// Resolve the path to avoid relative path issues
+	const resolvedPath = resolve(filePath);
+
+	// Escape double quotes and special shell characters
+	return resolvedPath.replace(/(["\\$`])/g, "\\$1");
 }
 
 const _pipeline = async (
@@ -367,7 +370,7 @@ export async function get(
 				);
 			}
 		} else if (lineNumbers == -1) {
-			const escapedFilePath = `"${_escapeDoubleQuotes(filePath)}"`;
+			const escapedFilePath = `${escapeShellPath(filePath)}`;
 			const command = filePath.endsWith(".gz")
 					? `zcat ${escapedFilePath} | sed -n '$p'`
 					: `sed -n '$p' ${escapedFilePath}`,
@@ -399,7 +402,7 @@ export async function get(
 				return [lines, linesCount];
 			}
 
-			const escapedFilePath = `"${_escapeDoubleQuotes(filePath)}"`;
+			const escapedFilePath = `${escapeShellPath(filePath)}`;
 			const command = filePath.endsWith(".gz")
 					? `zcat "${escapedFilePath}" | sed -n '${lineNumbers.join("p;")}p'`
 					: `sed -n '${lineNumbers.join("p;")}p' "${escapedFilePath}"`,
@@ -572,7 +575,7 @@ export const append = async (
 					`${Array.isArray(data) ? data.join("\n") : data}\n`,
 				);
 			} else {
-				const escapedFileTempPath = `"${_escapeDoubleQuotes(fileTempPath)}"`;
+				const escapedFileTempPath = `${escapeShellPath(fileTempPath)}`;
 				await exec(
 					`echo $'${(Array.isArray(data) ? data.join("\n") : data)
 						.toString()
@@ -647,9 +650,9 @@ export const prepend = async (
 					`${Array.isArray(data) ? data.join("\n") : data}\n`,
 				);
 
-				const escapedFilePath = `"${_escapeDoubleQuotes(filePath)}"`;
-				const escapedFileTempPath = `"${_escapeDoubleQuotes(fileTempPath)}"`;
-				const escapedFileChildTempPath = `"${_escapeDoubleQuotes(fileChildTempPath)}"`;
+				const escapedFilePath = `${escapeShellPath(filePath)}`;
+				const escapedFileTempPath = `${escapeShellPath(fileTempPath)}`;
+				const escapedFileChildTempPath = `${escapeShellPath(fileChildTempPath)}`;
 
 				await exec(
 					`cat ${escapedFileChildTempPath} ${escapedFilePath} > ${escapedFileTempPath}`,
@@ -694,8 +697,8 @@ export const remove = async (
 
 	const fileTempPath = filePath.replace(/([^/]+)\/?$/, ".tmp/$1");
 	try {
-		const escapedFilePath = `"${_escapeDoubleQuotes(filePath)}"`;
-		const escapedFileTempPath = `"${_escapeDoubleQuotes(fileTempPath)}"`;
+		const escapedFilePath = `${escapeShellPath(filePath)}`;
+		const escapedFileTempPath = `${escapeShellPath(fileTempPath)}`;
 
 		const command = filePath.endsWith(".gz")
 			? `zcat ${escapedFilePath} | sed "${linesToDelete.join(
