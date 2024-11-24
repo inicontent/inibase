@@ -478,6 +478,7 @@ export default class Inibase {
 				type: "id",
 				required: true,
 			},
+			...schema,
 			{
 				id: -1,
 				key: "createdAt",
@@ -488,9 +489,7 @@ export default class Inibase {
 				id: -2,
 				key: "updatedAt",
 				type: "date",
-				required: false,
 			},
-			...schema,
 		];
 
 		if (!encodeIDs) return schema;
