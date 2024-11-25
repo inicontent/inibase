@@ -319,7 +319,9 @@ export default class Inibase {
 			let schemaIdFilePath: string;
 			for await (const filePath of glob("*.schema", { cwd: this.databasePath }))
 				schemaIdFilePath = filePath;
-			const lastSchemaId = Number(parse(schemaIdFilePath).name);
+			const lastSchemaId = schemaIdFilePath
+				? Number(parse(schemaIdFilePath).name)
+				: 0;
 
 			if (await File.isExists(join(tablePath, "schema.json"))) {
 				// update columns files names based on field id
@@ -349,7 +351,12 @@ export default class Inibase {
 				join(tablePath, "schema.json"),
 				JSON.stringify(schema, null, 2),
 			);
-			await rename(schemaIdFilePath, join(tablePath, `${lastSchemaId}.schema`));
+			if (schemaIdFilePath)
+				await rename(
+					schemaIdFilePath,
+					join(tablePath, `${lastSchemaId}.schema`),
+				);
+			else await writeFile(join(tablePath, `${lastSchemaId}.schema`), "");
 		}
 
 		if (config) {
