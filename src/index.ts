@@ -1936,8 +1936,8 @@ export default class Inibase {
 			Object.keys(Array.isArray(data) ? data[0] : data).join("."),
 		);
 
-		// Skip Id and (created|updated)At
-		this.validateData(data, schema.slice(3));
+		// Skip ID and (created|updated)At
+		this.validateData(data, schema.slice(1, -2));
 
 		let lastId = 0;
 		const renameList: string[][] = [];
@@ -2105,9 +2105,10 @@ export default class Inibase {
 				);
 			}
 
-			this.validateData(data, schema, true);
+			// Skip ID and (created|updated)At
+			this.validateData(data, schema.slice(1, -2), true);
 			await this.checkUnique(tableName, schema);
-			data = this.formatData(data, schema, true);
+			this.formatData(data, schema, true);
 
 			const pathesContents = this.joinPathesContents(tableName, {
 				...(({ id, ...restOfData }) => restOfData)(data as Data),
@@ -2177,9 +2178,9 @@ export default class Inibase {
 			Utils.isNumber(where)
 		) {
 			// "where" in this case, is the line(s) number(s) and not id(s)
-			this.validateData(data, schema, true);
-			await this.checkUnique(tableName, schema);
-			data = this.formatData(data, schema, true);
+			this.validateData(data, schema.slice(1, -2), true);
+			await this.checkUnique(tableName, schema.slice(1, -2));
+			this.formatData(data, schema, true);
 
 			const pathesContents = Object.fromEntries(
 				Object.entries(
