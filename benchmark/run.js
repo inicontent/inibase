@@ -1,12 +1,5 @@
 #!/usr/bin/env node
 
-// Capture arguments passed after "benchmark" (e.g., "--single" or "-s")
-const argsFromCLI = process.argv.slice(2);
-
-// Detect `--single` or `-s` flag
-const hasSingleFlag =
-	argsFromCLI.includes("--single") || argsFromCLI.includes("-s");
-
 // Check if Bun is present
 const isBun = typeof Bun !== "undefined";
 
@@ -24,12 +17,19 @@ const spawn = async (command) => {
 };
 
 // Set up the default benchmark file path
-const benchmarkFile = hasSingleFlag ? "./benchmark/single" : "./benchmark/bulk";
+const benchmarkFile = "./benchmark/index";
 
 // Define the command based on the environment
 const command = isBun
-	? ["bun", benchmarkFile] // Bun args
-	: ["npx", "tsx", "--expose-gc", benchmarkFile]; // Node.js args
+	? ["bun", benchmarkFile, ...process.argv.slice(2)] // Bun args
+	: [
+			"npx",
+			"tsx",
+			"--expose-gc",
+			benchmarkFile,
+			"--",
+			...process.argv.slice(2),
+		]; // Node.js args
 
 // Execute the appropriate command
 await spawn(command);
