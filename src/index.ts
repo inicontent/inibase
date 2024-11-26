@@ -746,15 +746,6 @@ export default class Inibase {
 
 		switch (field.type) {
 			case "array":
-				return Utils.isArrayOfObjects(field.children)
-					? [
-							this.getDefaultValue({
-								...field,
-								type: "object",
-								children: field.children as Schema,
-							}),
-						]
-					: null;
 			case "object": {
 				if (!field.children || !Utils.isArrayOfObjects(field.children))
 					return null;
@@ -842,15 +833,18 @@ export default class Inibase {
 		return newCombinedData;
 	}
 
-	private _getItemsFromSchemaHelper(
+	private _processSchemaDataHelper(
 		RETURN: Record<number, Data>,
 		item: Data,
 		index: number,
 		field: Field,
 	) {
+		// If the item is an object, we need to process its children
 		if (Utils.isObject(item)) {
-			if (!RETURN[index]) RETURN[index] = {};
+			if (!RETURN[index]) RETURN[index] = {}; // Ensure the index exists
 			if (!RETURN[index][field.key]) RETURN[index][field.key] = [];
+
+			// Process children fields (recursive if needed)
 			for (const child_field of (field.children as Schema).filter(
 				(children) =>
 					children.type === "array" &&
@@ -877,9 +871,9 @@ export default class Inibase {
 									value[_i];
 							} else {
 								value[_i].forEach((_element: any, _index: number) => {
-									// Recursive call
-									this._getItemsFromSchemaHelper(
-										RETURN[index][field.key][_i][child_field.key][_index],
+									// Recursive call to handle nested structure
+									this._processSchemaDataHelper(
+										RETURN,
 										_element,
 										_index,
 										child_field,
@@ -898,308 +892,381 @@ export default class Inibase {
 			}
 		}
 	}
-	private async getItemsFromSchema(
+	private async processSchemaData(
 		tableName: string,
 		schema: Schema,
 		linesNumber: number[],
 		options: Options,
 		prefix?: string,
 	) {
-		const tablePath = join(this.databasePath, tableName);
 		const RETURN: Record<number, Data> = {};
+		for (const field of schema) {
+			// If the field is of simple type (non-recursive), process it directly
+			if (this.isSimpleField(field.type)) {
+				await this.processSimpleField(
+					tableName,
+					field,
+					linesNumber,
+					RETURN,
+					options,
+					prefix,
+				);
+			} else if (this.isArrayField(field.type)) {
+				// Process array fields (recursive if needed)
+				await this.processArrayField(
+					tableName,
+					field,
+					linesNumber,
+					RETURN,
+					options,
+					prefix,
+				);
+			} else if (this.isObjectField(field.type)) {
+				// Process object fields (recursive if needed)
+				await this.processObjectField(
+					tableName,
+					field,
+					linesNumber,
+					RETURN,
+					options,
+					prefix,
+				);
+			} else if (this.isTableField(field.type)) {
+				// Process table reference fields
+				await this.processTableField(
+					tableName,
+					field,
+					linesNumber,
+					RETURN,
+					options,
+					prefix,
+				);
+			}
+		}
 
-		for await (const field of schema) {
-			if (
-				(field.type === "array" ||
-					(Array.isArray(field.type) && field.type.includes("array"))) &&
-				field.children
-			) {
-				if (Utils.isArrayOfObjects(field.children)) {
-					if (
-						field.children.filter(
+		return RETURN;
+	}
+
+	// Helper function to determine if a field is simple
+	private isSimpleField(fieldType: FieldType | FieldType[] | Schema): boolean {
+		const simpleTypes = [
+			"string",
+			"number",
+			"boolean",
+			"date",
+			"email",
+			"password",
+			"html",
+			"ip",
+			"json",
+			"id",
+		];
+		if (Array.isArray(fieldType))
+			return fieldType.every(
+				(type) => typeof type === "string" && simpleTypes.includes(type),
+			);
+
+		return simpleTypes.includes(fieldType);
+	}
+
+	// Process a simple field (non-recursive)
+	private async processSimpleField(
+		tableName: string,
+		field: Field,
+		linesNumber: number[],
+		RETURN: Record<number, Data>,
+		_options: Options,
+		prefix?: string,
+	) {
+		const fieldPath = join(
+			this.databasePath,
+			tableName,
+			`${prefix ?? ""}${field.key}${this.getFileExtension(tableName)}`,
+		);
+		if (await File.isExists(fieldPath)) {
+			const items = await File.get(
+				fieldPath,
+				linesNumber,
+				field.type,
+				field.children,
+				this.salt,
+			);
+			if (items) {
+				for (const [index, item] of Object.entries(items)) {
+					if (typeof item === "undefined") continue; // Skip undefined items
+					if (!RETURN[index]) RETURN[index] = {}; // Ensure the index exists
+					RETURN[index][field.key] = item; // Assign item to the RETURN object
+				}
+			}
+		}
+	}
+
+	// Helper function to check if the field type is array
+	private isArrayField(fieldType: FieldType | FieldType[] | Schema): boolean {
+		return (
+			(Array.isArray(fieldType) &&
+				fieldType.every((type) => typeof type === "string") &&
+				fieldType.includes("array")) ||
+			fieldType === "array"
+		);
+	}
+
+	// Process array fields (recursive if needed)
+	private async processArrayField(
+		tableName: string,
+		field: Field,
+		linesNumber: number[],
+		RETURN: Record<number, Data>,
+		options: Options,
+		prefix?: string,
+	) {
+		if (Array.isArray(field.children)) {
+			if (this.isSimpleField(field.children)) {
+				await this.processSimpleField(
+					tableName,
+					field,
+					linesNumber,
+					RETURN,
+					options,
+					prefix,
+				);
+			} else if (this.isTableField(field.children)) {
+				await this.processTableField(
+					tableName,
+					field,
+					linesNumber,
+					RETURN,
+					options,
+					prefix,
+				);
+			} else {
+				// Handling array of objects and filtering nested arrays
+				const nestedArrayFields = field.children.filter(
+					(child): child is Field =>
+						(child as Field).type === "array" &&
+						Utils.isArrayOfObjects((child as Field).children),
+				);
+
+				if (nestedArrayFields.length > 0) {
+					// one of children has array field type and has children array of object = Schema
+					const childItems = await this.processSchemaData(
+						tableName,
+						(field.children as Schema).filter(
 							(children) =>
 								children.type === "array" &&
 								Utils.isArrayOfObjects(children.children),
-						).length
-					) {
-						// one of children has array field type and has children array of object = Schema
-						const childItems = await this.getItemsFromSchema(
-							tableName,
-							(field.children as Schema).filter(
-								(children) =>
-									children.type === "array" &&
-									Utils.isArrayOfObjects(children.children),
-							),
-							linesNumber,
-							options,
-							`${(prefix ?? "") + field.key}.`,
-						);
-						if (childItems)
-							for (const [index, item] of Object.entries(childItems))
-								this._getItemsFromSchemaHelper(RETURN, item, index, field);
-
-						field.children = field.children.filter(
-							(children) =>
-								children.type !== "array" ||
-								!Utils.isArrayOfObjects(children.children),
-						);
-					}
-					const fieldItems = await this.getItemsFromSchema(
-						tableName,
-						field.children,
+						),
 						linesNumber,
 						options,
 						`${(prefix ?? "") + field.key}.`,
 					);
-					if (fieldItems)
-						for (const [index, item] of Object.entries(fieldItems)) {
-							if (!RETURN[index]) RETURN[index] = {};
-							if (Utils.isObject(item)) {
-								if (!Utils.isArrayOfNulls(Object.values(item))) {
-									if (RETURN[index][field.key])
-										Object.entries(item).forEach(([key, value], _index) => {
-											for (let _index = 0; _index < value.length; _index++)
-												if (RETURN[index][field.key][_index])
-													Object.assign(RETURN[index][field.key][_index], {
-														[key]: value[_index],
-													});
-												else
-													RETURN[index][field.key][_index] = {
-														[key]: value[_index],
-													};
-										});
-									else if (
-										Object.values(item).every(
-											(_i) => Utils.isArrayOfArrays(_i) || Array.isArray(_i),
-										) &&
-										prefix
-									)
-										RETURN[index][field.key] = item;
-									else {
-										RETURN[index][field.key] = [];
-										Object.entries(item).forEach(([key, value], _ind) => {
-											if (!Array.isArray(value)) {
-												RETURN[index][field.key][_ind] = {};
-												RETURN[index][field.key][_ind][key] = value;
-											} else
-												for (let _i = 0; _i < value.length; _i++) {
-													if (
-														value[_i] === null ||
-														(Array.isArray(value[_i]) &&
-															Utils.isArrayOfNulls(value[_i]))
-													)
-														continue;
+					if (childItems)
+						for (const [index, item] of Object.entries(childItems))
+							this._processSchemaDataHelper(RETURN, item, index, field);
 
-													if (!RETURN[index][field.key][_i])
-														RETURN[index][field.key][_i] = {};
-													RETURN[index][field.key][_i][key] = value[_i];
-												}
-										});
-									}
-								} else RETURN[index][field.key] = null;
-							} else RETURN[index][field.key] = item;
-						}
-				} else if (
-					field.children === "table" ||
-					(Array.isArray(field.type) && field.type.includes("table")) ||
-					(Array.isArray(field.children) && field.children.includes("table"))
-				) {
-					if (
-						field.table &&
-						(await File.isExists(join(this.databasePath, field.table))) &&
-						(await File.isExists(
-							join(
-								tablePath,
-								`${(prefix ?? "") + field.key}${this.getFileExtension(
-									tableName,
-								)}`,
-							),
-						))
-					) {
-						const itemsIDs = await File.get(
-							join(
-								tablePath,
-								`${(prefix ?? "") + field.key}${this.getFileExtension(
-									tableName,
-								)}`,
-							),
-							linesNumber,
-							field.type,
-							field.children,
-							this.salt,
-						);
-						if (itemsIDs) {
-							const searchableIDs = new Map();
-							for (const [lineNumber, lineContent] of Object.entries(
-								itemsIDs,
-							)) {
-								if (!RETURN[lineNumber]) RETURN[lineNumber] = {};
-								if (lineContent !== null && lineContent !== undefined)
-									searchableIDs.set(lineNumber, lineContent);
-							}
-							if (searchableIDs.size) {
-								const items = await this.get(
-									field.table,
-									Array.from(
-										new Set(Array.from(searchableIDs.values()).flat()),
-									),
-									{
-										...options,
-										perPage: Number.POSITIVE_INFINITY,
-										columns: (options.columns as string[] | undefined)
-											?.filter((column) => column.includes(`${field.key}.`))
-											.map((column) => column.replace(`${field.key}.`, "")),
-									},
-								);
-
-								if (items) {
-									for (const [
-										lineNumber,
-										lineContent,
-									] of searchableIDs.entries()) {
-										const foundedItems = items.filter(({ id }) =>
-											lineContent.includes(id),
-										);
-										if (foundedItems)
-											RETURN[lineNumber][field.key] = foundedItems;
-									}
-								}
-							}
-						}
-					}
-				} else if (
-					await File.isExists(
-						join(
-							tablePath,
-							`${(prefix ?? "") + field.key}${this.getFileExtension(
-								tableName,
-							)}`,
-						),
-					)
-				) {
-					const items = await File.get(
-						join(
-							tablePath,
-							`${(prefix ?? "") + field.key}${this.getFileExtension(
-								tableName,
-							)}`,
-						),
-						linesNumber,
-						field.type,
-						field.children,
-						this.salt,
-					);
-
-					if (items)
-						for (const [index, item] of Object.entries(items)) {
-							if (!RETURN[index]) RETURN[index] = {};
-							if (item !== null && item !== undefined)
-								RETURN[index][field.key] = item;
-						}
+					// Remove nested arrays after processing
+					field.children = field.children.filter(
+						(child) =>
+							(child as Field).type === "array" &&
+							Utils.isArrayOfObjects((child as Field).children),
+					) as Schema;
 				}
-			} else if (field.type === "object") {
-				const fieldItems = await this.getItemsFromSchema(
+
+				// Process remaining items for the field's children
+				const items = await this.processSchemaData(
 					tableName,
 					field.children as Schema,
 					linesNumber,
 					options,
 					`${(prefix ?? "") + field.key}.`,
 				);
-				if (fieldItems)
-					for (const [index, item] of Object.entries(fieldItems)) {
+
+				// Process the items after retrieval
+				if (items) {
+					for (const [index, item] of Object.entries(items)) {
+						if (typeof item === "undefined") continue; // Skip undefined items
 						if (!RETURN[index]) RETURN[index] = {};
 						if (Utils.isObject(item)) {
-							if (!Object.values(item).every((i) => i === null))
-								RETURN[index][field.key] = item;
-						}
-					}
-			} else if (field.type === "table") {
-				if (
-					field.table &&
-					(await File.isExists(join(this.databasePath, field.table))) &&
-					(await File.isExists(
-						join(
-							tablePath,
-							`${(prefix ?? "") + field.key}${this.getFileExtension(
-								tableName,
-							)}`,
-						),
-					))
-				) {
-					const itemsIDs = await File.get(
-						join(
-							tablePath,
-							`${(prefix ?? "") + field.key}${this.getFileExtension(
-								tableName,
-							)}`,
-						),
-						linesNumber,
-						field.type,
-						field.children,
-						this.salt,
-					);
-					if (itemsIDs) {
-						const searchableIDs = new Map();
-						for (const [lineNumber, lineContent] of Object.entries(itemsIDs)) {
-							if (!RETURN[lineNumber]) RETURN[lineNumber] = {};
-							if (lineContent !== null && lineContent !== undefined)
-								searchableIDs.set(lineNumber, lineContent);
-						}
-						if (searchableIDs.size) {
-							const items = await this.get(
-								field.table,
-								Array.from(new Set(searchableIDs.values())),
-								{
-									...options,
-									perPage: Number.POSITIVE_INFINITY,
-									columns: (options.columns as string[] | undefined)
-										?.filter((column) => column.includes(`${field.key}.`))
-										.map((column) => column.replace(`${field.key}.`, "")),
-								},
-							);
+							if (!Utils.isArrayOfNulls(Object.values(item))) {
+								if (RETURN[index][field.key])
+									Object.entries(item).forEach(([key, value], _index) => {
+										for (let _index = 0; _index < value.length; _index++)
+											if (RETURN[index][field.key][_index])
+												Object.assign(RETURN[index][field.key][_index], {
+													[key]: value[_index],
+												});
+											else
+												RETURN[index][field.key][_index] = {
+													[key]: value[_index],
+												};
+									});
+								else if (
+									Object.values(item).every(
+										(_i) => Utils.isArrayOfArrays(_i) || Array.isArray(_i),
+									) &&
+									prefix
+								)
+									RETURN[index][field.key] = item;
+								else {
+									RETURN[index][field.key] = [];
+									Object.entries(item).forEach(([key, value], _ind) => {
+										if (!Array.isArray(value)) {
+											RETURN[index][field.key][_ind] = {};
+											RETURN[index][field.key][_ind][key] = value;
+										} else
+											for (let _i = 0; _i < value.length; _i++) {
+												if (
+													value[_i] === null ||
+													(Array.isArray(value[_i]) &&
+														Utils.isArrayOfNulls(value[_i]))
+												)
+													continue;
 
-							if (items) {
-								for (const [
-									lineNumber,
-									lineContent,
-								] of searchableIDs.entries()) {
-									const foundedItem = items.find(
-										({ id }) => id === lineContent,
-									);
-									if (foundedItem) RETURN[lineNumber][field.key] = foundedItem;
+												if (!RETURN[index][field.key][_i])
+													RETURN[index][field.key][_i] = {};
+												RETURN[index][field.key][_i][key] = value[_i];
+											}
+									});
 								}
-							}
-						}
+							} else RETURN[index][field.key] = null;
+						} else RETURN[index][field.key] = item;
 					}
 				}
-			} else if (
-				await File.isExists(
-					join(
-						tablePath,
-						`${(prefix ?? "") + field.key}${this.getFileExtension(tableName)}`,
-					),
-				)
-			) {
-				const items = await File.get(
-					join(
-						tablePath,
-						`${(prefix ?? "") + field.key}${this.getFileExtension(tableName)}`,
-					),
+			}
+		} else if (this.isSimpleField(field.children)) {
+			// If `children` is FieldType, handle it as an array of simple types (no recursion needed here)
+
+			await this.processSimpleField(
+				tableName,
+				field,
+				linesNumber,
+				RETURN,
+				options,
+				prefix,
+			);
+		} else if (this.isTableField(field.children)) {
+			await this.processTableField(
+				tableName,
+				field,
+				linesNumber,
+				RETURN,
+				options,
+				prefix,
+			);
+		}
+	}
+
+	// Helper function to check if the field type is object
+	private isObjectField(fieldType: FieldType | FieldType[] | Schema): boolean {
+		return (
+			fieldType === "object" ||
+			(Array.isArray(fieldType) &&
+				fieldType.every((type) => typeof type === "string") &&
+				fieldType.includes("object"))
+		);
+	}
+
+	// Process object fields (recursive if needed)
+	private async processObjectField(
+		tableName: string,
+		field: Field,
+		linesNumber: number[],
+		RETURN: Record<number, Data>,
+		options: Options,
+		prefix?: string,
+	) {
+		if (Array.isArray(field.children)) {
+			// If `children` is a Schema (array of Field objects), recurse
+			const items = await this.processSchemaData(
+				tableName,
+				field.children as Schema,
+				linesNumber,
+				options,
+				`${prefix ?? ""}${field.key}.`,
+			);
+			for (const [index, item] of Object.entries(items)) {
+				if (typeof item === "undefined") continue; // Skip undefined items
+				if (!RETURN[index]) RETURN[index] = {};
+				if (Utils.isObject(item)) {
+					if (!Object.values(item).every((i) => i === null))
+						RETURN[index][field.key] = item;
+				}
+			}
+		}
+	}
+
+	// Helper function to check if the field type is table
+	private isTableField(fieldType: FieldType | FieldType[] | Schema): boolean {
+		return (
+			fieldType === "table" ||
+			(Array.isArray(fieldType) &&
+				fieldType.every((type) => typeof type === "string") &&
+				fieldType.includes("table"))
+		);
+	}
+
+	// Process table reference fields
+	private async processTableField(
+		tableName: string,
+		field: Field,
+		linesNumber: number[],
+		RETURN: Record<number, Data>,
+		options: Options,
+		prefix?: string,
+	) {
+		if (
+			field.table &&
+			(await File.isExists(join(this.databasePath, field.table)))
+		) {
+			const fieldPath = join(
+				this.databasePath,
+				tableName,
+				`${prefix ?? ""}${field.key}${this.getFileExtension(tableName)}`,
+			);
+			if (await File.isExists(fieldPath)) {
+				const itemsIDs = await File.get(
+					fieldPath,
 					linesNumber,
 					field.type,
 					field.children,
 					this.salt,
 				);
-
-				if (items)
-					for (const [index, item] of Object.entries(items)) {
-						if (!RETURN[index]) RETURN[index] = {};
-						if (item !== null && item !== undefined)
-							RETURN[index][field.key] = item;
+				const isArrayField = this.isArrayField(field.type);
+				if (itemsIDs) {
+					const searchableIDs = new Map();
+					for (const [lineNumber, lineContent] of Object.entries(itemsIDs)) {
+						if (typeof lineContent === "undefined") continue; // Skip undefined items
+						if (!RETURN[lineNumber]) RETURN[lineNumber] = {};
+						if (lineContent !== null && lineContent !== undefined)
+							searchableIDs.set(lineNumber, lineContent);
 					}
+					if (searchableIDs.size) {
+						const items = await this.get(
+							field.table,
+							isArrayField
+								? Array.from(new Set(Array.from(searchableIDs.values()).flat()))
+								: Array.from(new Set(searchableIDs.values())),
+							{
+								...options,
+								perPage: Number.POSITIVE_INFINITY,
+								columns: (options.columns as string[] | undefined)
+									?.filter((column) => column.includes(`${field.key}.`))
+									.map((column) => column.replace(`${field.key}.`, "")),
+							},
+						);
+
+						if (items) {
+							for (const [lineNumber, lineContent] of searchableIDs.entries()) {
+								const foundedItem = isArrayField
+									? items.filter(({ id }) => lineContent.includes(id))
+									: items.find(({ id }) => id === lineContent);
+								if (foundedItem) RETURN[lineNumber][field.key] = foundedItem;
+							}
+						}
+					}
+				}
 			}
 		}
-		return RETURN;
 	}
 
 	private async applyCriteria(
@@ -1706,7 +1773,7 @@ export default class Inibase {
 		if (!where) {
 			// Display all data
 			RETURN = Object.values(
-				await this.getItemsFromSchema(
+				await this.processSchemaData(
 					tableName,
 					schema,
 					Array.from(
@@ -1737,7 +1804,7 @@ export default class Inibase {
 			if (onlyLinesNumbers) return lineNumbers;
 
 			RETURN = Object.values(
-				(await this.getItemsFromSchema(
+				(await this.processSchemaData(
 					tableName,
 					schema,
 					lineNumbers,
@@ -1785,7 +1852,7 @@ export default class Inibase {
 			}
 
 			RETURN = Object.values(
-				(await this.getItemsFromSchema(
+				(await this.processSchemaData(
 					tableName,
 					schema,
 					Object.keys(lineNumbers).map(Number),
@@ -1851,7 +1918,7 @@ export default class Inibase {
 				RETURN = Object.values(
 					Utils.deepMerge(
 						RETURN,
-						await this.getItemsFromSchema(
+						await this.processSchemaData(
 							tableName,
 							Utils.filterSchema(
 								schema,

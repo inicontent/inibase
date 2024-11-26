@@ -248,7 +248,7 @@ export const decode = (
 	secretKey?: string | Buffer,
 ): string | number | boolean | null | (string | number | null | boolean)[] => {
 	if (!fieldType) return null;
-	if (input === null || input === "") return null;
+	if (input === null || input === "") return undefined;
 
 	// Detect the fieldType based on the input and the provided array of possible types.
 	if (Array.isArray(fieldType))
@@ -266,6 +266,31 @@ export const decode = (
 		secretKey,
 	);
 };
+
+function _groupIntoRanges(arr: number[], action: "p" | "d" = "p") {
+	if (arr.length === 0) return [];
+
+	arr.sort((a, b) => a - b); // Ensure the array is sorted
+	const ranges = [];
+	let start = arr[0];
+	let end = arr[0];
+
+	for (let i = 1; i < arr.length; i++) {
+		if (arr[i] === end + 1) {
+			// Continue the range
+			end = arr[i];
+		} else {
+			// End the current range and start a new one
+			ranges.push(start === end ? `${start}` : `${start},${end}`);
+			start = arr[i];
+			end = arr[i];
+		}
+	}
+
+	// Push the last range
+	ranges.push(start === end ? `${start}` : `${start},${end}`);
+	return ranges.map((range) => `${range}${action}`).join(";");
+}
 
 /**
  * Asynchronously reads and decodes data from a file at specified line numbers.
@@ -403,9 +428,10 @@ export async function get(
 			}
 
 			const escapedFilePath = `${escapeShellPath(filePath)}`;
+
 			const command = filePath.endsWith(".gz")
-					? `zcat "${escapedFilePath}" | sed -n '${lineNumbers.join("p;")}p'`
-					: `sed -n '${lineNumbers.join("p;")}p' "${escapedFilePath}"`,
+					? `zcat "${escapedFilePath}" | sed -n '${_groupIntoRanges(lineNumbers)}'`
+					: `sed -n '${_groupIntoRanges(lineNumbers)}' "${escapedFilePath}"`,
 				foundedLines = (await exec(command)).stdout.trimEnd().split("\n");
 
 			let index = 0;
@@ -701,10 +727,8 @@ export const remove = async (
 		const escapedFileTempPath = `${escapeShellPath(fileTempPath)}`;
 
 		const command = filePath.endsWith(".gz")
-			? `zcat ${escapedFilePath} | sed "${linesToDelete.join(
-					"d;",
-				)}d" | gzip > ${fileTempPath}`
-			: `sed "${linesToDelete.join("d;")}d" ${escapedFilePath} > ${escapedFileTempPath}`;
+			? `zcat ${escapedFilePath} | sed '${_groupIntoRanges(linesToDelete, "d")}' | gzip > ${fileTempPath}`
+			: `sed '${_groupIntoRanges(linesToDelete, "d")}' ${escapedFilePath} > ${escapedFileTempPath}`;
 		await exec(command);
 
 		return [fileTempPath, filePath];
@@ -834,31 +858,6 @@ export const search = async (
 		// Close the file handle in the finally block to ensure it is closed even if an error occurs.
 		await fileHandle?.close();
 	}
-};
-
-/**
- * Asynchronously counts the number of lines in a file.
- *
- * @param filePath - Path of the file to count lines in.
- * @returns Promise<number>. The number of lines in the file.
- *
- * Note: Reads through the file line by line to count the total number of lines.
- */
-export const count = async (filePath: string): Promise<number> => {
-	// Number((await exec(`wc -l < ${filePath}`)).stdout.trimEnd());
-	let linesCount = 0;
-	if (await isExists(filePath)) {
-		let fileHandle = null;
-		try {
-			fileHandle = await open(filePath, "r");
-			const rl = createReadLineInternface(filePath, fileHandle);
-
-			for await (const _ of rl) linesCount++;
-		} finally {
-			await fileHandle?.close();
-		}
-	}
-	return linesCount;
 };
 
 /**
