@@ -54,6 +54,15 @@ const users = await db.get("user", { favoriteFoods: "![]Pizza,Burger" });
 <npm|pnpm|yarn|bun> install inibase
 ```
 
+> [!WARNING]
+> If you're using **Windows**, the following Unix commands are required: `zcat`, `sed`, `gzip`, and `echo`.
+>  
+> To use the missing commands, you need to install additional tools:
+> - **[GnuWin32](http://gnuwin32.sourceforge.net/)**: Provides individual GNU utilities for Windows.  
+> - **[Cygwin](https://www.cygwin.com/)**: Offers a full Unix-like environment for Windows.  
+>  
+> Alternatively, consider using the **Windows Subsystem for Linux (WSL)** to run a Linux environment on Windows. Learn more [here](https://learn.microsoft.com/en-us/windows/wsl/).
+
 ## How it works?
 
 `Inibase` organizes data into databases, tables, and columns, each stored in separate files.
