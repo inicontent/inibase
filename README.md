@@ -726,6 +726,7 @@ await db.get("user", undefined, { sort: {age: -1, username: "asc"} });
   - [x] Id
   - [x] JSON
 - [ ] TO-DO:
+  - [ ] Use new Map() instead of Object
   - [ ] Ability to search in JSON fields
   - [ ] Re-check used exec functions
   - [ ] Use smart caching (based on N° of queries)
