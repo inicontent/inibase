@@ -713,21 +713,20 @@ export default class Inibase {
 				this.formatData(single_data, schema, formatOnlyAvailiableKeys),
 			);
 		if (Utils.isObject(data)) {
-			const RETURN: Data = {};
 			for (const field of schema) {
 				if (!Object.hasOwn(data, field.key)) {
 					if (formatOnlyAvailiableKeys) continue;
-					RETURN[field.key] = this.getDefaultValue(field);
+					data[field.key] = this.getDefaultValue(field);
 					continue;
 				}
-				RETURN[field.key] = this.formatField(
+				data[field.key] = this.formatField(
 					data[field.key],
 					field.type,
 					field.children,
 					formatOnlyAvailiableKeys,
 				);
 			}
-			return RETURN;
+			return data;
 		}
 		return [];
 	}
