@@ -948,24 +948,13 @@ export default class Inibase {
 
 	// Helper function to determine if a field is simple
 	private isSimpleField(fieldType: FieldType | FieldType[] | Schema): boolean {
-		const simpleTypes = [
-			"string",
-			"number",
-			"boolean",
-			"date",
-			"email",
-			"password",
-			"html",
-			"ip",
-			"json",
-			"id",
-		];
+		const complexTypes = ["array", "object", "table"];
 		if (Array.isArray(fieldType))
 			return fieldType.every(
-				(type) => typeof type === "string" && simpleTypes.includes(type),
+				(type) => typeof type === "string" && !complexTypes.includes(type),
 			);
 
-		return simpleTypes.includes(fieldType);
+		return !complexTypes.includes(fieldType);
 	}
 
 	// Process a simple field (non-recursive)
