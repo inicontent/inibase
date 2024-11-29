@@ -266,16 +266,16 @@ export default class Inibase {
 				await writeFile(join(tablePath, ".prepend.config"), "");
 		}
 		if (schema) {
-			const lastSchemaId = 0;
+			const lastSchemaID = { value: 0 };
 			await writeFile(
 				join(tablePath, "schema.json"),
 				JSON.stringify(
-					UtilsServer.addIdToSchema(schema, lastSchemaId, this.salt),
+					UtilsServer.addIdToSchema(schema, lastSchemaID, this.salt),
 					null,
 					2,
 				),
 			);
-			await writeFile(join(tablePath, `${lastSchemaId}.schema`), "");
+			await writeFile(join(tablePath, `${lastSchemaID.value}.schema`), "");
 		} else await writeFile(join(tablePath, "0.schema"), "");
 
 		await writeFile(join(tablePath, "0-0.pagination"), "");
@@ -317,15 +317,16 @@ export default class Inibase {
 			);
 
 			let schemaIdFilePath: string;
-			for await (const filePath of glob("*.schema", { cwd: this.databasePath }))
-				schemaIdFilePath = filePath;
-			const lastSchemaId = schemaIdFilePath
-				? Number(parse(schemaIdFilePath).name)
-				: 0;
+			for await (const fileName of glob("*.schema", { cwd: tablePath }))
+				schemaIdFilePath = join(tablePath, fileName);
+
+			const lastSchemaID = {
+				value: schemaIdFilePath ? Number(parse(schemaIdFilePath).name) : 0,
+			};
 
 			if (await File.isExists(join(tablePath, "schema.json"))) {
 				// update columns files names based on field id
-				schema = UtilsServer.addIdToSchema(schema, lastSchemaId, this.salt);
+				schema = UtilsServer.addIdToSchema(schema, lastSchemaID, this.salt);
 				if (table.schema?.length) {
 					const replaceOldPathes = Utils.findChangedProperties(
 						this._schemaToIdsPath(tableName, table.schema),
@@ -345,7 +346,7 @@ export default class Inibase {
 						);
 				}
 			} else
-				schema = UtilsServer.addIdToSchema(schema, lastSchemaId, this.salt);
+				schema = UtilsServer.addIdToSchema(schema, lastSchemaID, this.salt);
 
 			await writeFile(
 				join(tablePath, "schema.json"),
@@ -354,9 +355,9 @@ export default class Inibase {
 			if (schemaIdFilePath)
 				await rename(
 					schemaIdFilePath,
-					join(tablePath, `${lastSchemaId}.schema`),
+					join(tablePath, `${lastSchemaID.value}.schema`),
 				);
-			else await writeFile(join(tablePath, `${lastSchemaId}.schema`), "");
+			else await writeFile(join(tablePath, `${lastSchemaID.value}.schema`), "");
 		}
 
 		if (config) {
@@ -1581,10 +1582,10 @@ export default class Inibase {
 		if (!schema) throw this.Error("NO_SCHEMA", tableName);
 
 		let pagination: [number, number];
-		for await (const paginationFilePath of glob("*.pagination", {
+		for await (const paginationFileName of glob("*.pagination", {
 			cwd: tablePath,
 		}))
-			pagination = parse(paginationFilePath).name.split("-").map(Number) as [
+			pagination = parse(paginationFileName).name.split("-").map(Number) as [
 				number,
 				number,
 			];
@@ -2007,8 +2008,8 @@ export default class Inibase {
 			await File.lock(join(tablePath, ".tmp"), keys);
 
 			let paginationFilePath: string;
-			for await (const filePath of glob("*.pagination", { cwd: tablePath }))
-				paginationFilePath = filePath;
+			for await (const fileName of glob("*.pagination", { cwd: tablePath }))
+				paginationFilePath = join(tablePath, fileName);
 
 			[lastId, this.totalItems[`${tableName}-*`]] = parse(paginationFilePath)
 				.name.split("-")
@@ -2062,7 +2063,7 @@ export default class Inibase {
 				: 1;
 
 			await rename(
-				join(tablePath, paginationFilePath),
+				paginationFilePath,
 				join(
 					tablePath,
 					`${lastId}-${this.totalItems[`${tableName}-*`]}.pagination`,
@@ -2180,10 +2181,10 @@ export default class Inibase {
 			try {
 				await File.lock(join(tablePath, ".tmp"));
 
-				for await (const paginationFilePath of glob("*.pagination", {
+				for await (const paginationFileName of glob("*.pagination", {
 					cwd: tablePath,
 				}))
-					this.totalItems[`${tableName}-*`] = parse(paginationFilePath)
+					this.totalItems[`${tableName}-*`] = parse(paginationFileName)
 						.name.split("-")
 						.map(Number)[1];
 
@@ -2340,14 +2341,13 @@ export default class Inibase {
 
 				let paginationFilePath: string;
 				let pagination: [number, number];
-				for await (const filePath of glob("*.pagination", {
+				for await (const paginationFileName of glob("*.pagination", {
 					cwd: tablePath,
 				})) {
-					paginationFilePath = filePath;
-					pagination = parse(filePath).name.split("-").map(Number) as [
-						number,
-						number,
-					];
+					paginationFilePath = join(tablePath, paginationFileName);
+					pagination = parse(paginationFileName)
+						.name.split("-")
+						.map(Number) as [number, number];
 				}
 
 				await Promise.all(
@@ -2362,7 +2362,7 @@ export default class Inibase {
 					await this.clearCache(tableName);
 
 				await rename(
-					join(tablePath, paginationFilePath),
+					paginationFilePath,
 					join(tablePath, `${pagination[0]}-0.pagination`),
 				);
 
@@ -2400,14 +2400,13 @@ export default class Inibase {
 
 					let paginationFilePath: string;
 					let pagination: [number, number];
-					for await (const filePath of glob("*.pagination", {
+					for await (const paginationFileName of glob("*.pagination", {
 						cwd: tablePath,
 					})) {
-						paginationFilePath = filePath;
-						pagination = parse(filePath).name.split("-").map(Number) as [
-							number,
-							number,
-						];
+						paginationFilePath = join(tablePath, paginationFileName);
+						pagination = parse(paginationFileName)
+							.name.split("-")
+							.map(Number) as [number, number];
 					}
 
 					if (
@@ -2442,7 +2441,7 @@ export default class Inibase {
 						await this.clearCache(tableName);
 
 					await rename(
-						join(tablePath, paginationFilePath),
+						paginationFilePath,
 						join(
 							tablePath,
 							`${pagination[0]}-${pagination[1] - (Array.isArray(where) ? where.length : 1)}.pagination`,

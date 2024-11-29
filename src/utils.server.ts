@@ -139,23 +139,23 @@ export const findLastIdNumber = (
  * Adds or updates IDs in a schema, encoding them using a provided secret key or salt.
  *
  * @param schema - The schema to update, defined as an array of schema objects.
- * @param oldIndex - The starting index for generating new IDs, defaults to 0.
+ * @param startWithID - An object containing the starting ID for generating new IDs.
  * @param secretKeyOrSalt - The secret key or salt for encoding IDs, can be a string, number, or Buffer.
  * @param encodeIDs - If true, IDs will be encoded, else they will remain as numbers.
  * @returns The updated schema with encoded IDs.
  */
 export const addIdToSchema = (
 	schema: Schema,
-	startWithID: number,
+	startWithID: { value: number },
 	secretKeyOrSalt: string | number | Buffer,
 	encodeIDs?: boolean,
 ) => {
 	function _addIdToField(field: Field) {
 		if (!field.id) {
-			startWithID++;
+			startWithID.value++;
 			field.id = encodeIDs
-				? encodeID(startWithID, secretKeyOrSalt)
-				: startWithID;
+				? encodeID(startWithID.value, secretKeyOrSalt)
+				: startWithID.value;
 		} else {
 			if (isValidID(field.id)) {
 				if (!encodeIDs) field.id = decodeID(field.id, secretKeyOrSalt);
