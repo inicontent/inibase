@@ -709,25 +709,27 @@ export default class Inibase {
 		schema: Schema,
 		formatOnlyAvailiableKeys?: boolean,
 	): Data | Data[] {
-		if (Utils.isArrayOfObjects(data))
-			return data.map((single_data: Data) =>
-				this.formatData(single_data, schema, formatOnlyAvailiableKeys),
+		const clonedData: Data | Data[] = JSON.parse(JSON.stringify(data));
+		if (Utils.isArrayOfObjects(clonedData))
+			return clonedData.map((singleData) =>
+				this.formatData(singleData, schema, formatOnlyAvailiableKeys),
 			);
-		if (Utils.isObject(data)) {
+		if (Utils.isObject(clonedData)) {
+			const RETURN: Data = {};
 			for (const field of schema) {
-				if (!Object.hasOwn(data, field.key)) {
+				if (!Object.hasOwn(clonedData, field.key)) {
 					if (formatOnlyAvailiableKeys) continue;
-					data[field.key] = this.getDefaultValue(field);
+					RETURN[field.key] = this.getDefaultValue(field);
 					continue;
 				}
-				data[field.key] = this.formatField(
-					data[field.key],
+				RETURN[field.key] = this.formatField(
+					clonedData[field.key],
 					field.type,
 					field.children,
 					formatOnlyAvailiableKeys,
 				);
 			}
-			return data;
+			return RETURN;
 		}
 		return [];
 	}
@@ -2171,7 +2173,7 @@ export default class Inibase {
 			// Skip ID and (created|updated)At
 			this.validateData(data, schema.slice(1, -2), true);
 			await this.checkUnique(tableName, schema);
-			this.formatData(data, schema, true);
+			data = this.formatData(data, schema, true);
 
 			const pathesContents = this.joinPathesContents(tableName, {
 				...(({ id, ...restOfData }) => restOfData)(data as Data),
@@ -2243,7 +2245,7 @@ export default class Inibase {
 			// "where" in this case, is the line(s) number(s) and not id(s)
 			this.validateData(data, schema.slice(1, -2), true);
 			await this.checkUnique(tableName, schema.slice(1, -2));
-			this.formatData(data, schema, true);
+			data = this.formatData(data, schema, true);
 
 			const pathesContents = Object.fromEntries(
 				Object.entries(
