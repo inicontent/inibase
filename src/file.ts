@@ -854,6 +854,8 @@ export const search = async (
 		return linesNumbers.size
 			? [matchingLines, linesNumbers.size, linesNumbers]
 			: [null, 0, null];
+	} catch {
+		return [null, 0, null];
 	} finally {
 		// Close the file handle in the finally block to ensure it is closed even if an error occurs.
 		await fileHandle?.close();
