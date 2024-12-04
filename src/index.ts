@@ -193,27 +193,30 @@ export default class Inibase {
 		);
 	}
 
-	private getFileExtension = (tableName: string) => {
+	public clear() {
+		this.tables = {};
+		this.totalItems = {};
+		this.pageInfo = {};
+		this.checkIFunique = {};
+	}
+
+	private getFileExtension(tableName: string) {
 		let mainExtension = this.fileExtension;
 		// TODO: ADD ENCRYPTION
 		// if(this.tables[tableName].config.encryption)
 		// 	mainExtension += ".enc"
 		if (this.tables[tableName].config.compression) mainExtension += ".gz";
 		return mainExtension;
-	};
+	}
 
-	private _schemaToIdsPath = (
-		tableName: string,
-		schema: Schema,
-		prefix = "",
-	) => {
+	private _schemaToIdsPath(tableName: string, schema: Schema, prefix = "") {
 		const RETURN: any = {};
 		for (const field of schema)
 			if (
 				(field.type === "array" || field.type === "object") &&
 				field.children &&
 				Utils.isArrayOfObjects(field.children)
-			) {
+			)
 				Utils.deepMerge(
 					RETURN,
 					this._schemaToIdsPath(
@@ -222,13 +225,15 @@ export default class Inibase {
 						`${(prefix ?? "") + field.key}.`,
 					),
 				);
-			} else if (field.id)
-				RETURN[field.id] = `${
-					(prefix ?? "") + field.key
-				}${this.getFileExtension(tableName)}`;
+			else if (field.id)
+				RETURN[
+					Utils.isValidID(field.id)
+						? UtilsServer.decodeID(field.id, this.salt)
+						: field.id
+				] = `${(prefix ?? "") + field.key}${this.getFileExtension(tableName)}`;
 
 		return RETURN;
-	};
+	}
 
 	/**
 	 * Create a new table inside database, with predefined schema and config
