@@ -766,6 +766,7 @@ export const search = async (
 		| null
 		| (string | number | boolean | null)[],
 	logicalOperator?: "and" | "or",
+	searchIn?: Set<number>,
 	fieldType?: FieldType | FieldType[],
 	fieldChildrenType?: FieldType | FieldType[] | Schema,
 	limit?: number,
@@ -804,6 +805,9 @@ export const search = async (
 		for await (const line of rl) {
 			// Increment the line count for each line.
 			linesCount++;
+
+			// Search only in provided linesNumbers
+			if (searchIn && !searchIn.has(linesCount)) continue;
 
 			// Decode the line for comparison.
 			const decodedLine = decode(line, fieldType, fieldChildrenType, secretKey);

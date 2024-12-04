@@ -677,6 +677,7 @@ export default class Inibase {
 				Array.isArray(values) ? "=" : "[]",
 				values,
 				undefined,
+				undefined,
 				field.type,
 				field.children,
 				1,
@@ -1266,11 +1267,11 @@ export default class Inibase {
 		options: Options,
 		criteria?: Criteria,
 		allTrue?: boolean,
+		searchIn?: Set<number>,
 	): Promise<[Record<number, Data> | null, Set<number> | null]> {
 		const tablePath = join(this.databasePath, tableName);
 
-		let RETURN: Record<number, Data> = {},
-			RETURN_LineNumbers = null;
+		let RETURN: Record<number, Data> = {};
 		if (!criteria) return [null, null];
 		if (criteria.and && Utils.isObject(criteria.and)) {
 			const [searchResult, lineNumbers] = await this.applyCriteria(
@@ -1279,6 +1280,7 @@ export default class Inibase {
 				options,
 				criteria.and as Criteria,
 				true,
+				searchIn,
 			);
 			if (searchResult) {
 				RETURN = Utils.deepMerge(
@@ -1286,31 +1288,19 @@ export default class Inibase {
 					Object.fromEntries(
 						Object.entries(searchResult).filter(
 							([_k, v], _i) =>
-								Object.keys(v).length ===
-								Object.keys(criteria.and ?? {}).length,
+								Object.keys(v).filter((key) =>
+									Object.keys(criteria.and).includes(key),
+								).length,
 						),
 					),
 				);
 				delete criteria.and;
-				RETURN_LineNumbers = lineNumbers;
+				searchIn = lineNumbers;
 			} else return [null, null];
 		}
 
-		if (criteria.or && Utils.isObject(criteria.or)) {
-			// if RETURN_LineNumbers is set, send it to applyCriteria, and search only in those lines
-			const [searchResult, lineNumbers] = await this.applyCriteria(
-				tableName,
-				schema,
-				options,
-				criteria.or as Criteria,
-				false,
-			);
-			delete criteria.or;
-			if (searchResult) {
-				RETURN = Utils.deepMerge(RETURN, searchResult);
-				RETURN_LineNumbers = lineNumbers;
-			}
-		}
+		const criteriaOR = criteria.or;
+		if (criteriaOR) delete criteria.or;
 
 		if (Object.keys(criteria).length > 0) {
 			if (allTrue === undefined) allTrue = true;
@@ -1420,11 +1410,13 @@ export default class Inibase {
 					searchOperator = "=";
 					searchComparedAtValue = value as number | boolean;
 				}
+
 				const [searchResult, totalLines, linesNumbers] = await File.search(
 					join(tablePath, `${key}${this.getFileExtension(tableName)}`),
 					searchOperator ?? "=",
 					searchComparedAtValue ?? null,
 					searchLogicalOperator,
+					allTrue ? searchIn : undefined,
 					field?.type,
 					field?.children,
 					options.perPage,
@@ -1446,22 +1438,44 @@ export default class Inibase {
 						),
 					);
 					this.totalItems[`${tableName}-${key}`] = totalLines;
-					RETURN_LineNumbers = linesNumbers;
-				}
-
-				if (allTrue && index > 0) {
-					if (!Object.keys(RETURN).length) RETURN = {};
-					RETURN = Object.fromEntries(
-						Object.entries(RETURN).filter(
-							([_index, item]) => Object.keys(item).length > index,
-						),
-					);
-					if (!Object.keys(RETURN).length) RETURN = {};
-				}
+					if (linesNumbers?.size) {
+						if (searchIn) {
+							for (const lineNumber of linesNumbers) searchIn.add(lineNumber);
+						} else searchIn = linesNumbers;
+					}
+				} else if (allTrue) return [null, null];
 			}
 		}
 
-		return [Object.keys(RETURN).length ? RETURN : null, RETURN_LineNumbers];
+		if (criteriaOR && Utils.isObject(criteriaOR)) {
+			const [searchResult, lineNumbers] = await this.applyCriteria(
+				tableName,
+				schema,
+				options,
+				criteriaOR as Criteria,
+				false,
+				searchIn,
+			);
+
+			if (searchResult) {
+				RETURN = Utils.deepMerge(RETURN, searchResult);
+
+				if (!Object.keys(RETURN).length) RETURN = {};
+				RETURN = Object.fromEntries(
+					Object.entries(RETURN).filter(
+						([_index, item]) =>
+							Object.keys(item).filter((key) =>
+								Object.keys(criteriaOR).includes(key),
+							).length,
+					),
+				);
+				if (!Object.keys(RETURN).length) RETURN = {};
+
+				searchIn = lineNumbers;
+			}
+		}
+
+		return [Object.keys(RETURN).length ? RETURN : null, searchIn];
 	}
 
 	private _filterSchemaByColumns(schema: Schema, columns: string[]): Schema {
@@ -1662,7 +1676,7 @@ export default class Inibase {
 				if (!(await File.isExists(path))) return null;
 
 			// Construct the paste command to merge files and filter lines by IDs
-			const pasteCommand = `paste '${filesPathes.join("' ")}'`;
+			const pasteCommand = `paste '${filesPathes.join("' '")}'`;
 
 			// Construct the sort command dynamically based on the number of files for sorting
 			const index = 2;
@@ -1818,6 +1832,7 @@ export default class Inibase {
 				Ids.map((id) =>
 					Utils.isNumber(id) ? Number(id) : UtilsServer.decodeID(id, this.salt),
 				),
+				undefined,
 				undefined,
 				"number",
 				undefined,
