@@ -1297,6 +1297,7 @@ export default class Inibase {
 		}
 
 		if (criteria.or && Utils.isObject(criteria.or)) {
+			// if RETURN_LineNumbers is set, send it to applyCriteria, and search only in those lines
 			const [searchResult, lineNumbers] = await this.applyCriteria(
 				tableName,
 				schema,
@@ -1661,7 +1662,7 @@ export default class Inibase {
 				if (!(await File.isExists(path))) return null;
 
 			// Construct the paste command to merge files and filter lines by IDs
-			const pasteCommand = `paste ${filesPathes.join(" ")}`;
+			const pasteCommand = `paste '${filesPathes.join("' ")}'`;
 
 			// Construct the sort command dynamically based on the number of files for sorting
 			const index = 2;
@@ -1681,7 +1682,7 @@ export default class Inibase {
 					return "";
 				})
 				.join(" ");
-			const sortCommand = `sort ${sortColumns} -T=${join(tablePath, ".tmp")}`;
+			const sortCommand = `sort ${sortColumns} -T='${join(tablePath, ".tmp")}'`;
 
 			try {
 				if (cacheKey) await File.lock(join(tablePath, ".tmp"), cacheKey);
@@ -1692,20 +1693,20 @@ export default class Inibase {
 							? (await File.isExists(
 									join(tablePath, ".cache", `${cacheKey}${this.fileExtension}`),
 								))
-								? `${awkCommand} ${join(
+								? `${awkCommand} '${join(
 										tablePath,
 										".cache",
 										`${cacheKey}${this.fileExtension}`,
-									)}`
-								: `${pasteCommand} | ${sortCommand} -o ${join(
+									)}'`
+								: `${pasteCommand} | ${sortCommand} -o '${join(
 										tablePath,
 										".cache",
 										`${cacheKey}${this.fileExtension}`,
-									)} && ${awkCommand} ${join(
+									)}' && ${awkCommand} '${join(
 										tablePath,
 										".cache",
 										`${cacheKey}${this.fileExtension}`,
-									)}`
+									)}'`
 							: `${pasteCommand} | ${sortCommand} | ${awkCommand}`,
 						{
 							encoding: "utf-8",
