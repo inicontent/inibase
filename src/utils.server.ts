@@ -341,7 +341,10 @@ export const isEqual = (
 		case "boolean":
 			return Number(originalValue) === Number(comparedValue);
 		default:
-			return originalValue == comparedValue;
+			return (
+				(!String(comparedValue).length && originalValue === undefined) ||
+				originalValue == comparedValue
+			);
 	}
 };
 
