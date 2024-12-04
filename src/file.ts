@@ -483,17 +483,18 @@ export const replace = async (
 	if (await isExists(filePath)) {
 		if (isReplacementsObjectHasLineNumbers) {
 			let fileHandle = null;
-			let fileTempHandle = null;
+			let fileTempHandle: FileHandle = null;
 			try {
 				let linesCount = 0;
 				fileHandle = await open(filePath, "r");
 				fileTempHandle = await open(fileTempPath, "w");
+				const writeStream = fileTempHandle.createWriteStream();
 				const rl = createReadLineInternface(filePath, fileHandle);
 
 				await _pipeline(
 					filePath,
 					rl,
-					fileTempHandle.createWriteStream(),
+					writeStream,
 					new Transform({
 						transform(line, _, callback) {
 							linesCount++;
@@ -504,9 +505,34 @@ export const replace = async (
 								: replacements;
 							return callback(null, `${replacement}\n`);
 						},
+						flush(callback) {
+							const remainingReplacementsKeys = Object.keys(replacements)
+								.map(Number)
+								.toSorted((a, b) => a - b)
+								.filter((lineNumber) => lineNumber > linesCount);
+
+							if (remainingReplacementsKeys.length)
+								this.push(
+									"\n".repeat(remainingReplacementsKeys[0] - linesCount - 1) +
+										remainingReplacementsKeys
+											.map((lineNumber, index) =>
+												index === 0 ||
+												lineNumber -
+													(remainingReplacementsKeys[index - 1] - 1) ===
+													0
+													? replacements[lineNumber]
+													: "\n".repeat(
+															lineNumber -
+																remainingReplacementsKeys[index - 1] -
+																1,
+														) + replacements[lineNumber],
+											)
+											.join("\n"),
+								);
+							callback();
+						},
 					}),
 				);
-
 				return [fileTempPath, filePath];
 			} catch {
 				return [fileTempPath, null];
