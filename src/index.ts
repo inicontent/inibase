@@ -1039,33 +1039,28 @@ export default class Inibase {
 			} else {
 				// Handling array of objects and filtering nested arrays
 				const nestedArrayFields = field.children.filter(
-					(child): child is Field =>
-						(child as Field).type === "array" &&
-						Utils.isArrayOfObjects((child as Field).children),
-				);
-
+					(children: Field) =>
+						children.type === "array" &&
+						Utils.isArrayOfObjects(children.children),
+				) as Schema;
 				if (nestedArrayFields.length > 0) {
 					// one of children has array field type and has children array of object = Schema
 					const childItems = await this.processSchemaData(
 						tableName,
-						(field.children as Schema).filter(
-							(children) =>
-								children.type === "array" &&
-								Utils.isArrayOfObjects(children.children),
-						),
+						nestedArrayFields,
 						linesNumber,
 						options,
 						`${(prefix ?? "") + field.key}.`,
 					);
+
 					if (childItems)
 						for (const [index, item] of Object.entries(childItems))
 							this._processSchemaDataHelper(RETURN, item, index, field);
 
 					// Remove nested arrays after processing
 					field.children = field.children.filter(
-						(child) =>
-							(child as Field).type === "array" &&
-							Utils.isArrayOfObjects((child as Field).children),
+						(children: Field) =>
+							!nestedArrayFields.map(({ key }) => key).includes(children.key),
 					) as Schema;
 				}
 
@@ -1098,8 +1093,8 @@ export default class Inibase {
 												};
 									});
 								else if (
-									Object.values(item).every(
-										(_i) => Utils.isArrayOfArrays(_i) || Array.isArray(_i),
+									Object.values(item).every((_i) =>
+										Utils.isArrayOfArrays(_i),
 									) &&
 									prefix
 								)
