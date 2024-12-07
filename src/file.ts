@@ -67,7 +67,7 @@ export function escapeShellPath(filePath: string) {
 	const resolvedPath = resolve(filePath);
 
 	// Escape double quotes and special shell characters
-	return resolvedPath.replace(/(["\\$`])/g, "\\$1");
+	return `"${resolvedPath.replace(/(["\\$`])/g, "\\$1")}"`;
 }
 
 const _pipeline = async (
@@ -395,7 +395,7 @@ export async function get(
 				);
 			}
 		} else if (lineNumbers == -1) {
-			const escapedFilePath = `${escapeShellPath(filePath)}`;
+			const escapedFilePath = escapeShellPath(filePath);
 			const command = filePath.endsWith(".gz")
 					? `zcat ${escapedFilePath} | sed -n '$p'`
 					: `sed -n '$p' ${escapedFilePath}`,
@@ -427,11 +427,10 @@ export async function get(
 				return [lines, linesCount];
 			}
 
-			const escapedFilePath = `${escapeShellPath(filePath)}`;
-
+			const escapedFilePath = escapeShellPath(filePath);
 			const command = filePath.endsWith(".gz")
-					? `zcat "${escapedFilePath}" | sed -n '${_groupIntoRanges(lineNumbers)}'`
-					: `sed -n '${_groupIntoRanges(lineNumbers)}' "${escapedFilePath}"`,
+					? `zcat ${escapedFilePath} | sed -n '${_groupIntoRanges(lineNumbers)}'`
+					: `sed -n '${_groupIntoRanges(lineNumbers)}' ${escapedFilePath}`,
 				foundedLines = (await exec(command)).stdout.trimEnd().split("\n");
 
 			let index = 0;
@@ -627,7 +626,7 @@ export const append = async (
 					`${Array.isArray(data) ? data.join("\n") : data}\n`,
 				);
 			} else {
-				const escapedFileTempPath = `${escapeShellPath(fileTempPath)}`;
+				const escapedFileTempPath = escapeShellPath(fileTempPath);
 				await exec(
 					`echo $'${(Array.isArray(data) ? data.join("\n") : data)
 						.toString()
@@ -702,9 +701,9 @@ export const prepend = async (
 					`${Array.isArray(data) ? data.join("\n") : data}\n`,
 				);
 
-				const escapedFilePath = `${escapeShellPath(filePath)}`;
-				const escapedFileTempPath = `${escapeShellPath(fileTempPath)}`;
-				const escapedFileChildTempPath = `${escapeShellPath(fileChildTempPath)}`;
+				const escapedFilePath = escapeShellPath(filePath);
+				const escapedFileTempPath = escapeShellPath(fileTempPath);
+				const escapedFileChildTempPath = escapeShellPath(fileChildTempPath);
 
 				await exec(
 					`cat ${escapedFileChildTempPath} ${escapedFilePath} > ${escapedFileTempPath}`,
@@ -749,11 +748,11 @@ export const remove = async (
 
 	const fileTempPath = filePath.replace(/([^/]+)\/?$/, ".tmp/$1");
 	try {
-		const escapedFilePath = `${escapeShellPath(filePath)}`;
-		const escapedFileTempPath = `${escapeShellPath(fileTempPath)}`;
+		const escapedFilePath = escapeShellPath(filePath);
+		const escapedFileTempPath = escapeShellPath(fileTempPath);
 
 		const command = filePath.endsWith(".gz")
-			? `zcat ${escapedFilePath} | sed '${_groupIntoRanges(linesToDelete, "d")}' | gzip > ${fileTempPath}`
+			? `zcat ${escapedFilePath} | sed '${_groupIntoRanges(linesToDelete, "d")}' | gzip > ${escapedFileTempPath}`
 			: `sed '${_groupIntoRanges(linesToDelete, "d")}' ${escapedFilePath} > ${escapedFileTempPath}`;
 		await exec(command);
 
