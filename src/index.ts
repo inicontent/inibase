@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { randomBytes, scryptSync } from "node:crypto";
+import { randomBytes, randomInt, scryptSync } from "node:crypto";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import {
 	glob,
@@ -48,7 +48,7 @@ export type Field = {
 	type: FieldType | FieldType[];
 	required?: boolean;
 	table?: string;
-	unique?: boolean;
+	unique?: boolean | number | string;
 	children?: FieldType | FieldType[] | Schema;
 };
 
@@ -130,17 +130,20 @@ export default class Inibase {
 	public pageInfo: Record<string, pageInfo>;
 	public salt: Buffer;
 	private databasePath: string;
-	private tables: Record<string, TableObject>;
 	private fileExtension = ".txt";
-	private checkIFunique: Record<string, (string | number)[]>;
-	private totalItems: Record<string, number>;
+	private tablesMap: Map<string, TableObject>;
+	private uniqueMap: Map<
+		string | number,
+		{ exclude: Set<number>; columnsValues: Map<number, any> }
+	>;
+	private totalItems: Map<string, number>;
 
 	constructor(database: string, mainFolder = ".") {
 		this.databasePath = join(mainFolder, database);
-		this.tables = {};
-		this.totalItems = {};
+		this.tablesMap = new Map();
+		this.totalItems = new Map();
 		this.pageInfo = {};
-		this.checkIFunique = {};
+		this.uniqueMap = new Map();
 
 		if (!process.env.INIBASE_SECRET) {
 			if (
@@ -194,18 +197,19 @@ export default class Inibase {
 	}
 
 	public clear() {
-		this.tables = {};
-		this.totalItems = {};
+		this.tablesMap = new Map();
+		this.totalItems = new Map();
 		this.pageInfo = {};
-		this.checkIFunique = {};
+		this.uniqueMap = new Map();
 	}
 
 	private getFileExtension(tableName: string) {
 		let mainExtension = this.fileExtension;
 		// TODO: ADD ENCRYPTION
-		// if(this.tables[tableName].config.encryption)
+		// if(this.tablesMap.get(tableName).config.encryption)
 		// 	mainExtension += ".enc"
-		if (this.tables[tableName].config.compression) mainExtension += ".gz";
+		if (this.tablesMap.get(tableName).config.compression)
+			mainExtension += ".gz";
 		return mainExtension;
 	}
 
@@ -312,8 +316,8 @@ export default class Inibase {
 		schema?: Schema,
 		config?: Config & { name?: string },
 	) {
-		const table = await this.getTable(tableName),
-			tablePath = join(this.databasePath, tableName);
+		const table = await this.getTable(tableName);
+		const tablePath = join(this.databasePath, tableName);
 
 		if (schema) {
 			// remove id from schema
@@ -441,7 +445,7 @@ export default class Inibase {
 			}
 		}
 
-		delete this.tables[tableName];
+		this.tablesMap.delete(tableName);
 	}
 
 	/**
@@ -450,15 +454,18 @@ export default class Inibase {
 	 * @param {string} tableName
 	 * @return {*}  {Promise<TableObject>}
 	 */
-	public async getTable(tableName: string): Promise<TableObject> {
+	public async getTable(
+		tableName: string,
+		encodeIDs = true,
+	): Promise<TableObject> {
 		const tablePath = join(this.databasePath, tableName);
 
 		if (!(await File.isExists(tablePath)))
 			throw this.Error("TABLE_NOT_EXISTS", tableName);
 
-		if (!this.tables[tableName])
-			this.tables[tableName] = {
-				schema: await this.getTableSchema(tableName),
+		if (!this.tablesMap.has(tableName))
+			this.tablesMap.set(tableName, {
+				schema: await this.getTableSchema(tableName, encodeIDs),
 				config: {
 					compression: await File.isExists(
 						join(tablePath, ".compression.config"),
@@ -466,8 +473,8 @@ export default class Inibase {
 					cache: await File.isExists(join(tablePath, ".cache.config")),
 					prepend: await File.isExists(join(tablePath, ".prepend.config")),
 				},
-			};
-		return this.tables[tableName];
+			});
+		return this.tablesMap.get(tableName);
 	}
 
 	public async getTableSchema(
@@ -509,10 +516,8 @@ export default class Inibase {
 		return UtilsServer.encodeSchemaID(schema, this.salt);
 	}
 
-	private async throwErrorIfTableEmpty(
-		tableName: string,
-	): Promise<TableObject> {
-		const table = await this.getTable(tableName);
+	private async throwErrorIfTableEmpty(tableName: string): Promise<void> {
+		const table = await this.getTable(tableName, false);
 
 		if (!table.schema) throw this.Error("NO_SCHEMA", tableName);
 
@@ -526,17 +531,16 @@ export default class Inibase {
 			))
 		)
 			throw this.Error("TABLE_EMPTY", tableName);
-		return table;
 	}
 
-	private validateData(
+	private _validateData(
 		data: Data | Data[],
 		schema: Schema,
 		skipRequiredField = false,
 	): void {
 		if (Utils.isArrayOfObjects(data))
 			for (const single_data of data as Data[])
-				this.validateData(single_data, schema, skipRequiredField);
+				this._validateData(single_data, schema, skipRequiredField);
 		else if (Utils.isObject(data)) {
 			for (const field of schema) {
 				if (
@@ -571,14 +575,51 @@ export default class Inibase {
 					field.children &&
 					Utils.isArrayOfObjects(field.children)
 				)
-					this.validateData(data[field.key], field.children, skipRequiredField);
+					this._validateData(
+						data[field.key],
+						field.children,
+						skipRequiredField,
+					);
 				else if (field.unique) {
-					if (!this.checkIFunique[field.key])
-						this.checkIFunique[field.key] = [];
-					this.checkIFunique[`${field.key}`].push(data[field.key]);
+					let uniqueKey: string | number;
+					if (typeof field.unique === "boolean") uniqueKey = randomInt(55);
+					else uniqueKey = field.unique;
+					if (!this.uniqueMap.has(uniqueKey))
+						this.uniqueMap.set(uniqueKey, {
+							exclude: new Set(),
+							columnsValues: new Map(),
+						});
+
+					if (
+						!this.uniqueMap.get(uniqueKey).columnsValues.has(field.id as number)
+					)
+						this.uniqueMap
+							.get(uniqueKey)
+							.columnsValues.set(field.id as number, new Set());
+
+					if (data.id)
+						this.uniqueMap.get(uniqueKey).exclude.add(data.id as number);
+
+					this.uniqueMap
+						.get(uniqueKey)
+						.columnsValues.get(field.id as number)
+						.add(data[field.key]);
 				}
 			}
 		}
+	}
+	private async validateData(
+		tableName: string,
+		data: Data | Data[],
+		skipRequiredField = false,
+	): Promise<void> {
+		// Skip ID and (created|updated)At
+		this._validateData(
+			data,
+			this.tablesMap.get(tableName).schema.slice(1, -2),
+			skipRequiredField,
+		);
+		await this.checkUnique(tableName);
 	}
 
 	private cleanObject<T extends Record<string, any>>(obj: T): T | null {
@@ -619,14 +660,14 @@ export default class Inibase {
 				if (!fieldChildrenType) return null;
 				if (!Array.isArray(value)) value = [value];
 				if (Utils.isArrayOfObjects(fieldChildrenType))
-					return this.formatData(value as Data[], fieldChildrenType);
+					return this._formatData(value as Data[], fieldChildrenType);
 				if (!value.length) return null;
 				return (value as (string | number | Data)[]).map((_value) =>
 					this.formatField(_value, fieldChildrenType),
 				);
 			case "object":
 				if (Utils.isArrayOfObjects(fieldChildrenType))
-					return this.formatData(
+					return this._formatData(
 						value as Data,
 						fieldChildrenType,
 						_formatOnlyAvailiableKeys,
@@ -672,45 +713,53 @@ export default class Inibase {
 		return null;
 	}
 
-	private async checkUnique(tableName: string, schema: Schema) {
+	private async checkUnique(tableName: string) {
 		const tablePath = join(this.databasePath, tableName);
-		for await (const [key, values] of Object.entries(this.checkIFunique)) {
-			const field = Utils.getField(key, schema);
-			if (!field) continue;
-			const [searchResult, totalLines] = await File.search(
-				join(tablePath, `${key}${this.getFileExtension(tableName)}`),
-				Array.isArray(values) ? "=" : "[]",
-				values,
-				undefined,
-				undefined,
-				field.type,
-				field.children,
-				1,
-				undefined,
-				false,
-				this.salt,
-			);
+		const flattenSchema = Utils.flattenSchema(
+			this.tablesMap.get(tableName).schema,
+		);
+		for await (const [_uniqueID, valueObject] of this.uniqueMap) {
+			let valueExisted = false;
+			for await (const [columnID, values] of valueObject.columnsValues) {
+				const field = flattenSchema.find(({ id }) => id === columnID);
+				const [searchResult, totalLines] = await File.search(
+					join(tablePath, `${columnID}${this.getFileExtension(tableName)}`),
+					"[]",
+					values,
+					undefined,
+					undefined,
+					field.type,
+					field.children,
+					1,
+					undefined,
+					false,
+					this.salt,
+				);
 
-			if (searchResult && totalLines > 0)
-				throw this.Error("FIELD_UNIQUE", [
-					field.key,
-					Array.isArray(values) ? values.join(", ") : values,
-				]);
+				if (searchResult && totalLines > 0) {
+					if (valueExisted)
+						throw this.Error("FIELD_UNIQUE", [
+							field.key,
+							Array.isArray(values) ? values.join(", ") : values,
+						]);
+					valueExisted = true;
+				}
+			}
 		}
-		this.checkIFunique = {};
+		this.uniqueMap = new Map();
 	}
 
-	private formatData(
+	private _formatData(
 		data: Data,
 		schema: Schema,
 		formatOnlyAvailiableKeys?: boolean,
 	): Data;
-	private formatData(
+	private _formatData(
 		data: Data | Data[],
 		schema: Schema,
 		formatOnlyAvailiableKeys?: boolean,
 	): Data[];
-	private formatData(
+	private _formatData(
 		data: Data | Data[],
 		schema: Schema,
 		formatOnlyAvailiableKeys?: boolean,
@@ -718,7 +767,7 @@ export default class Inibase {
 		const clonedData: Data | Data[] = JSON.parse(JSON.stringify(data));
 		if (Utils.isArrayOfObjects(clonedData))
 			return clonedData.map((singleData) =>
-				this.formatData(singleData, schema, formatOnlyAvailiableKeys),
+				this._formatData(singleData, schema, formatOnlyAvailiableKeys),
 			);
 		if (Utils.isObject(clonedData)) {
 			const RETURN: Data = {};
@@ -738,6 +787,18 @@ export default class Inibase {
 			return RETURN;
 		}
 		return [];
+	}
+
+	private formatData(
+		tableName: string,
+		data: Data | Data[],
+		formatOnlyAvailiableKeys?: boolean,
+	): void {
+		data = this._formatData(
+			data,
+			this.tablesMap.get(tableName).schema,
+			formatOnlyAvailiableKeys,
+		);
 	}
 
 	private getDefaultValue(field: Field): any {
@@ -1437,7 +1498,7 @@ export default class Inibase {
 							]),
 						),
 					);
-					this.totalItems[`${tableName}-${key}`] = totalLines;
+					this.totalItems.set(`${tableName}-${key}`, totalLines);
 					if (linesNumbers?.size) {
 						if (searchIn) {
 							for (const lineNumber of linesNumbers) searchIn.add(lineNumber);
@@ -1592,8 +1653,10 @@ export default class Inibase {
 		// Default values for page and perPage
 		options.page = options.page || 1;
 		options.perPage = options.perPage || 15;
-
 		let RETURN!: Data | Data[] | null;
+
+		await this.getTable(tableName);
+
 		let schema = (await this.getTable(tableName)).schema;
 
 		if (!schema) throw this.Error("NO_SCHEMA", tableName);
@@ -1636,7 +1699,7 @@ export default class Inibase {
 
 			let cacheKey = "";
 			// Criteria
-			if (this.tables[tableName].config.cache)
+			if (this.tablesMap.get(tableName).config.cache)
 				cacheKey = UtilsServer.hashString(inspect(sortArray, { sorted: true }));
 
 			if (where) {
@@ -1703,7 +1766,7 @@ export default class Inibase {
 				// Combine && Execute the commands synchronously
 				let lines = (
 					await UtilsServer.exec(
-						this.tables[tableName].config.cache
+						this.tablesMap.get(tableName).config.cache
 							? (await File.isExists(
 									join(tablePath, ".cache", `${cacheKey}${this.fileExtension}`),
 								))
@@ -1735,8 +1798,8 @@ export default class Inibase {
 						((options.page as number) - 1) * (options.perPage as number),
 						(options.page as number) * (options.perPage as number),
 					);
-				else if (!this.totalItems[`${tableName}-*`])
-					this.totalItems[`${tableName}-*`] = pagination[1];
+				else if (!this.totalItems.has(`${tableName}-*`))
+					this.totalItems.set(`${tableName}-*`, pagination[1]);
 				if (!lines.length) return null;
 
 				// Parse the result and extract the specified lines
@@ -1793,8 +1856,8 @@ export default class Inibase {
 				),
 			);
 
-			if (!this.totalItems[`${tableName}-*`])
-				this.totalItems[`${tableName}-*`] = pagination[1];
+			if (!this.totalItems.has(`${tableName}-*`))
+				this.totalItems.set(`${tableName}-*`, pagination[1]);
 		} else if (
 			(Array.isArray(where) && where.every(Utils.isNumber)) ||
 			Utils.isNumber(where)
@@ -1803,8 +1866,8 @@ export default class Inibase {
 			let lineNumbers = where as number | number[];
 			if (!Array.isArray(lineNumbers)) lineNumbers = [lineNumbers];
 
-			if (!this.totalItems[`${tableName}-*`])
-				this.totalItems[`${tableName}-*`] = lineNumbers.length;
+			if (!this.totalItems.has(`${tableName}-*`))
+				this.totalItems.set(`${tableName}-*`, lineNumbers.length);
 
 			// useless
 			if (onlyLinesNumbers) return lineNumbers;
@@ -1838,13 +1901,13 @@ export default class Inibase {
 				undefined,
 				Ids.length,
 				0,
-				!this.totalItems[`${tableName}-*`],
+				!this.totalItems.has(`${tableName}-*`),
 				this.salt,
 			);
 			if (!lineNumbers) return null;
 
-			if (!this.totalItems[`${tableName}-*`])
-				this.totalItems[`${tableName}-*`] = countItems;
+			if (!this.totalItems.has(`${tableName}-*`))
+				this.totalItems.set(`${tableName}-*`, countItems);
 
 			if (onlyLinesNumbers)
 				return Object.keys(lineNumbers).length
@@ -1872,7 +1935,7 @@ export default class Inibase {
 		} else if (Utils.isObject(where)) {
 			let cachedFilePath = "";
 			// Criteria
-			if (this.tables[tableName].config.cache)
+			if (this.tablesMap.get(tableName).config.cache)
 				cachedFilePath = join(
 					tablePath,
 					".cache",
@@ -1882,12 +1945,14 @@ export default class Inibase {
 				);
 
 			if (
-				this.tables[tableName].config.cache &&
+				this.tablesMap.get(tableName).config.cache &&
 				(await File.isExists(cachedFilePath))
 			) {
 				const cachedItems = (await readFile(cachedFilePath, "utf8")).split(",");
-				if (!this.totalItems[`${tableName}-*`])
-					this.totalItems[`${tableName}-*`] = cachedItems.length;
+
+				if (!this.totalItems.has(`${tableName}-*`))
+					this.totalItems.set(`${tableName}-*`, cachedItems.length);
+
 				if (onlyLinesNumbers)
 					return onlyOne ? Number(cachedItems[0]) : cachedItems.map(Number);
 
@@ -1911,8 +1976,9 @@ export default class Inibase {
 				where as Criteria,
 			);
 			if (RETURN && linesNumbers?.size) {
-				if (!this.totalItems[`${tableName}-*`])
-					this.totalItems[`${tableName}-*`] = linesNumbers.size;
+				if (!this.totalItems.has(`${tableName}-*`))
+					this.totalItems.set(`${tableName}-*`, linesNumbers.size);
+
 				if (onlyLinesNumbers)
 					return onlyOne
 						? (linesNumbers.values().next().value as number)
@@ -1938,7 +2004,7 @@ export default class Inibase {
 						),
 					),
 				);
-				if (this.tables[tableName].config.cache)
+				if (this.tablesMap.get(tableName).config.cache)
 					await writeFile(cachedFilePath, Array.from(linesNumbers).join(","));
 			}
 		}
@@ -1950,13 +2016,13 @@ export default class Inibase {
 		)
 			return null;
 
-		const greatestTotalItems =
-			this.totalItems[`${tableName}-*`] ??
-			Math.max(
-				...Object.entries(this.totalItems)
-					.filter(([k]) => k.startsWith(`${tableName}-`))
-					.map(([, v]) => v),
-			);
+		const greatestTotalItems = this.totalItems.has(`${tableName}-*`)
+			? this.totalItems.get(`${tableName}-*`)
+			: Math.max(
+					...[...this.totalItems.entries()]
+						.filter(([k]) => k.startsWith(`${tableName}-`))
+						.map(([, v]) => v),
+				);
 
 		this.pageInfo[tableName] = {
 			...(({ columns, ...restOfOptions }) => restOfOptions)(options),
@@ -2006,10 +2072,11 @@ export default class Inibase {
 				page: 1,
 				perPage: 15,
 			};
-		const tablePath = join(this.databasePath, tableName),
-			schema = (await this.getTable(tableName)).schema;
+		const tablePath = join(this.databasePath, tableName);
+		await this.getTable(tableName);
 
-		if (!schema) throw this.Error("NO_SCHEMA", tableName);
+		if (!this.tablesMap.get(tableName).schema)
+			throw this.Error("NO_SCHEMA", tableName);
 
 		if (!returnPostedData) returnPostedData = false;
 
@@ -2018,9 +2085,8 @@ export default class Inibase {
 		);
 
 		// Skip ID and (created|updated)At
-		this.validateData(data, schema.slice(1, -2));
+		await this.validateData(tableName, data);
 
-		let lastId = 0;
 		const renameList: string[][] = [];
 		try {
 			await File.lock(join(tablePath, ".tmp"), keys);
@@ -2029,9 +2095,11 @@ export default class Inibase {
 			for await (const fileName of glob("*.pagination", { cwd: tablePath }))
 				paginationFilePath = join(tablePath, fileName);
 
-			[lastId, this.totalItems[`${tableName}-*`]] = parse(paginationFilePath)
+			let [lastId, _totalItems] = parse(paginationFilePath)
 				.name.split("-")
 				.map(Number) as [number, number];
+
+			this.totalItems.set(`${tableName}-*`, _totalItems);
 
 			if (Utils.isArrayOfObjects(data))
 				for (let index = 0; index < data.length; index++) {
@@ -2046,12 +2114,11 @@ export default class Inibase {
 				data.updatedAt = undefined;
 			}
 
-			await this.checkUnique(tableName, schema);
-			data = this.formatData(data, schema);
+			this.formatData(tableName, data);
 
 			const pathesContents = this.joinPathesContents(
 				tableName,
-				this.tables[tableName].config.prepend
+				this.tablesMap.get(tableName).config.prepend
 					? Array.isArray(data)
 						? data.toReversed()
 						: data
@@ -2061,7 +2128,7 @@ export default class Inibase {
 			await Promise.allSettled(
 				Object.entries(pathesContents).map(async ([path, content]) =>
 					renameList.push(
-						this.tables[tableName].config.prepend
+						this.tablesMap.get(tableName).config.prepend
 							? await File.prepend(path, content)
 							: await File.append(path, content),
 					),
@@ -2074,32 +2141,37 @@ export default class Inibase {
 					.map(async ([tempPath, filePath]) => rename(tempPath, filePath)),
 			);
 
-			if (this.tables[tableName].config.cache) await this.clearCache(tableName);
+			if (this.tablesMap.get(tableName).config.cache)
+				await this.clearCache(tableName);
 
-			this.totalItems[`${tableName}-*`] += Array.isArray(data)
-				? data.length
-				: 1;
+			const currentValue = this.totalItems.get(`${tableName}-*`) || 0;
+			this.totalItems.set(
+				`${tableName}-*`,
+				currentValue + (Array.isArray(data) ? data.length : 1),
+			);
 
 			await rename(
 				paginationFilePath,
 				join(
 					tablePath,
-					`${lastId}-${this.totalItems[`${tableName}-*`]}.pagination`,
+					`${lastId}-${this.totalItems.get(`${tableName}-*`)}.pagination`,
 				),
 			);
 
 			if (returnPostedData)
 				return this.get(
 					tableName,
-					this.tables[tableName].config.prepend
+					this.tablesMap.get(tableName).config.prepend
 						? Array.isArray(data)
 							? data.map((_, index) => index + 1).toReversed()
 							: 1
 						: Array.isArray(data)
 							? data
-									.map((_, index) => this.totalItems[`${tableName}-*`] - index)
+									.map(
+										(_, index) => this.totalItems.get(`${tableName}-*`) - index,
+									)
 									.toReversed()
-							: this.totalItems[`${tableName}-*`],
+							: this.totalItems.get(`${tableName}-*`),
 					options,
 					!Utils.isArrayOfObjects(data), // return only one item if data is not array of objects
 				);
@@ -2155,8 +2227,7 @@ export default class Inibase {
 	): Promise<Data | Data[] | null | undefined | void> {
 		const renameList: string[][] = [];
 		const tablePath = join(this.databasePath, tableName);
-		const schema = (await this.throwErrorIfTableEmpty(tableName))
-			.schema as Schema;
+		await this.throwErrorIfTableEmpty(tableName);
 
 		if (!where) {
 			if (Utils.isArrayOfObjects(data)) {
@@ -2187,9 +2258,9 @@ export default class Inibase {
 			}
 
 			// Skip ID and (created|updated)At
-			this.validateData(data, schema.slice(1, -2), true);
-			await this.checkUnique(tableName, schema);
-			data = this.formatData(data, schema, true);
+			await this.validateData(tableName, data, true);
+
+			this.formatData(tableName, data, true);
 
 			const pathesContents = this.joinPathesContents(tableName, {
 				...(({ id, ...restOfData }) => restOfData)(data as Data),
@@ -2202,9 +2273,10 @@ export default class Inibase {
 				for await (const paginationFileName of glob("*.pagination", {
 					cwd: tablePath,
 				}))
-					this.totalItems[`${tableName}-*`] = parse(paginationFileName)
-						.name.split("-")
-						.map(Number)[1];
+					this.totalItems.set(
+						`${tableName}-*`,
+						parse(paginationFileName).name.split("-").map(Number)[1],
+					);
 
 				await Promise.allSettled(
 					Object.entries(pathesContents).map(async ([path, content]) =>
@@ -2212,7 +2284,7 @@ export default class Inibase {
 							await File.replace(
 								path,
 								content,
-								this.totalItems[`${tableName}-*`],
+								this.totalItems.get(`${tableName}-*`),
 							),
 						),
 					),
@@ -2224,7 +2296,7 @@ export default class Inibase {
 						.map(async ([tempPath, filePath]) => rename(tempPath, filePath)),
 				);
 
-				if (this.tables[tableName].config.cache)
+				if (this.tablesMap.get(tableName).config.cache)
 					await this.clearCache(join(tablePath, ".cache"));
 
 				if (returnUpdatedData)
@@ -2259,9 +2331,10 @@ export default class Inibase {
 			Utils.isNumber(where)
 		) {
 			// "where" in this case, is the line(s) number(s) and not id(s)
-			this.validateData(data, schema.slice(1, -2), true);
-			await this.checkUnique(tableName, schema.slice(1, -2));
-			data = this.formatData(data, schema, true);
+
+			// Skip ID and (created|updated)At
+			await this.validateData(tableName, data, true);
+			this.formatData(tableName, data, true);
 
 			const pathesContents = Object.fromEntries(
 				Object.entries(
@@ -2307,7 +2380,7 @@ export default class Inibase {
 						.map(async ([tempPath, filePath]) => rename(tempPath, filePath)),
 				);
 
-				if (this.tables[tableName].config.cache)
+				if (this.tablesMap.get(tableName).config.cache)
 					await this.clearCache(tableName);
 
 				if (returnUpdatedData)
@@ -2376,7 +2449,7 @@ export default class Inibase {
 						.map(async (file) => unlink(join(tablePath, file))),
 				);
 
-				if (this.tables[tableName].config.cache)
+				if (this.tablesMap.get(tableName).config.cache)
 					await this.clearCache(tableName);
 
 				await rename(
@@ -2455,7 +2528,7 @@ export default class Inibase {
 								.map(async (file) => unlink(join(tablePath, file))),
 						);
 
-					if (this.tables[tableName].config.cache)
+					if (this.tablesMap.get(tableName).config.cache)
 						await this.clearCache(tableName);
 
 					await rename(
