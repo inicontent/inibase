@@ -142,10 +142,7 @@ export default class Inibase {
 
 	constructor(database: string, mainFolder = ".") {
 		this.databasePath = join(mainFolder, database);
-		this.tablesMap = new Map();
-		this.totalItems = new Map();
-		this.pageInfo = {};
-		this.uniqueMap = new Map();
+		this.clear();
 
 		if (!process.env.INIBASE_SECRET) {
 			if (
@@ -732,11 +729,12 @@ export default class Inibase {
 			this.tablesMap.get(tableName).schema,
 		);
 		for await (const [_uniqueID, valueObject] of this.uniqueMap) {
-			let valueExisted = false;
+			let index = 0;
 			for await (const [columnID, values] of valueObject.columnsValues) {
+				index++;
 				const field = flattenSchema.find(({ id }) => id === columnID);
 				const [searchResult, totalLines] = await File.search(
-					join(tablePath, `${columnID}${this.getFileExtension(tableName)}`),
+					join(tablePath, `${field.key}${this.getFileExtension(tableName)}`),
 					"[]",
 					values,
 					undefined,
@@ -750,13 +748,12 @@ export default class Inibase {
 				);
 
 				if (searchResult && totalLines > 0) {
-					if (valueExisted)
+					if (index === valueObject.columnsValues.size)
 						throw this.createError("FIELD_UNIQUE", [
 							field.key,
 							Array.isArray(values) ? values.join(", ") : values,
 						]);
-					valueExisted = true;
-				}
+				} else continue;
 			}
 		}
 		this.uniqueMap = new Map();
