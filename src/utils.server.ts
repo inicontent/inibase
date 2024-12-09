@@ -17,6 +17,7 @@ import {
 	isPassword,
 	isValidID,
 } from "./utils.js";
+import RE2 from "re2";
 
 export const exec = promisify(execSync);
 
@@ -416,4 +417,30 @@ export const isWildcardMatch = (
 		comparedValueStr.includes("%") ? comparedValueStr : `%${comparedValueStr}%`
 	).replace(/%/g, ".*")}$`;
 	return new RegExp(wildcardPattern, "i").test(originalValueStr);
+};
+
+const regexCache = new Map();
+
+/**
+ * Retrieves a cached compiled regex or compiles and caches a new one.
+ *
+ * This function checks if a given regex pattern is already compiled and cached.
+ * If it is, the cached instance is returned. If not, the function attempts to compile
+ * the regex using RE2, caches the compiled instance, and then returns it. If the pattern
+ * is invalid, it returns a fallback object with a `test` method that always returns `false`.
+ *
+ * @param {string} pattern - The regex pattern to compile or retrieve from the cache.
+ * @returns {RE2} - The compiled regex instance or a fallback object on error.
+ */
+export const getCachedRegex = (pattern: string): RE2 => {
+	if (regexCache.has(pattern)) {
+		return regexCache.get(pattern);
+	}
+	try {
+		const compiledRegex = new RE2(pattern);
+		regexCache.set(pattern, compiledRegex);
+		return compiledRegex;
+	} catch {
+		return { test: (_str: string) => false } as any;
+	}
 };

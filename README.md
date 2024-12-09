@@ -726,13 +726,13 @@ await db.get("user", undefined, { sort: {age: -1, username: "asc"} });
   - [x] Id
   - [x] JSON
 - [ ] TO-DO:
-  - [ ] Use new Map() instead of Object
+  - [x] Use new Map() instead of Object
   - [ ] Ability to search in JSON fields
-  - [ ] Re-check used exec functions
+  - [x] Re-check used exec functions
   - [ ] Use smart caching (based on N° of queries)
   - [ ] Commenting the code
   - [ ] Add Backup feature (generate a tar.gz)
-  - [ ] Add Custom field validation property to schema (using RegEx?)
+  - [x] Add Custom field validation property to schema (using RegEx?)
 - [ ] Features:
   - [ ] Encryption
   - [x] Data Compression

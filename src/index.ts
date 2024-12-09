@@ -50,6 +50,7 @@ export type Field = {
 	table?: string;
 	unique?: boolean | number | string;
 	children?: FieldType | FieldType[] | Schema;
+	regex?: string;
 };
 
 export type Schema = Field[];
@@ -120,7 +121,8 @@ export type ErrorCodes =
 	| "INVALID_PARAMETERS"
 	| "NO_ENV"
 	| "TABLE_EXISTS"
-	| "TABLE_NOT_EXISTS";
+	| "TABLE_NOT_EXISTS"
+	| "INVALID_REGEX_MATCH";
 export type ErrorLang = "en";
 
 // hide ExperimentalWarning glob()
@@ -150,18 +152,14 @@ export default class Inibase {
 				existsSync(".env") &&
 				readFileSync(".env").includes("INIBASE_SECRET=")
 			)
-				throw this.Error("NO_ENV");
+				throw this.createError("NO_ENV");
 			this.salt = scryptSync(randomBytes(16), randomBytes(16), 32);
 			appendFileSync(".env", `\nINIBASE_SECRET=${this.salt.toString("hex")}\n`);
 		} else this.salt = Buffer.from(process.env.INIBASE_SECRET, "hex");
 	}
 
-	private Error(
-		code: ErrorCodes,
-		variable?: string | number | (string | number)[],
-		language: ErrorLang = "en",
-	): Error {
-		const errorMessages: Record<ErrorLang, Record<ErrorCodes, string>> = {
+	private static errorMessages: Record<ErrorLang, Record<ErrorCodes, string>> =
+		{
 			en: {
 				TABLE_EMPTY: "Table {variable} is empty",
 				TABLE_EXISTS: "Table {variable} already exists",
@@ -174,15 +172,21 @@ export default class Inibase {
 				INVALID_TYPE:
 					"Expect {variable} to be {variable}, got {variable} instead",
 				INVALID_PARAMETERS: "The given parameters are not valid",
+				INVALID_REGEX_MATCH:
+					"Field {variable} does not match the expected pattern",
 				NO_ENV:
 					Number(process.versions.node.split(".").reduce((a, b) => a + b)) >= 26
 						? "please run with '--env-file=.env'"
 						: "please use dotenv",
 			},
-			// Add more languages and error messages as needed
 		};
 
-		const errorMessage = errorMessages[language][code];
+	public createError(
+		code: ErrorCodes,
+		variable?: string | number | (string | number)[],
+		language: ErrorLang = "en",
+	): Error {
+		const errorMessage = Inibase.errorMessages[language]?.[code];
 		if (!errorMessage) return new Error("ERR");
 		return new Error(
 			variable
@@ -254,7 +258,7 @@ export default class Inibase {
 		const tablePath = join(this.databasePath, tableName);
 
 		if (await File.isExists(tablePath))
-			throw this.Error("TABLE_EXISTS", tableName);
+			throw this.createError("TABLE_EXISTS", tableName);
 
 		await mkdir(join(tablePath, ".tmp"), { recursive: true });
 		await mkdir(join(tablePath, ".cache"));
@@ -461,7 +465,7 @@ export default class Inibase {
 		const tablePath = join(this.databasePath, tableName);
 
 		if (!(await File.isExists(tablePath)))
-			throw this.Error("TABLE_NOT_EXISTS", tableName);
+			throw this.createError("TABLE_NOT_EXISTS", tableName);
 
 		if (!this.tablesMap.has(tableName))
 			this.tablesMap.set(tableName, {
@@ -519,7 +523,7 @@ export default class Inibase {
 	private async throwErrorIfTableEmpty(tableName: string): Promise<void> {
 		const table = await this.getTable(tableName, false);
 
-		if (!table.schema) throw this.Error("NO_SCHEMA", tableName);
+		if (!table.schema) throw this.createError("NO_SCHEMA", tableName);
 
 		if (
 			!(await File.isExists(
@@ -530,7 +534,7 @@ export default class Inibase {
 				),
 			))
 		)
-			throw this.Error("TABLE_EMPTY", tableName);
+			throw this.createError("TABLE_EMPTY", tableName);
 	}
 
 	private _validateData(
@@ -550,7 +554,7 @@ export default class Inibase {
 					data[field.key] === ""
 				) {
 					if (field.required && !skipRequiredField)
-						throw this.Error("FIELD_REQUIRED", field.key);
+						throw this.createError("FIELD_REQUIRED", field.key);
 					return;
 				}
 
@@ -565,7 +569,7 @@ export default class Inibase {
 							: undefined,
 					)
 				)
-					throw this.Error("INVALID_TYPE", [
+					throw this.createError("INVALID_TYPE", [
 						field.key,
 						Array.isArray(field.type) ? field.type.join(", ") : field.type,
 						data[field.key],
@@ -580,30 +584,39 @@ export default class Inibase {
 						field.children,
 						skipRequiredField,
 					);
-				else if (field.unique) {
-					let uniqueKey: string | number;
-					if (typeof field.unique === "boolean") uniqueKey = randomInt(55);
-					else uniqueKey = field.unique;
-					if (!this.uniqueMap.has(uniqueKey))
-						this.uniqueMap.set(uniqueKey, {
-							exclude: new Set(),
-							columnsValues: new Map(),
-						});
+				else {
+					if (field.regex) {
+						const regex = UtilsServer.getCachedRegex(field.regex);
+						if (!regex.test(data[field.key]))
+							throw this.createError("INVALID_REGEX_MATCH", [field.key]);
+					}
+					if (field.unique) {
+						let uniqueKey: string | number;
+						if (typeof field.unique === "boolean") uniqueKey = randomInt(55);
+						else uniqueKey = field.unique;
+						if (!this.uniqueMap.has(uniqueKey))
+							this.uniqueMap.set(uniqueKey, {
+								exclude: new Set(),
+								columnsValues: new Map(),
+							});
 
-					if (
-						!this.uniqueMap.get(uniqueKey).columnsValues.has(field.id as number)
-					)
+						if (
+							!this.uniqueMap
+								.get(uniqueKey)
+								.columnsValues.has(field.id as number)
+						)
+							this.uniqueMap
+								.get(uniqueKey)
+								.columnsValues.set(field.id as number, new Set());
+
+						if (data.id)
+							this.uniqueMap.get(uniqueKey).exclude.add(-data.id as number);
+
 						this.uniqueMap
 							.get(uniqueKey)
-							.columnsValues.set(field.id as number, new Set());
-
-					if (data.id)
-						this.uniqueMap.get(uniqueKey).exclude.add(-data.id as number);
-
-					this.uniqueMap
-						.get(uniqueKey)
-						.columnsValues.get(field.id as number)
-						.add(data[field.key]);
+							.columnsValues.get(field.id as number)
+							.add(data[field.key]);
+					}
 				}
 			}
 		}
@@ -738,7 +751,7 @@ export default class Inibase {
 
 				if (searchResult && totalLines > 0) {
 					if (valueExisted)
-						throw this.Error("FIELD_UNIQUE", [
+						throw this.createError("FIELD_UNIQUE", [
 							field.key,
 							Array.isArray(values) ? values.join(", ") : values,
 						]);
@@ -1659,7 +1672,7 @@ export default class Inibase {
 
 		let schema = (await this.getTable(tableName)).schema;
 
-		if (!schema) throw this.Error("NO_SCHEMA", tableName);
+		if (!schema) throw this.createError("NO_SCHEMA", tableName);
 
 		let pagination: [number, number];
 		for await (const paginationFileName of glob("*.pagination", {
@@ -2076,7 +2089,7 @@ export default class Inibase {
 		await this.getTable(tableName);
 
 		if (!this.tablesMap.get(tableName).schema)
-			throw this.Error("NO_SCHEMA", tableName);
+			throw this.createError("NO_SCHEMA", tableName);
 
 		if (!returnPostedData) returnPostedData = false;
 
@@ -2084,7 +2097,6 @@ export default class Inibase {
 			Object.keys(Array.isArray(data) ? data[0] : data).join("."),
 		);
 
-		// Skip ID and (created|updated)At
 		await this.validateData(tableName, data);
 
 		const renameList: string[][] = [];
@@ -2236,7 +2248,7 @@ export default class Inibase {
 						(item) => Object.hasOwn(item, "id") && Utils.isValidID(item.id),
 					)
 				)
-					throw this.Error("INVALID_ID");
+					throw this.createError("INVALID_ID");
 
 				return this.put(
 					tableName,
@@ -2247,7 +2259,8 @@ export default class Inibase {
 				);
 			}
 			if (Object.hasOwn(data, "id")) {
-				if (!Utils.isValidID(data.id)) throw this.Error("INVALID_ID", data.id);
+				if (!Utils.isValidID(data.id))
+					throw this.createError("INVALID_ID", data.id);
 				return this.put(
 					tableName,
 					data,
@@ -2257,7 +2270,6 @@ export default class Inibase {
 				);
 			}
 
-			// Skip ID and (created|updated)At
 			await this.validateData(tableName, data, true);
 
 			this.formatData(tableName, data, true);
@@ -2332,7 +2344,6 @@ export default class Inibase {
 		) {
 			// "where" in this case, is the line(s) number(s) and not id(s)
 
-			// Skip ID and (created|updated)At
 			await this.validateData(tableName, data, true);
 			this.formatData(tableName, data, true);
 
@@ -2408,7 +2419,7 @@ export default class Inibase {
 					options,
 					returnUpdatedData || undefined,
 				);
-		} else throw this.Error("INVALID_PARAMETERS");
+		} else throw this.createError("INVALID_PARAMETERS");
 	}
 
 	/**
@@ -2557,7 +2568,7 @@ export default class Inibase {
 				true,
 			);
 			if (lineNumbers) return this.delete(tableName, lineNumbers);
-		} else throw this.Error("INVALID_PARAMETERS");
+		} else throw this.createError("INVALID_PARAMETERS");
 		return false;
 	}
 
