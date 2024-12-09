@@ -598,7 +598,7 @@ export default class Inibase {
 							.columnsValues.set(field.id as number, new Set());
 
 					if (data.id)
-						this.uniqueMap.get(uniqueKey).exclude.add(data.id as number);
+						this.uniqueMap.get(uniqueKey).exclude.add(-data.id as number);
 
 					this.uniqueMap
 						.get(uniqueKey)
@@ -727,7 +727,7 @@ export default class Inibase {
 					"[]",
 					values,
 					undefined,
-					undefined,
+					valueObject.exclude,
 					field.type,
 					field.children,
 					1,
