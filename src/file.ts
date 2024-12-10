@@ -832,7 +832,7 @@ export const search = async (
 			linesCount++;
 
 			// Search only in provided linesNumbers
-			if ((searchIn && !searchIn.has(linesCount)) || searchIn.has(-linesCount))
+			if (searchIn && (!searchIn.has(linesCount) || searchIn.has(-linesCount)))
 				continue;
 
 			// Decode the line for comparison.
