@@ -106,36 +106,120 @@ interface {
 <summary>Schema</summary>
 <blockquote>
 
+<details>
+<summary>Types</summary>
+<blockquote>
+
 ```ts
-interface {
+interface Field {
   id: number; // stored as a Number but displayed as a hashed ID
   key: string;
   required?: boolean;
-  unique?: boolean;
-  type: "string" | "number" | "boolean" | "date" | "email" | "url" | "password" | "html" | "ip" | "json" | "id";
+  unique?: boolean | string; // boolean for simple uniqueness, string for grouped uniqueness
+  regex?: RegExp; // Regular expression for custom validation
+  type:
+    | "string"
+    | "number"
+    | "boolean"
+    | "date"
+    | "email"
+    | "url"
+    | "password"
+    | "html"
+    | "ip"
+    | "json"
+    | "id";
 }
-interface Table {
+
+interface TableField {
   id: number;
   key: string;
   required?: boolean;
+  unique?: boolean | string; // Supports uniqueness constraints
   type: "table";
   table: string;
 }
-interface Array {
+
+interface ArrayField {
   id: number;
   key: string;
   required?: boolean;
+  unique?: boolean | string; // Supports uniqueness constraints
   type: "array";
-  children: string|string[];
+  children: string | string[]; // Can be a single type or an array of types
 }
-interface ObjectOrArrayOfObjects {
+
+interface ObjectOrArrayOfObjectsField {
   id: number;
   key: string;
   required?: boolean;
+  unique?: boolean | string; // Supports uniqueness constraints
+  regex?: RegExp; // For validation of object-level keys
   type: "object" | "array";
-  children: Schema;
+  children: Schema; // Nested schema for objects or arrays
 }
 ```
+
+</blockquote>
+</details>
+
+<details>
+<summary>Unique</summary>
+<blockquote>
+
+The `unique` property ensures that the values of a specific column or a group of columns are unique within a table. This property can be either a boolean or a string.
+- **Boolean**: Setting `unique: true` ensures that the values in the column are unique across all rows.
+- **String**: By setting a string value, you can group columns to enforce a combined uniqueness constraint. This is useful when you need to ensure that a combination of values across multiple fields is unique.
+
+<details>
+<summary>Examples</summary>
+<blockquote>
+
+<details>
+<summary>Unique Column</summary>
+<blockquote>
+
+```js
+{
+  key: "email",
+  type: "string",
+  required: true,
+  unique: true, // Ensures all email values are unique
+}
+```
+
+</blockquote>
+</details>
+
+<details>
+<summary>Group of Unique Columns</summary>
+<blockquote>
+
+```js
+[
+  {
+    key: "firstName",
+    type: "string",
+    required: true,
+    unique: "nameGroup", // Part of "nameGroup" uniqueness
+  },
+  {
+    key: "lastName",
+    type: "string",
+    required: true,
+    unique: "nameGroup", // Part of "nameGroup" uniqueness
+  },
+]
+```
+
+</blockquote>
+</details>
+
+</blockquote>
+</details>
+
+</blockquote>
+</details>
 
 </blockquote>
 </details>
@@ -357,7 +441,7 @@ const product = await db.post("product", productTableData);
 </blockquote>
 </details>
 
-<details>
+<details open>
 <summary>Methods</summary>
 <blockquote>
 
