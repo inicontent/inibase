@@ -341,11 +341,23 @@ export const isEqual = (
 				: false;
 		case "boolean":
 			return Number(originalValue) === Number(comparedValue);
-		default:
-			return (
-				(!String(comparedValue).length && originalValue === undefined) ||
-				originalValue == comparedValue
-			);
+		default: {
+			// Fast checks for null-like values
+			const isOriginalNullLike =
+				originalValue === null ||
+				originalValue === undefined ||
+				originalValue === "";
+			const isComparedNullLike =
+				comparedValue === null ||
+				comparedValue === undefined ||
+				comparedValue === "";
+
+			// If both are null-like, treat as equivalent
+			if (isOriginalNullLike && isComparedNullLike) return true;
+
+			// Direct equality check for other cases
+			return originalValue === comparedValue;
+		}
 	}
 };
 
