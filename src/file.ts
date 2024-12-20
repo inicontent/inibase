@@ -628,7 +628,7 @@ export const append = async (
 			} else {
 				const escapedFileTempPath = escapeShellPath(fileTempPath);
 				await exec(
-					`echo $'${(Array.isArray(data) ? data.join("\n") : data)
+					`echo '${(Array.isArray(data) ? data.join("\n") : data)
 						.toString()
 						.replace(/'/g, "\\'")}' | gzip - >> ${escapedFileTempPath}`,
 				);
@@ -827,12 +827,12 @@ export const search = async (
 		const rl = createReadLineInternface(filePath, fileHandle);
 
 		// Iterate through each line in the file.
-		for await (const line of rl) {
+		for await (const line of rl) {			
 			// Increment the line count for each line.
 			linesCount++;
 
 			// Search only in provided linesNumbers
-			if (searchIn && (!searchIn.has(linesCount) || searchIn.has(-linesCount)))
+			if (searchIn?.size && (!searchIn.has(linesCount) || searchIn.has(-linesCount)))
 				continue;
 
 			// Decode the line for comparison.

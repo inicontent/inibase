@@ -136,7 +136,7 @@ export default class Inibase {
 	private tablesMap: Map<string, TableObject>;
 	private uniqueMap: Map<
 		string | number,
-		{ exclude: Set<number>; columnsValues: Map<number, any> }
+		{ exclude: Set<number>; columnsValues: Map<number, Set<string|number>> }
 	>;
 	private totalItems: Map<string, number>;
 
@@ -628,7 +628,7 @@ export default class Inibase {
 			data,
 			this.tablesMap.get(tableName).schema.slice(1, -2),
 			skipRequiredField,
-		);
+		);		
 		await this.checkUnique(tableName);
 	}
 
@@ -732,11 +732,11 @@ export default class Inibase {
 			let index = 0;
 			for await (const [columnID, values] of valueObject.columnsValues) {
 				index++;
-				const field = flattenSchema.find(({ id }) => id === columnID);
+				const field = flattenSchema.find(({ id }) => id === columnID);								
 				const [searchResult, totalLines] = await File.search(
 					join(tablePath, `${field.key}${this.getFileExtension(tableName)}`),
 					"[]",
-					values,
+					Array.from(values),
 					undefined,
 					valueObject.exclude,
 					field.type,
@@ -747,13 +747,13 @@ export default class Inibase {
 					this.salt,
 				);
 
-				if (searchResult && totalLines > 0) {
+				if (searchResult && totalLines > 0) {								
 					if (index === valueObject.columnsValues.size)
 						throw this.createError("FIELD_UNIQUE", [
 							field.key,
-							Array.isArray(values) ? values.join(", ") : values,
+							Array.from(values).join(", "),
 						]);
-				} else continue;
+				} else return;
 			}
 		}
 		this.uniqueMap = new Map();
