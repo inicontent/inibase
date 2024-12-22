@@ -386,7 +386,7 @@ export const validateFieldType = (
 		fieldType = detectedFieldType;
 	}
 	if (fieldType === "array" && fieldChildrenType)
-		return value.every((v: any) => {
+		return Array.isArray(value) && value.every((v: any) => {
 			let _fieldChildrenType = fieldChildrenType;
 			if (Array.isArray(_fieldChildrenType)) {
 				const detectedFieldType = detectFieldType(v, _fieldChildrenType);
