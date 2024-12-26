@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { randomBytes, randomInt, scryptSync } from "node:crypto";
+import { randomBytes, scryptSync } from "node:crypto";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import {
 	glob,
@@ -136,7 +136,7 @@ export default class Inibase {
 	private tablesMap: Map<string, TableObject>;
 	private uniqueMap: Map<
 		string | number,
-		{ exclude: Set<number>; columnsValues: Map<number, Set<string|number>> }
+		{ exclude: Set<number>; columnsValues: Map<number, Set<string | number>> }
 	>;
 	private totalItems: Map<string, number>;
 
@@ -179,13 +179,13 @@ export default class Inibase {
 		};
 
 	public createError(
-		code: ErrorCodes,
+		name: ErrorCodes,
 		variable?: string | number | (string | number)[],
 		language: ErrorLang = "en",
 	): Error {
-		const errorMessage = Inibase.errorMessages[language]?.[code];
+		const errorMessage = Inibase.errorMessages[language]?.[name];
 		if (!errorMessage) return new Error("ERR");
-		return new Error(
+		const error = new Error(
 			variable
 				? Array.isArray(variable)
 					? errorMessage.replace(
@@ -195,6 +195,8 @@ export default class Inibase {
 					: errorMessage.replaceAll("{variable}", `'${variable.toString()}'`)
 				: errorMessage.replaceAll("{variable}", ""),
 		);
+		error.name = name;
+		return error;
 	}
 
 	public clear() {
@@ -539,10 +541,12 @@ export default class Inibase {
 		schema: Schema,
 		skipRequiredField = false,
 	): void {
-		if (Utils.isArrayOfObjects(data))
+		if (Utils.isArrayOfObjects(data)) {
 			for (const single_data of data as Data[])
 				this._validateData(single_data, schema, skipRequiredField);
-		else if (Utils.isObject(data)) {
+			return;
+		}
+		if (Utils.isObject(data)) {
 			for (const field of schema) {
 				if (
 					!Object.hasOwn(data, field.key) ||
@@ -552,7 +556,7 @@ export default class Inibase {
 				) {
 					if (field.required && !skipRequiredField)
 						throw this.createError("FIELD_REQUIRED", field.key);
-					return;
+					continue;
 				}
 
 				if (
@@ -568,7 +572,12 @@ export default class Inibase {
 				)
 					throw this.createError("INVALID_TYPE", [
 						field.key,
-						Array.isArray(field.type) ? field.type.join(", ") : field.type,
+						(Array.isArray(field.type) ? field.type.join(", ") : field.type) +
+							(Array.isArray(field.children)
+								? Utils.isArrayOfObjects(field.children)
+									? "[object]"
+									: `[${field.children.join("|")}]`
+								: `[${field.children}]`),
 						data[field.key],
 					]);
 				if (
@@ -589,7 +598,7 @@ export default class Inibase {
 					}
 					if (field.unique) {
 						let uniqueKey: string | number;
-						if (typeof field.unique === "boolean") uniqueKey = randomInt(55);
+						if (typeof field.unique === "boolean") uniqueKey = field.id;
 						else uniqueKey = field.unique;
 						if (!this.uniqueMap.has(uniqueKey))
 							this.uniqueMap.set(uniqueKey, {
@@ -628,7 +637,7 @@ export default class Inibase {
 			data,
 			this.tablesMap.get(tableName).schema.slice(1, -2),
 			skipRequiredField,
-		);		
+		);
 		await this.checkUnique(tableName);
 	}
 
@@ -728,12 +737,18 @@ export default class Inibase {
 		const flattenSchema = Utils.flattenSchema(
 			this.tablesMap.get(tableName).schema,
 		);
+		function hasDuplicates(setA: Set<number>, setB: Set<number>) {
+			for (const value of setA) if (setB.has(value)) return true; // Stop and return true if a duplicate is found
+			return false; // No duplicates found
+		}
 		for await (const [_uniqueID, valueObject] of this.uniqueMap) {
 			let index = 0;
+			let shouldContinueParent = false; // Flag to manage parent loop continuation
+			const mergedLineNumbers = new Set<number>();
 			for await (const [columnID, values] of valueObject.columnsValues) {
 				index++;
-				const field = flattenSchema.find(({ id }) => id === columnID);								
-				const [searchResult, totalLines] = await File.search(
+				const field = flattenSchema.find(({ id }) => id === columnID);
+				const [searchResult, totalLines, lineNumbers] = await File.search(
 					join(tablePath, `${field.key}${this.getFileExtension(tableName)}`),
 					"[]",
 					Array.from(values),
@@ -747,14 +762,24 @@ export default class Inibase {
 					this.salt,
 				);
 
-				if (searchResult && totalLines > 0) {								
-					if (index === valueObject.columnsValues.size)
+				if (searchResult && totalLines > 0) {
+					if (
+						valueObject.columnsValues.size === 1 ||
+						hasDuplicates(lineNumbers, mergedLineNumbers)
+					) {
+						this.uniqueMap = new Map();
 						throw this.createError("FIELD_UNIQUE", [
 							field.key,
 							Array.from(values).join(", "),
 						]);
-				} else return;
+					}
+					lineNumbers.forEach(mergedLineNumbers.add, mergedLineNumbers);
+				} else {
+					shouldContinueParent = true; // Flag to skip the rest of this inner loop
+					break; // Exit the inner loop
+				}
 			}
+			if (shouldContinueParent) continue;
 		}
 		this.uniqueMap = new Map();
 	}
@@ -2078,11 +2103,15 @@ export default class Inibase {
 
 		if (!returnPostedData) returnPostedData = false;
 
+		let clonedData = JSON.parse(JSON.stringify(data));
+
 		const keys = UtilsServer.hashString(
-			Object.keys(Array.isArray(data) ? data[0] : data).join("."),
+			Object.keys(Array.isArray(clonedData) ? clonedData[0] : clonedData).join(
+				".",
+			),
 		);
 
-		await this.validateData(tableName, data);
+		await this.validateData(tableName, clonedData);
 
 		const renameList: string[][] = [];
 		try {
@@ -2098,28 +2127,32 @@ export default class Inibase {
 
 			this.totalItems.set(`${tableName}-*`, _totalItems);
 
-			if (Utils.isArrayOfObjects(data))
-				for (let index = 0; index < data.length; index++) {
-					const element = data[index];
+			if (Utils.isArrayOfObjects(clonedData))
+				for (let index = 0; index < clonedData.length; index++) {
+					const element = clonedData[index];
 					element.id = ++lastId;
 					element.createdAt = Date.now();
 					element.updatedAt = undefined;
 				}
 			else {
-				data.id = ++lastId;
-				data.createdAt = Date.now();
-				data.updatedAt = undefined;
+				clonedData.id = ++lastId;
+				clonedData.createdAt = Date.now();
+				clonedData.updatedAt = undefined;
 			}
 
-			data = this.formatData(data, this.tablesMap.get(tableName).schema, true);
+			clonedData = this.formatData(
+				clonedData,
+				this.tablesMap.get(tableName).schema,
+				true,
+			);
 
 			const pathesContents = this.joinPathesContents(
 				tableName,
 				this.tablesMap.get(tableName).config.prepend
-					? Array.isArray(data)
-						? data.toReversed()
-						: data
-					: data,
+					? Array.isArray(clonedData)
+						? clonedData.toReversed()
+						: clonedData
+					: clonedData,
 			);
 
 			await Promise.allSettled(
@@ -2159,18 +2192,18 @@ export default class Inibase {
 				return this.get(
 					tableName,
 					this.tablesMap.get(tableName).config.prepend
-						? Array.isArray(data)
-							? data.map((_, index) => index + 1).toReversed()
+						? Array.isArray(clonedData)
+							? clonedData.map((_, index) => index + 1).toReversed()
 							: 1
-						: Array.isArray(data)
-							? data
+						: Array.isArray(clonedData)
+							? clonedData
 									.map(
 										(_, index) => this.totalItems.get(`${tableName}-*`) - index,
 									)
 									.toReversed()
 							: this.totalItems.get(`${tableName}-*`),
 					options,
-					!Utils.isArrayOfObjects(data), // return only one item if data is not array of objects
+					!Utils.isArrayOfObjects(clonedData), // return only one item if data is not array of objects
 				);
 		} finally {
 			if (renameList.length)
@@ -2226,10 +2259,12 @@ export default class Inibase {
 		const tablePath = join(this.databasePath, tableName);
 		await this.throwErrorIfTableEmpty(tableName);
 
+		let clonedData = JSON.parse(JSON.stringify(data));
+
 		if (!where) {
-			if (Utils.isArrayOfObjects(data)) {
+			if (Utils.isArrayOfObjects(clonedData)) {
 				if (
-					!data.every(
+					!clonedData.every(
 						(item) => Object.hasOwn(item, "id") && Utils.isValidID(item.id),
 					)
 				)
@@ -2237,30 +2272,34 @@ export default class Inibase {
 
 				return this.put(
 					tableName,
-					data,
-					data.map(({ id }) => id),
+					clonedData,
+					clonedData.map(({ id }) => id),
 					options,
 					returnUpdatedData || undefined,
 				);
 			}
 			if (Object.hasOwn(data, "id")) {
-				if (!Utils.isValidID(data.id))
-					throw this.createError("INVALID_ID", data.id);
+				if (!Utils.isValidID(clonedData.id))
+					throw this.createError("INVALID_ID", clonedData.id);
 				return this.put(
 					tableName,
 					data,
-					data.id,
+					clonedData.id,
 					options,
 					returnUpdatedData || undefined,
 				);
 			}
 
-			await this.validateData(tableName, data, true);
+			await this.validateData(tableName, clonedData, true);
 
-			data = this.formatData(data, this.tablesMap.get(tableName).schema, true);
+			clonedData = this.formatData(
+				clonedData,
+				this.tablesMap.get(tableName).schema,
+				true,
+			);
 
 			const pathesContents = this.joinPathesContents(tableName, {
-				...(({ id, ...restOfData }) => restOfData)(data as Data),
+				...(({ id, ...restOfData }) => restOfData)(clonedData as Data),
 				updatedAt: Date.now(),
 			});
 
@@ -2318,7 +2357,7 @@ export default class Inibase {
 			);
 			return this.put(
 				tableName,
-				data,
+				clonedData,
 				lineNumbers,
 				options,
 				returnUpdatedData || undefined,
@@ -2329,19 +2368,23 @@ export default class Inibase {
 		) {
 			// "where" in this case, is the line(s) number(s) and not id(s)
 
-			await this.validateData(tableName, data, true);
-			data = this.formatData(data, this.tablesMap.get(tableName).schema, true);
+			await this.validateData(tableName, clonedData, true);
+			clonedData = this.formatData(
+				clonedData,
+				this.tablesMap.get(tableName).schema,
+				true,
+			);
 
 			const pathesContents = Object.fromEntries(
 				Object.entries(
 					this.joinPathesContents(
 						tableName,
-						Utils.isArrayOfObjects(data)
-							? data.map((item: any) => ({
+						Utils.isArrayOfObjects(clonedData)
+							? clonedData.map((item: any) => ({
 									...item,
 									updatedAt: Date.now(),
 								}))
-							: { ...data, updatedAt: Date.now() },
+							: { ...clonedData, updatedAt: Date.now() },
 					),
 				).map(([path, content]) => [
 					path,
@@ -2399,7 +2442,7 @@ export default class Inibase {
 			if (lineNumbers)
 				return this.put(
 					tableName,
-					data,
+					clonedData,
 					lineNumbers,
 					options,
 					returnUpdatedData || undefined,

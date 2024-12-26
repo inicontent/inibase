@@ -386,15 +386,18 @@ export const validateFieldType = (
 		fieldType = detectedFieldType;
 	}
 	if (fieldType === "array" && fieldChildrenType)
-		return Array.isArray(value) && value.every((v: any) => {
-			let _fieldChildrenType = fieldChildrenType;
-			if (Array.isArray(_fieldChildrenType)) {
-				const detectedFieldType = detectFieldType(v, _fieldChildrenType);
-				if (!detectedFieldType) return false;
-				_fieldChildrenType = detectedFieldType;
-			}
-			return validateFieldType(v, _fieldChildrenType);
-		});
+		return (
+			Array.isArray(value) &&
+			value.every((v: any) => {
+				let _fieldChildrenType = fieldChildrenType;
+				if (Array.isArray(_fieldChildrenType)) {
+					const detectedFieldType = detectFieldType(v, _fieldChildrenType);
+					if (!detectedFieldType) return false;
+					_fieldChildrenType = detectedFieldType;
+				}
+				return validateFieldType(v, _fieldChildrenType);
+			})
+		);
 	switch (fieldType) {
 		case "string":
 			return isString(value);

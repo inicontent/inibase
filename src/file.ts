@@ -1,4 +1,4 @@
-import { createWriteStream, type WriteStream } from "node:fs";
+import type { WriteStream } from "node:fs";
 import {
 	type FileHandle,
 	access,
@@ -15,7 +15,6 @@ import { type Interface, createInterface } from "node:readline";
 import { Transform, type Transform as TransformType } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createGunzip, createGzip } from "node:zlib";
-import { spawn as spawnSync } from "node:child_process";
 
 import Inison from "inison";
 import type { ComparisonOperator, FieldType, Schema } from "./index.js";
@@ -477,10 +476,10 @@ export const replace = async (
 ): Promise<string[]> => {
 	const fileTempPath = filePath.replace(/([^/]+)\/?$/, ".tmp/$1");
 	const isReplacementsObject = isObject(replacements);
-	const isReplacementsObjectHasLineNumbers =
+	const isReplacementsLineNumbered =
 		isReplacementsObject && !Number.isNaN(Number(Object.keys(replacements)[0]));
 	if (await isExists(filePath)) {
-		if (isReplacementsObjectHasLineNumbers) {
+		if (isReplacementsLineNumbered) {
 			let fileHandle = null;
 			let fileTempHandle: FileHandle = null;
 			try {
@@ -541,35 +540,22 @@ export const replace = async (
 				await fileTempHandle?.close();
 			}
 		} else {
-			return new Promise((resolve) => {
-				const sedProcess = spawnSync("sed", [
-					"-e",
-					`s/.*/${replacements}/`,
-					"-e",
-					`/^$/s/^/${replacements}/`,
-					filePath,
-				]);
-
-				const outputStream = createWriteStream(fileTempPath); // Temp file for output
-
-				// Pipe sed output to the temporary file
-				sedProcess.stdout.pipe(outputStream);
-
-				// Handle the process close
-				sedProcess.on("close", (code) => {
-					if (code === 0) resolve([fileTempPath, filePath]);
-					else resolve([fileTempPath, null]);
-				});
-
-				// Handle errors in spawning the sed process
-				sedProcess.on("error", () => {
-					resolve([fileTempPath, null]);
-				});
-			});
+			const escapedFilePath = escapeShellPath(filePath);
+			const escapedFileTempPath = escapeShellPath(fileTempPath);
+			const sedCommand = `sed -e s/.*/${replacements}/ -e /^$/s/^/${replacements}/ ${escapedFilePath}`;
+			const command = filePath.endsWith(".gz")
+				? `zcat ${escapedFilePath} | ${sedCommand} | gzip > ${escapedFileTempPath}`
+				: `${sedCommand} > ${escapedFileTempPath}`;
+			try {
+				await exec(command);
+				return [fileTempPath, filePath];
+			} catch {
+				return [fileTempPath, null];
+			}
 		}
 	} else if (isReplacementsObject) {
 		try {
-			if (isReplacementsObjectHasLineNumbers) {
+			if (isReplacementsLineNumbered) {
 				const replacementsKeys = Object.keys(replacements)
 					.map(Number)
 					.toSorted((a, b) => a - b);
@@ -827,12 +813,15 @@ export const search = async (
 		const rl = createReadLineInternface(filePath, fileHandle);
 
 		// Iterate through each line in the file.
-		for await (const line of rl) {			
+		for await (const line of rl) {
 			// Increment the line count for each line.
 			linesCount++;
 
 			// Search only in provided linesNumbers
-			if (searchIn?.size && (!searchIn.has(linesCount) || searchIn.has(-linesCount)))
+			if (
+				searchIn?.size &&
+				(!searchIn.has(linesCount) || searchIn.has(-linesCount))
+			)
 				continue;
 
 			// Decode the line for comparison.
