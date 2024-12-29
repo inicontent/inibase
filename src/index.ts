@@ -788,28 +788,30 @@ export default class Inibase {
 		this.uniqueMap = new Map();
 	}
 
-	private formatData(
-		data: Data,
+	private formatData<TData extends Record<string, any> & Partial<Data>>(
+		data: TData & Data,
 		schema: Schema,
 		formatOnlyAvailiableKeys?: boolean,
-	): Data;
-	private formatData(
-		data: Data | Data[],
+	): TData & Data;
+	private formatData<TData extends Record<string, any> & Partial<Data>>(
+		data: (TData & Data) | (TData & Data)[],
 		schema: Schema,
 		formatOnlyAvailiableKeys?: boolean,
-	): Data[];
-	private formatData(
-		data: Data | Data[],
+	): (TData & Data)[];
+	private formatData<TData extends Record<string, any> & Partial<Data>>(
+		data: (TData & Data) | (TData & Data)[],
 		schema: Schema,
 		formatOnlyAvailiableKeys?: boolean,
-	): Data | Data[] {
-		const clonedData: Data | Data[] = JSON.parse(JSON.stringify(data));
+	): (TData & Data) | (TData & Data)[] {
+		const clonedData: (TData & Data) | (TData & Data)[] = JSON.parse(
+			JSON.stringify(data),
+		);
 		if (Utils.isArrayOfObjects(clonedData))
 			return clonedData.map((singleData) =>
 				this.formatData(singleData, schema, formatOnlyAvailiableKeys),
 			);
 		if (Utils.isObject(clonedData)) {
-			const RETURN: Data = {};
+			const RETURN = {};
 			for (const field of schema) {
 				if (!Object.hasOwn(clonedData, field.key)) {
 					if (formatOnlyAvailiableKeys) continue;
@@ -823,7 +825,7 @@ export default class Inibase {
 					formatOnlyAvailiableKeys,
 				);
 			}
-			return RETURN;
+			return RETURN as TData & Data;
 		}
 		return [];
 	}
@@ -988,14 +990,16 @@ export default class Inibase {
 			}
 		}
 	}
-	private async processSchemaData(
+	private async processSchemaData<
+		TData extends Record<string, any> & Partial<Data>,
+	>(
 		tableName: string,
 		schema: Schema,
 		linesNumber: number[],
 		options: Options,
 		prefix?: string,
-	) {
-		const RETURN: Record<number, Data> = {};
+	): Promise<Record<number, TData & Data>> {
+		const RETURN: Record<number, TData & Data> = {};
 		for (const field of schema) {
 			// If the field is of simple type (non-recursive), process it directly
 			if (this.isSimpleField(field.type)) {
@@ -1349,17 +1353,19 @@ export default class Inibase {
 		}
 	}
 
-	private async applyCriteria(
+	private async applyCriteria<
+		TData extends Record<string, any> & Partial<Data>,
+	>(
 		tableName: string,
 		schema: Schema,
 		options: Options,
 		criteria?: Criteria,
 		allTrue?: boolean,
 		searchIn?: Set<number>,
-	): Promise<[Record<number, Data> | null, Set<number> | null]> {
+	): Promise<[Record<number, TData & Data> | null, Set<number> | null]> {
 		const tablePath = join(this.databasePath, tableName);
 
-		let RETURN: Record<number, Data> = {};
+		let RETURN: Record<number, TData & Data> = {};
 		if (!criteria) return [null, null];
 		if (criteria.and && Utils.isObject(criteria.and)) {
 			const [searchResult, lineNumbers] = await this.applyCriteria(
@@ -1620,42 +1626,46 @@ export default class Inibase {
 	 * @param {boolean} [onlyLinesNumbers]
 	 * @return {*}  {(Promise<Data | number | (Data | number)[] | null>)}
 	 */
-	get(
+	get<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
 		where: string | number | (string | number)[] | Criteria | undefined,
 		options: Options | undefined,
 		onlyOne: true,
 		onlyLinesNumbers?: false,
-	): Promise<Data | null>;
-	get(
+	): Promise<(Data & TData) | null>;
+
+	get<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
 		where: string | number,
 		options?: Options,
 		onlyOne?: boolean,
 		onlyLinesNumbers?: false,
-	): Promise<Data | null>;
-	get(
+	): Promise<(Data & TData) | null>;
+
+	get<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
 		where?: string | number | (string | number)[] | Criteria,
 		options?: Options,
 		onlyOne?: boolean,
 		onlyLinesNumbers?: false,
-	): Promise<Data[] | null>;
-	get(
+	): Promise<(Data & TData)[] | null>;
+
+	get<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
 		where: string | number | (string | number)[] | Criteria | undefined,
 		options: Options | undefined,
 		onlyOne: false | undefined,
 		onlyLinesNumbers: true,
 	): Promise<number[] | null>;
-	get(
+
+	get<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
 		where: string | number | (string | number)[] | Criteria | undefined,
 		options: Options | undefined,
 		onlyOne: true,
 		onlyLinesNumbers: true,
 	): Promise<number | null>;
-	public async get(
+	public async get<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
 		where?: string | number | (string | number)[] | Criteria,
 		options: Options = {
@@ -1664,7 +1674,7 @@ export default class Inibase {
 		},
 		onlyOne?: boolean,
 		onlyLinesNumbers?: boolean,
-	): Promise<Data | number | (Data | number)[] | null> {
+	): Promise<(Data & TData) | number | ((Data & TData) | number)[] | null> {
 		const tablePath = join(this.databasePath, tableName);
 
 		// Ensure options.columns is an array
@@ -1680,7 +1690,7 @@ export default class Inibase {
 		// Default values for page and perPage
 		options.page = options.page || 1;
 		options.perPage = options.perPage || 15;
-		let RETURN!: Data | Data[] | null;
+		let RETURN!: (Data & TData) | (Data & TData)[] | null;
 
 		await this.getTable(tableName);
 
@@ -1830,9 +1840,9 @@ export default class Inibase {
 				if (!lines.length) return null;
 
 				// Parse the result and extract the specified lines
-				const outputArray: Data[] = lines.map((line) => {
+				const outputArray: (Data & TData)[] = lines.map((line) => {
 					const splitedFileColumns = line.split("\t"); // Assuming tab-separated columns
-					const outputObject: Record<string, any> = {};
+					const outputObject = {};
 
 					// Extract values for each file, including `id${this.getFileExtension(tableName)}`
 					filesPathes.forEach((fileName, index) => {
@@ -1847,9 +1857,9 @@ export default class Inibase {
 					});
 
 					return outputObject;
-				});
+				}) as (Data & TData)[];
 
-				const restOfColumns = await this.get(
+				const restOfColumns = await this.get<TData>(
 					tableName,
 					outputArray.map(({ id }) => id as string),
 					(({ sort, ...rest }) => rest)(options),
@@ -1900,7 +1910,7 @@ export default class Inibase {
 			if (onlyLinesNumbers) return lineNumbers;
 
 			RETURN = Object.values(
-				(await this.processSchemaData(
+				(await this.processSchemaData<TData>(
 					tableName,
 					schema,
 					lineNumbers,
@@ -1909,7 +1919,7 @@ export default class Inibase {
 			);
 
 			if (RETURN?.length && !Array.isArray(where))
-				RETURN = (RETURN as Data[])[0];
+				RETURN = (RETURN as (Data & TData)[])[0];
 		} else if (
 			(Array.isArray(where) && where.every(Utils.isValidID)) ||
 			Utils.isValidID(where)
@@ -1949,7 +1959,7 @@ export default class Inibase {
 			}
 
 			RETURN = Object.values(
-				(await this.processSchemaData(
+				(await this.processSchemaData<TData>(
 					tableName,
 					schema,
 					Object.keys(lineNumbers).map(Number),
@@ -1958,7 +1968,7 @@ export default class Inibase {
 			);
 
 			if (RETURN?.length && !Array.isArray(where))
-				RETURN = (RETURN as Data[])[0];
+				RETURN = (RETURN as (Data & TData)[])[0];
 		} else if (Utils.isObject(where)) {
 			let cachedFilePath = "";
 			// Criteria
@@ -1995,14 +2005,13 @@ export default class Inibase {
 					onlyOne,
 				);
 			}
-			let linesNumbers = null;
-			[RETURN, linesNumbers] = await this.applyCriteria(
+			const [LineNumberDataMap, linesNumbers] = await this.applyCriteria<TData>(
 				tableName,
 				schema,
 				options,
 				where as Criteria,
 			);
-			if (RETURN && linesNumbers?.size) {
+			if (LineNumberDataMap && linesNumbers?.size) {
 				if (!this.totalItems.has(`${tableName}-*`))
 					this.totalItems.set(`${tableName}-*`, linesNumbers.size);
 
@@ -2017,7 +2026,7 @@ export default class Inibase {
 
 				RETURN = Object.values(
 					Utils.deepMerge(
-						RETURN,
+						LineNumberDataMap,
 						await this.processSchemaData(
 							tableName,
 							Utils.filterSchema(
@@ -2026,7 +2035,7 @@ export default class Inibase {
 									!alreadyExistsColumnsIDs.includes(id) ||
 									Utils.isFieldType("table", type, children),
 							),
-							Object.keys(RETURN).map(Number),
+							Object.keys(LineNumberDataMap).map(Number),
 							options,
 						),
 					),
@@ -2065,35 +2074,35 @@ export default class Inibase {
 	 * Create new item(s) in a table
 	 *
 	 * @param {string} tableName
-	 * @param {(Data | Data[])} data Can be array of objects or a single object
+	 * @param {((Data & TData) | (Data & TData)[])} data Can be array of objects or a single object
 	 * @param {Options} [options] Pagination options, useful when the returnPostedData param is true
 	 * @param {boolean} [returnPostedData] By default function returns void, if you want to get the posted data, set this param to true
 	 * @return {*}  {Promise<Data | Data[] | null | void>}
 	 */
-	post(
+	post<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
-		data: Data | Data[],
+		data: (Data & TData) | (Data & TData)[],
 		options?: Options,
 		returnPostedData?: boolean,
 	): Promise<void>;
-	post(
+	post<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
-		data: Data,
+		data: Data & TData,
 		options: Options | undefined,
 		returnPostedData: true,
-	): Promise<Data | null>;
-	post(
+	): Promise<(Data & TData) | null>;
+	post<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
-		data: Data[],
+		data: (Data & TData)[],
 		options: Options | undefined,
 		returnPostedData: true,
-	): Promise<Data[] | null>;
-	public async post(
+	): Promise<(Data & TData)[] | null>;
+	public async post<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
-		data: Data | Data[],
+		data: (Data & TData) | (Data & TData)[],
 		options?: Options,
 		returnPostedData?: boolean,
-	): Promise<Data | Data[] | null | void> {
+	): Promise<(Data & TData) | (Data & TData)[] | null | void> {
 		if (!options)
 			options = {
 				page: 1,
@@ -2144,7 +2153,7 @@ export default class Inibase {
 				clonedData.updatedAt = undefined;
 			}
 
-			clonedData = this.formatData(
+			clonedData = this.formatData<TData>(
 				clonedData,
 				this.tablesMap.get(tableName).schema,
 				false,
@@ -2193,7 +2202,7 @@ export default class Inibase {
 			);
 
 			if (returnPostedData)
-				return this.get(
+				return this.get<TData>(
 					tableName,
 					this.tablesMap.get(tableName).config.prepend
 						? Array.isArray(clonedData)
@@ -2222,48 +2231,57 @@ export default class Inibase {
 	 * Update item(s) in a table
 	 *
 	 * @param {string} tableName
-	 * @param {(Data | Data[])} data
+	 * @param {(Data & TData) | (Data & TData[])} data
 	 * @param {(number | string | (number | string)[] | Criteria)} [where]
 	 * @param {Options} [options]
-	 * @param {false} [returnUpdatedData]
+	 * @param {boolean} [returnUpdatedData]
 	 * @return {*}  {Promise<Data | Data[] | null | undefined | void>}
 	 */
-	put(
+	put<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
-		data: Data | Data[],
-		where?: number | string | (number | string)[] | Criteria,
-		options?: Options,
-		returnUpdatedData?: false,
+		data: (Data & TData) | (Data & TData)[],
+		where: number | string | (number | string)[] | Criteria | undefined,
+		options: Options | undefined,
+		returnUpdatedData: false,
 	): Promise<void>;
-	put(
+	put<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
-		data: Data,
+		data: Data & TData,
 		where: number | string | (number | string)[] | Criteria | undefined,
 		options: Options | undefined,
-		returnUpdatedData: true,
-	): Promise<Data | null>;
-	put(
+		returnUpdatedData: true | boolean,
+	): Promise<(Data & TData) | null>;
+	put<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
-		data: Data[],
+		data: (Data & TData)[],
 		where: number | string | (number | string)[] | Criteria | undefined,
 		options: Options | undefined,
-		returnUpdatedData: true,
-	): Promise<Data[] | null>;
-	public async put(
+		returnUpdatedData: true | boolean,
+	): Promise<(Data & TData)[] | null>;
+	put<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
-		data: Data | Data[],
+		data: (Data & TData) | (Data & TData)[],
+		where: number | string | (number | string)[] | Criteria | undefined,
+		options: Options | undefined,
+		returnUpdatedData: true | boolean,
+	): Promise<(Data & TData) | (Data & TData)[] | null>;
+	public async put<TData extends Record<string, any> & Partial<Data>>(
+		tableName: string,
+		data: (Data & TData) | (Data & TData)[],
 		where?: number | string | (number | string)[] | Criteria,
 		options: Options = {
 			page: 1,
 			perPage: 15,
 		},
 		returnUpdatedData?: boolean,
-	): Promise<Data | Data[] | null | undefined | void> {
+	): Promise<(Data & TData) | (Data & TData)[] | null | undefined | void> {
 		const renameList: string[][] = [];
 		const tablePath = join(this.databasePath, tableName);
 		await this.throwErrorIfTableEmpty(tableName);
 
-		let clonedData = JSON.parse(JSON.stringify(data));
+		let clonedData: (Data & TData) | (Data & TData)[] = JSON.parse(
+			JSON.stringify(data),
+		);
 
 		if (!where) {
 			if (Utils.isArrayOfObjects(clonedData)) {
@@ -2274,36 +2292,36 @@ export default class Inibase {
 				)
 					throw this.createError("INVALID_ID");
 
-				return this.put(
+				return this.put<TData>(
 					tableName,
 					clonedData,
 					clonedData.map(({ id }) => id),
 					options,
-					returnUpdatedData || undefined,
+					returnUpdatedData,
 				);
 			}
-			if (Object.hasOwn(data, "id")) {
+			if (Object.hasOwn(clonedData, "id")) {
 				if (!Utils.isValidID(clonedData.id))
 					throw this.createError("INVALID_ID", clonedData.id);
-				return this.put(
+				return this.put<TData>(
 					tableName,
-					data,
+					clonedData,
 					clonedData.id,
 					options,
-					returnUpdatedData || undefined,
+					returnUpdatedData,
 				);
 			}
 
 			await this.validateData(tableName, clonedData, true);
 
-			clonedData = this.formatData(
+			clonedData = this.formatData<TData>(
 				clonedData,
 				this.tablesMap.get(tableName).schema,
 				true,
 			);
 
 			const pathesContents = this.joinPathesContents(tableName, {
-				...(({ id, ...restOfData }) => restOfData)(clonedData as Data),
+				...(({ id, ...restOfData }) => restOfData)(clonedData as TData & Data),
 				updatedAt: Date.now(),
 			});
 
@@ -2340,7 +2358,7 @@ export default class Inibase {
 					await this.clearCache(join(tablePath, ".cache"));
 
 				if (returnUpdatedData)
-					return await this.get(tableName, undefined, options);
+					return await this.get<TData>(tableName, undefined, options);
 			} finally {
 				if (renameList.length)
 					await Promise.allSettled(
@@ -2359,12 +2377,12 @@ export default class Inibase {
 				undefined,
 				true,
 			);
-			return this.put(
+			return this.put<TData>(
 				tableName,
-				clonedData,
+				clonedData as TData & Data,
 				lineNumbers,
 				options,
-				returnUpdatedData || undefined,
+				false,
 			);
 		} else if (
 			(Array.isArray(where) && where.every(Utils.isNumber)) ||
@@ -2373,7 +2391,7 @@ export default class Inibase {
 			// "where" in this case, is the line(s) number(s) and not id(s)
 
 			await this.validateData(tableName, clonedData, true);
-			clonedData = this.formatData(
+			clonedData = this.formatData<TData>(
 				clonedData,
 				this.tablesMap.get(tableName).schema,
 				true,
@@ -2388,7 +2406,7 @@ export default class Inibase {
 									...item,
 									updatedAt: Date.now(),
 								}))
-							: { ...clonedData, updatedAt: Date.now() },
+							: { ...(clonedData as TData & Data), updatedAt: Date.now() },
 					),
 				).map(([path, content]) => [
 					path,
@@ -2444,12 +2462,12 @@ export default class Inibase {
 				true,
 			);
 			if (lineNumbers)
-				return this.put(
+				return this.put<TData>(
 					tableName,
 					clonedData,
 					lineNumbers,
 					options,
-					returnUpdatedData || undefined,
+					returnUpdatedData,
 				);
 		} else throw this.createError("INVALID_PARAMETERS");
 	}
