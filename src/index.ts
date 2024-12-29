@@ -679,7 +679,11 @@ export default class Inibase {
 				if (!fieldChildrenType) return null;
 				if (!Array.isArray(value)) value = [value];
 				if (Utils.isArrayOfObjects(fieldChildrenType))
-					return this.formatData(value as Data[], fieldChildrenType);
+					return this.formatData(
+						value as Data[],
+						fieldChildrenType,
+						_formatOnlyAvailiableKeys,
+					);
 				if (!value.length) return null;
 				return (value as (string | number | Data)[]).map((_value) =>
 					this.formatField(_value, fieldChildrenType),
@@ -2143,7 +2147,7 @@ export default class Inibase {
 			clonedData = this.formatData(
 				clonedData,
 				this.tablesMap.get(tableName).schema,
-				true,
+				false,
 			);
 
 			const pathesContents = this.joinPathesContents(
