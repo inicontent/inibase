@@ -2019,7 +2019,9 @@ export default class Inibase {
 					return onlyOne
 						? (linesNumbers.values().next().value as number)
 						: Array.from(linesNumbers);
-				const alreadyExistsColumns = Object.keys(Object.values(RETURN)[0]),
+				const alreadyExistsColumns = Object.keys(
+						Object.values(LineNumberDataMap)[0],
+					),
 					alreadyExistsColumnsIDs = Utils.flattenSchema(schema)
 						.filter(({ key }) => alreadyExistsColumns.includes(key))
 						.map(({ id }) => id);
