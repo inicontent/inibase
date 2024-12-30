@@ -493,6 +493,188 @@ test("Prepend Configuration", async (t) => {
 			"Remaining data order should still follow prepend configuration",
 		);
 	});
+}).catch(removeDtabase);
+
+test("Multiple Optional Recursive Arrays with Prepend Config", async (t) => {
+	initializeDatabase();
+
+	const tableName = "recursive_array_test";
+	const tableSchema: Schema = [
+		{
+			key: "items",
+			type: "array",
+			required: false,
+			children: [
+				{
+					key: "name",
+					type: "string",
+					required: false,
+				},
+				{
+					key: "details",
+					type: "array",
+					required: false,
+					children: [
+						{
+							key: "description",
+							type: "string",
+							required: false,
+						},
+						{
+							key: "value",
+							type: "number",
+							required: false,
+						},
+					],
+				},
+			],
+		},
+	];
+
+	await t.test("Create Table with Prepend Enabled", async () => {
+		await inibase.createTable(tableName, tableSchema, { prepend: true });
+		assert.ok(true, "Table with prepend enabled created successfully");
+	});
+
+	await t.test("Insert Data with All Fields Present", async () => {
+		await inibase.post(tableName, {
+			items: [
+				{
+					name: "Item 1",
+					details: [
+						{ description: "Detail 1", value: 10 },
+						{ description: "Detail 12", value: 12 },
+					],
+				},
+				{
+					name: "Item 2",
+					details: [{ description: "Detail 2", value: 20 }],
+				},
+			],
+		});
+		assert.ok(true, "Inserted data with all fields present successfully");
+	});
+
+	await t.test("Insert Data with Some Fields Missing", async () => {
+		await inibase.post(tableName, {
+			items: [
+				{
+					name: "Item 3",
+					details: [
+						{ description: "Detail 3" }, // Missing value
+					],
+				},
+				{
+					details: [
+						{ value: 30 }, // Missing description
+					],
+				},
+			],
+		});
+		assert.ok(true, "Inserted data with some fields missing successfully");
+	});
+
+	await t.test("Validate Data Order with Prepend Enabled", async () => {
+		const data = await inibase.get(tableName);
+		assert.equal(data?.length, 2, "Should retrieve all records from table");
+		assert.deepEqual(
+			data.map((record) => record.items.map((item) => item.name)),
+			[
+				["Item 3", undefined],
+				["Item 1", "Item 2"],
+			],
+			"Data order should follow prepend configuration",
+		);
+	});
+
+	await t.test("Switch Prepend Off and Insert More Data", async () => {
+		await inibase.updateTable(tableName, undefined, { prepend: false });
+		await inibase.post(tableName, [
+			{
+				items: [
+					{
+						name: "Item 4",
+						details: [],
+					},
+				],
+			},
+			{
+				items: [
+					{
+						name: "Item 5",
+						details: [
+							{ description: "Detail 5" }, // Missing value
+							{ value: 50 }, // Missing description
+						],
+					},
+				],
+			},
+		]);
+
+		const data = await inibase.get(tableName);
+		assert.equal(data?.length, 4, "Should retrieve all records from table");
+		assert.deepEqual(
+			data.map((record) => record.items.map((item) => item.name)),
+			[["Item 1", "Item 2"], ["Item 3", undefined], ["Item 4"], ["Item 5"]],
+			"Data order should respect updated prepend configuration",
+		);
+		assert.deepEqual(
+			data.map((record) =>
+				record.items.map((item) => item.details?.map((_item) => _item.value)),
+			),
+			[[[10, 12], [20]], [[undefined], [30]], [undefined], [[undefined, 50]]],
+			"Data order should respect updated prepend configuration",
+		);
+		assert.deepEqual(
+			data.map((record) =>
+				record.items.map((item) =>
+					item.details?.map((_item) => _item.description),
+				),
+			),
+			[
+				[["Detail 1", "Detail 12"], ["Detail 2"]],
+				[["Detail 3"], [undefined]],
+				[undefined],
+				[["Detail 5", undefined]],
+			],
+			"Data order should respect updated prepend configuration",
+		);
+	});
+
+	await t.test("Update Data Using Put Function", async () => {
+		await inibase.put(
+			tableName,
+			{
+				items: [
+					{
+						name: "Item 1 Updated",
+						details: [
+							{ description: "Detail 1 Updated", value: 100 },
+							{ description: "Detail 12 Updated", value: 120 },
+						],
+					},
+				],
+			},
+			{ "items.name": "Item 1" },
+		);
+
+		const updatedData = await inibase.get(tableName);
+
+		assert.ok(
+			updatedData?.some((record) =>
+				record.items.some(
+					(item) =>
+						item.name === "Item 1 Updated" &&
+						item.details?.some(
+							(detail) =>
+								detail.description === "Detail 1 Updated" &&
+								detail.value === 100,
+						),
+				),
+			),
+			"Put function should update the specified record",
+		);
+	});
 })
 	.catch(removeDtabase)
 	.finally(removeDtabase);
