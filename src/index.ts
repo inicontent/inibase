@@ -573,11 +573,13 @@ export default class Inibase {
 					throw this.createError("INVALID_TYPE", [
 						field.key,
 						(Array.isArray(field.type) ? field.type.join(", ") : field.type) +
-							(Array.isArray(field.children)
-								? Utils.isArrayOfObjects(field.children)
-									? "[object]"
-									: `[${field.children.join("|")}]`
-								: `[${field.children}]`),
+							(field.children
+								? Array.isArray(field.children)
+									? Utils.isArrayOfObjects(field.children)
+										? "[object]"
+										: `[${field.children.join("|")}]`
+									: `[${field.children}]`
+								: ""),
 						data[field.key],
 					]);
 				if (
