@@ -806,6 +806,19 @@ export const search = async (
 
 	let fileHandle = null;
 
+	const meetsConditions = (value: any) =>
+		(Array.isArray(operator) &&
+			Array.isArray(comparedAtValue) &&
+			((logicalOperator === "or" &&
+				operator.some((single_operator, index) =>
+					compare(single_operator, value, comparedAtValue[index], fieldType),
+				)) ||
+				operator.every((single_operator, index) =>
+					compare(single_operator, value, comparedAtValue[index], fieldType),
+				))) ||
+		(!Array.isArray(operator) &&
+			compare(operator, value, comparedAtValue, fieldType));
+
 	try {
 		// Open the file for reading.
 		fileHandle = await open(filePath, "r");
@@ -828,31 +841,14 @@ export const search = async (
 			const decodedLine = decode(line, fieldType, fieldChildrenType, secretKey);
 
 			// Check if the line meets the specified conditions based on comparison and logical operators.
-			const meetsConditions =
-				(Array.isArray(operator) &&
-					Array.isArray(comparedAtValue) &&
-					((logicalOperator === "or" &&
-						operator.some((single_operator, index) =>
-							compare(
-								single_operator,
-								decodedLine,
-								comparedAtValue[index],
-								fieldType,
-							),
-						)) ||
-						operator.every((single_operator, index) =>
-							compare(
-								single_operator,
-								decodedLine,
-								comparedAtValue[index],
-								fieldType,
-							),
-						))) ||
-				(!Array.isArray(operator) &&
-					compare(operator, decodedLine, comparedAtValue, fieldType));
+			const doesMeetCondition =
+				(Array.isArray(decodedLine) &&
+					!Array.isArray(decodedLine[1]) &&
+					decodedLine.some(meetsConditions)) ||
+				meetsConditions(decodedLine);
 
 			// If the line meets the conditions, process it.
-			if (meetsConditions) {
+			if (doesMeetCondition) {
 				// Increment the found items counter.
 				linesNumbers.add(linesCount);
 				// Check if the line should be skipped based on the offset.
