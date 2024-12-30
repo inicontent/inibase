@@ -1,6 +1,4 @@
 pre-push:
-  scripts:
-    run-tests:
-      runner: npx
-      command: -q tsx ./tests/inibase.test.ts
-      success: echo "Pre-push hook completed successfully! All tests passed."
+  commands:
+    check:
+      run: npx -q tsx ./tests/inibase.test.ts
