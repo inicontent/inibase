@@ -680,12 +680,13 @@ export default class Inibase {
 			case "array":
 				if (!fieldChildrenType) return null;
 				if (!Array.isArray(value)) value = [value];
-				if (Utils.isArrayOfObjects(fieldChildrenType))
+				if (Utils.isArrayOfObjects(fieldChildrenType)) {
 					return this.formatData(
 						value as Data[],
 						fieldChildrenType,
 						_formatOnlyAvailiableKeys,
 					);
+				}
 				if (!value.length) return null;
 				return (value as (string | number | Data)[]).map((_value) =>
 					this.formatField(_value, fieldChildrenType),
@@ -754,7 +755,7 @@ export default class Inibase {
 			for await (const [columnID, values] of valueObject.columnsValues) {
 				index++;
 				const field = flattenSchema.find(({ id }) => id === columnID);
-				const [searchResult, totalLines, lineNumbers] = await File.search(
+				const [_, totalLines, lineNumbers] = await File.search(
 					join(tablePath, `${field.key}${this.getFileExtension(tableName)}`),
 					"[]",
 					Array.from(values),
@@ -768,7 +769,7 @@ export default class Inibase {
 					this.salt,
 				);
 
-				if (searchResult && totalLines > 0) {
+				if (totalLines > 0) {
 					if (
 						valueObject.columnsValues.size === 1 ||
 						hasDuplicates(lineNumbers, mergedLineNumbers)
@@ -805,9 +806,7 @@ export default class Inibase {
 		schema: Schema,
 		formatOnlyAvailiableKeys?: boolean,
 	): (TData & Data) | (TData & Data)[] {
-		const clonedData: (TData & Data) | (TData & Data)[] = JSON.parse(
-			JSON.stringify(data),
-		);
+		const clonedData: (TData & Data) | (TData & Data)[] = structuredClone(data);
 		if (Utils.isArrayOfObjects(clonedData))
 			return clonedData.map((singleData) =>
 				this.formatData(singleData, schema, formatOnlyAvailiableKeys),
@@ -817,6 +816,13 @@ export default class Inibase {
 			for (const field of schema) {
 				if (!Object.hasOwn(clonedData, field.key)) {
 					if (formatOnlyAvailiableKeys) continue;
+					RETURN[field.key] = this.getDefaultValue(field);
+					continue;
+				}
+				if (
+					Array.isArray(clonedData[field.key]) &&
+					!clonedData[field.key].length
+				) {
 					RETURN[field.key] = this.getDefaultValue(field);
 					continue;
 				}
@@ -954,8 +960,8 @@ export default class Inibase {
 					for (const [key, value] of Object.entries(item[child_field.key])) {
 						for (let _i = 0; _i < value.length; _i++) {
 							if (
-								(Array.isArray(value[_i]) && Utils.isArrayOfNulls(value[_i])) ||
-								value[_i] === null
+								value[_i] === null ||
+								(Array.isArray(value[_i]) && Utils.isArrayOfNulls(value[_i]))
 							)
 								continue;
 
@@ -970,11 +976,13 @@ export default class Inibase {
 								RETURN[index][field.key][_i][child_field.key][0][key] =
 									value[_i];
 							} else {
-								value[_i].forEach((_element: any, _index: number) => {
+								for (let _index = 0; _index < value[_i].length; _index++) {
+									const element = value[_i][_index];
+									if (element === null) continue;
 									// Recursive call to handle nested structure
 									this._processSchemaDataHelper(
 										RETURN,
-										_element,
+										element,
 										_index,
 										child_field,
 									);
@@ -983,8 +991,8 @@ export default class Inibase {
 									if (!RETURN[index][field.key][_i][child_field.key][_index])
 										RETURN[index][field.key][_i][child_field.key][_index] = {};
 									RETURN[index][field.key][_i][child_field.key][_index][key] =
-										_element;
-								});
+										element;
+								}
 							}
 						}
 					}
@@ -1173,10 +1181,14 @@ export default class Inibase {
 						if (typeof item === "undefined") continue; // Skip undefined items
 						if (!RETURN[index]) RETURN[index] = {};
 						if (Utils.isObject(item)) {
-							if (!Utils.isArrayOfNulls(Object.values(item))) {
+							const itemEntries = Object.entries(item);
+							const itemValues = itemEntries.map(([_key, value]) => value);
+							if (!Utils.isArrayOfNulls(itemValues)) {
 								if (RETURN[index][field.key])
-									Object.entries(item).forEach(([key, value], _index) => {
-										for (let _index = 0; _index < value.length; _index++)
+									for (let _index = 0; _index < itemEntries.length; _index++) {
+										const [key, value] = itemEntries[_index];
+										for (let _index = 0; _index < value.length; _index++) {
+											if (value[_index] === null) continue;
 											if (RETURN[index][field.key][_index])
 												Object.assign(RETURN[index][field.key][_index], {
 													[key]: value[_index],
@@ -1185,20 +1197,20 @@ export default class Inibase {
 												RETURN[index][field.key][_index] = {
 													[key]: value[_index],
 												};
-									});
+										}
+									}
 								else if (
-									Object.values(item).every((_i) =>
-										Utils.isArrayOfArrays(_i),
-									) &&
+									itemValues.every((_i) => Utils.isArrayOfArrays(_i)) &&
 									prefix
 								)
 									RETURN[index][field.key] = item;
 								else {
 									RETURN[index][field.key] = [];
-									Object.entries(item).forEach(([key, value], _ind) => {
+									for (let _index = 0; _index < itemEntries.length; _index++) {
+										const [key, value] = itemEntries[_index];
 										if (!Array.isArray(value)) {
-											RETURN[index][field.key][_ind] = {};
-											RETURN[index][field.key][_ind][key] = value;
+											RETURN[index][field.key][_index] = {};
+											RETURN[index][field.key][_index][key] = value;
 										} else
 											for (let _i = 0; _i < value.length; _i++) {
 												if (
@@ -1212,9 +1224,9 @@ export default class Inibase {
 													RETURN[index][field.key][_i] = {};
 												RETURN[index][field.key][_i][key] = value[_i];
 											}
-									});
+									}
 								}
-							} else RETURN[index][field.key] = null;
+							}
 						} else RETURN[index][field.key] = item;
 					}
 				}
@@ -1355,11 +1367,22 @@ export default class Inibase {
 		}
 	}
 
+	private _setNestedKey(obj: any, path: string, value: any) {
+		const keys = path.split(".");
+		let current = obj;
+		keys.forEach((key, index) => {
+			if (index === keys.length - 1) {
+				current[key] = value; // Set the value at the last key
+			} else {
+				current[key] = current[key] || {}; // Ensure the object structure exists
+				current = current[key];
+			}
+		});
+	}
 	private async applyCriteria<
 		TData extends Record<string, any> & Partial<Data>,
 	>(
 		tableName: string,
-		schema: Schema,
 		options: Options,
 		criteria?: Criteria,
 		allTrue?: boolean,
@@ -1372,7 +1395,6 @@ export default class Inibase {
 		if (criteria.and && Utils.isObject(criteria.and)) {
 			const [searchResult, lineNumbers] = await this.applyCriteria(
 				tableName,
-				schema,
 				options,
 				criteria.and as Criteria,
 				true,
@@ -1403,7 +1425,7 @@ export default class Inibase {
 
 			let index = -1;
 			for await (const [key, value] of Object.entries(criteria)) {
-				const field = Utils.getField(key, schema);
+				const field = Utils.getField(key, this.tablesMap.get(tableName).schema);
 				index++;
 				let searchOperator:
 						| ComparisonOperator
@@ -1525,12 +1547,11 @@ export default class Inibase {
 					RETURN = Utils.deepMerge(
 						RETURN,
 						Object.fromEntries(
-							Object.entries(searchResult).map(([id, value]) => [
-								id,
-								{
-									[key]: value,
-								},
-							]),
+							Object.entries(searchResult).map(([id, value]) => {
+								const nestedObj: any = {};
+								this._setNestedKey(nestedObj, key, value);
+								return [id, nestedObj];
+							}),
 						),
 					);
 					this.totalItems.set(`${tableName}-${key}`, totalLines);
@@ -1546,7 +1567,6 @@ export default class Inibase {
 		if (criteriaOR && Utils.isObject(criteriaOR)) {
 			const [searchResult, lineNumbers] = await this.applyCriteria(
 				tableName,
-				schema,
 				options,
 				criteriaOR as Criteria,
 				false,
@@ -1635,7 +1655,6 @@ export default class Inibase {
 		onlyOne: true,
 		onlyLinesNumbers?: false,
 	): Promise<(Data & TData) | null>;
-
 	get<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
 		where: string | number,
@@ -1643,7 +1662,6 @@ export default class Inibase {
 		onlyOne?: boolean,
 		onlyLinesNumbers?: false,
 	): Promise<(Data & TData) | null>;
-
 	get<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
 		where?: string | number | (string | number)[] | Criteria,
@@ -1651,7 +1669,6 @@ export default class Inibase {
 		onlyOne?: boolean,
 		onlyLinesNumbers?: false,
 	): Promise<(Data & TData)[] | null>;
-
 	get<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
 		where: string | number | (string | number)[] | Criteria | undefined,
@@ -1659,7 +1676,6 @@ export default class Inibase {
 		onlyOne: false | undefined,
 		onlyLinesNumbers: true,
 	): Promise<number[] | null>;
-
 	get<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
 		where: string | number | (string | number)[] | Criteria | undefined,
@@ -1694,9 +1710,7 @@ export default class Inibase {
 		options.perPage = options.perPage || 15;
 		let RETURN!: (Data & TData) | (Data & TData)[] | null;
 
-		await this.getTable(tableName);
-
-		let schema = (await this.getTable(tableName)).schema;
+		let schema = structuredClone((await this.getTable(tableName)).schema);
 
 		if (!schema) throw this.createError("NO_SCHEMA", tableName);
 
@@ -2009,7 +2023,6 @@ export default class Inibase {
 			}
 			const [LineNumberDataMap, linesNumbers] = await this.applyCriteria<TData>(
 				tableName,
-				schema,
 				options,
 				where as Criteria,
 			);
@@ -2120,7 +2133,7 @@ export default class Inibase {
 
 		if (!returnPostedData) returnPostedData = false;
 
-		let clonedData = JSON.parse(JSON.stringify(data));
+		let clonedData = structuredClone(data);
 
 		const keys = UtilsServer.hashString(
 			Object.keys(Array.isArray(clonedData) ? clonedData[0] : clonedData).join(
@@ -2283,9 +2296,7 @@ export default class Inibase {
 		const tablePath = join(this.databasePath, tableName);
 		await this.throwErrorIfTableEmpty(tableName);
 
-		let clonedData: (Data & TData) | (Data & TData)[] = JSON.parse(
-			JSON.stringify(data),
-		);
+		let clonedData: (Data & TData) | (Data & TData)[] = structuredClone(data);
 
 		if (!where) {
 			if (Utils.isArrayOfObjects(clonedData)) {
@@ -2395,6 +2406,7 @@ export default class Inibase {
 			// "where" in this case, is the line(s) number(s) and not id(s)
 
 			await this.validateData(tableName, clonedData, true);
+
 			clonedData = this.formatData<TData>(
 				clonedData,
 				this.tablesMap.get(tableName).schema,
