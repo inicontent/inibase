@@ -2243,10 +2243,10 @@ export default class Inibase {
 	 */
 	put<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
-		data: (Data & TData) | (Data & TData)[],
-		where: number | string | (number | string)[] | Criteria | undefined,
-		options: Options | undefined,
-		returnUpdatedData: false,
+		data?: (Data & TData) | (Data & TData)[],
+		where?: number | string | (number | string)[] | Criteria | undefined,
+		options?: Options | undefined,
+		returnUpdatedData?: false,
 	): Promise<void>;
 	put<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
