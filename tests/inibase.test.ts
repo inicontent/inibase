@@ -1,7 +1,8 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import Inibase, { type Schema } from "../src/index.js";
 import { existsSync, rmSync } from "node:fs";
+
+import Inibase, { type Schema } from "../src/index.js";
 
 // Test database directory
 const dbPath = "test-db";
@@ -16,12 +17,12 @@ function initializeDatabase() {
 	inibase = new Inibase(dbPath);
 }
 
-test("Initialize Inibase", async (t) => {
+await test("Initialize Inibase", async (t) => {
 	initializeDatabase();
 	assert.ok(inibase, "Inibase instance should be initialized");
 });
 
-test("Basic Table Operations", async (t) => {
+await test("Basic Table Operations", async (t) => {
 	const tableName = "users";
 	const tableSchema: Schema = [
 		{ key: "name", type: "string", required: true },
@@ -76,7 +77,7 @@ test("Basic Table Operations", async (t) => {
 	});
 }).catch(removeDtabase);
 
-test("Complex Schema with Flexible Children Definitions", async (t) => {
+await test("Complex Schema with Flexible Children Definitions", async (t) => {
 	initializeDatabase();
 
 	const tableName = "flexible_children";
@@ -201,7 +202,7 @@ test("Complex Schema with Flexible Children Definitions", async (t) => {
 	});
 }).catch(removeDtabase);
 
-test("Single Unique Field", async (t) => {
+await test("Single Unique Field", async (t) => {
 	initializeDatabase();
 
 	const tableName = "unique_field_test";
@@ -229,7 +230,7 @@ test("Single Unique Field", async (t) => {
 	});
 }).catch(removeDtabase);
 
-test("Group of Unique Fields", async (t) => {
+await test("Group of Unique Fields", async (t) => {
 	initializeDatabase();
 
 	const tableName = "unique_group_test";
@@ -298,7 +299,7 @@ test("Group of Unique Fields", async (t) => {
 	});
 }).catch(removeDtabase);
 
-test("Regex Validation", async (t) => {
+await test("Regex Validation", async (t) => {
 	initializeDatabase();
 
 	const tableName = "regex_field_test";
@@ -343,7 +344,7 @@ test("Regex Validation", async (t) => {
 	});
 }).catch(removeDtabase);
 
-test("Compression Configuration", async (t) => {
+await test("Compression Configuration", async (t) => {
 	initializeDatabase();
 
 	const tableName = "compression_test";
@@ -434,7 +435,7 @@ test("Compression Configuration", async (t) => {
 	});
 }).catch(removeDtabase);
 
-test("Prepend Configuration", async (t) => {
+await test("Prepend Configuration", async (t) => {
 	initializeDatabase();
 
 	const tableName = "prepend_test";
@@ -495,7 +496,7 @@ test("Prepend Configuration", async (t) => {
 	});
 }).catch(removeDtabase);
 
-test("Multiple Optional Recursive Arrays with Prepend Config", async (t) => {
+await test("Multiple Optional Recursive Arrays with Prepend Config", async (t) => {
 	initializeDatabase();
 
 	const tableName = "recursive_array_test";
