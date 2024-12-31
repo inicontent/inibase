@@ -666,9 +666,7 @@ export const prepend = async (
 								isAppended = true;
 								return callback(
 									null,
-									`${Array.isArray(data) ? data.join("\n") : data}\n${
-										line.length ? `${line}\n` : ""
-									}`,
+									`${Array.isArray(data) ? data.join("\n") : data}\n${`${line}\n`}`,
 								);
 							}
 							return callback(null, `${line}\n`);
