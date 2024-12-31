@@ -156,7 +156,10 @@ export const encode = (
 ): string | number | boolean | null =>
 	Array.isArray(input)
 		? input.every(
-				(_input) => typeof _input === "string" && isStringified(_input),
+				(_input) =>
+					_input === null ||
+					_input === undefined ||
+					(typeof _input === "string" && isStringified(_input)),
 			)
 			? `[${input.join(",")}]`
 			: Inison.stringify(input)
