@@ -900,7 +900,10 @@ export default class Inibase {
 
 		for (const [key, value] of Object.entries(data)) {
 			if (Utils.isObject(value))
-				Object.assign(RETURN, this._CombineData(value, `${key}.`));
+				Object.assign(
+					RETURN,
+					this._CombineData(value, `${(prefix ?? "") + key}.`),
+				);
 			else if (Utils.isArrayOfObjects(value)) {
 				Object.assign(
 					RETURN,
