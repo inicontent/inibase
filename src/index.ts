@@ -815,8 +815,8 @@ export default class Inibase {
 			const RETURN = {};
 			for (const field of schema) {
 				if (!Object.hasOwn(clonedData, field.key)) {
-					if (formatOnlyAvailiableKeys) continue;
-					RETURN[field.key] = this.getDefaultValue(field);
+					if (formatOnlyAvailiableKeys) RETURN[field.key] = "undefined";
+					else RETURN[field.key] = this.getDefaultValue(field);
 					continue;
 				}
 				if (
@@ -923,7 +923,16 @@ export default class Inibase {
 						`${(prefix ?? "") + key}.`,
 					),
 				);
-			else RETURN[(prefix ?? "") + key] = File.encode(value);
+			else if (value !== "undefined")
+				RETURN[(prefix ?? "") + key] = File.encode(
+					Array.isArray(value)
+						? value.map((_value) =>
+								typeof _value === "string" && _value === "undefined"
+									? ""
+									: _value,
+							)
+						: value,
+				);
 		}
 
 		return RETURN;
@@ -2420,8 +2429,8 @@ export default class Inibase {
 				Object.entries(
 					this.joinPathesContents(
 						tableName,
-						Utils.isArrayOfObjects(clonedData)
-							? clonedData.map((item: any) => ({
+						Array.isArray(clonedData)
+							? clonedData.map((item) => ({
 									...item,
 									updatedAt: Date.now(),
 								}))
@@ -2429,11 +2438,11 @@ export default class Inibase {
 					),
 				).map(([path, content]) => [
 					path,
-					([...(Array.isArray(where) ? where : [where])] as number[]).reduce(
-						(obj, lineNum, index) =>
-							Object.assign(obj, {
-								[lineNum]: Array.isArray(content) ? content[index] : content,
-							}),
+					(Array.isArray(where) ? where : [where]).reduce(
+						(obj, lineNum, index) => {
+							obj[lineNum] = Array.isArray(content) ? content[index] : content;
+							return obj;
+						},
 						{},
 					),
 				]),

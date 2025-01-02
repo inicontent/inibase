@@ -159,6 +159,7 @@ export const encode = (
 				(_input) =>
 					_input === null ||
 					_input === undefined ||
+					_input === "" ||
 					(typeof _input === "string" && isStringified(_input)),
 			)
 			? `[${input.join(",")}]`
@@ -260,7 +261,7 @@ export const decode = (
 	return decodeHelper(
 		typeof input === "string"
 			? isStringified(input)
-				? (Inison.unstringify(input as any) as any)
+				? Inison.unstringify(input)
 				: unSecureString(input)
 			: input,
 		fieldType,
