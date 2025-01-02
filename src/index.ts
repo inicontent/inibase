@@ -112,6 +112,7 @@ declare global {
 }
 
 export type ErrorCodes =
+	| "GROUP_UNIQUE"
 	| "FIELD_UNIQUE"
 	| "FIELD_REQUIRED"
 	| "NO_SCHEMA"
@@ -162,6 +163,8 @@ export default class Inibase {
 				TABLE_EXISTS: "Table {variable} already exists",
 				TABLE_NOT_EXISTS: "Table {variable} doesn't exist",
 				NO_SCHEMA: "Table {variable} does't have a schema",
+				GROUP_UNIQUE:
+					"Group {variable} should be unique, got duplicated content in {variable}",
 				FIELD_UNIQUE:
 					"Field {variable} should be unique, got {variable} instead",
 				FIELD_REQUIRED: "Field {variable} is required",
@@ -593,6 +596,13 @@ export default class Inibase {
 						skipRequiredField,
 					);
 				else {
+					if (
+						field.table &&
+						Utils.isObject(data[field.key]) &&
+						Object.hasOwn(data[field.key], "id")
+					)
+						data[field.key] = data[field.key].id;
+
 					if (field.regex) {
 						const regex = UtilsServer.getCachedRegex(field.regex);
 						if (!regex.test(data[field.key]))
@@ -634,9 +644,10 @@ export default class Inibase {
 		data: Data | Data[],
 		skipRequiredField = false,
 	): Promise<void> {
+		const clonedData = structuredClone(data);
 		// Skip ID and (created|updated)At
 		this._validateData(
-			data,
+			clonedData,
 			this.tablesMap.get(tableName).schema.slice(1, -2),
 			skipRequiredField,
 		);
@@ -752,9 +763,11 @@ export default class Inibase {
 			let index = 0;
 			let shouldContinueParent = false; // Flag to manage parent loop continuation
 			const mergedLineNumbers = new Set<number>();
+			const fieldsKeys = [];
 			for await (const [columnID, values] of valueObject.columnsValues) {
 				index++;
 				const field = flattenSchema.find(({ id }) => id === columnID);
+				fieldsKeys.push(field.key);
 				const [_, totalLines, lineNumbers] = await File.search(
 					join(tablePath, `${field.key}${this.getFileExtension(tableName)}`),
 					"[]",
@@ -768,15 +781,22 @@ export default class Inibase {
 					false,
 					this.salt,
 				);
-
 				if (totalLines > 0) {
 					if (
 						valueObject.columnsValues.size === 1 ||
-						hasDuplicates(lineNumbers, mergedLineNumbers)
+						(valueObject.columnsValues.size === index &&
+							hasDuplicates(lineNumbers, mergedLineNumbers))
 					) {
 						this.uniqueMap = new Map();
+
+						if (valueObject.columnsValues.size > 1)
+							throw this.createError("GROUP_UNIQUE", [
+								fieldsKeys.join(" & "),
+								field.key,
+							]);
+
 						throw this.createError("FIELD_UNIQUE", [
-							field.key,
+							fieldsKeys.join(" & "),
 							Array.from(values).join(", "),
 						]);
 					}
