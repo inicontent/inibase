@@ -26,6 +26,7 @@
 
 ```js
 import Inibase from "inibase";
+// const db = new Inibase("databaseName", ".", "es");
 const db = new Inibase("databaseName");
 
 // Get all items from "user" table
