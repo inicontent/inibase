@@ -281,12 +281,12 @@ await test("Group of Unique Fields", async (t) => {
 				lastName: "Noe",
 				email: "john.doe@example.com",
 			}),
-			/FIELD_UNIQUE/,
+			/GROUP_UNIQUE/,
 			"Should reject duplicate unique group value",
 		);
 	});
 
-	await t.test("Reject Duplicate Valuex", async () => {
+	await t.test("Reject Duplicate Values", async () => {
 		await assert.rejects(
 			inibase.post(tableName, {
 				firstName: "Vohn",
