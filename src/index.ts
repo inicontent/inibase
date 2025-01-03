@@ -20,7 +20,7 @@ import * as Utils from "./utils.js";
 import * as UtilsServer from "./utils.server.js";
 
 export interface Data {
-	id?: number | string;
+	id?: string;
 	[key: string]: any;
 	createdAt?: number;
 	updatedAt?: number;
@@ -2256,12 +2256,12 @@ export default class Inibase {
 			if (Utils.isArrayOfObjects(clonedData))
 				for (let index = 0; index < clonedData.length; index++) {
 					const element = clonedData[index];
-					element.id = ++lastId;
+					element.id = ++lastId as any;
 					element.createdAt = Date.now();
 					element.updatedAt = undefined;
 				}
 			else {
-				clonedData.id = ++lastId;
+				clonedData.id = ++lastId as any;
 				clonedData.createdAt = Date.now();
 				clonedData.updatedAt = undefined;
 			}
