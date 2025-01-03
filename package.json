@@ -21,9 +21,7 @@
 	"engines": {
 		"node": ">=22"
 	},
-	"files": [
-		"/dist"
-	],
+	"files": ["/dist"],
 	"funding": "https://github.com/sponsors/inicontent",
 	"homepage": "https://github.com/inicontent/inibase#readme",
 	"keywords": [
@@ -51,7 +49,8 @@
 		"prepublish": "npx -q tsc",
 		"build": "npx -q tsc",
 		"benchmark": "./benchmark/run.js",
-		"test": "npx -q tsx ./tests/inibase.test.ts"
+		"test": "npx -q tsx ./tests/inibase.test.ts",
+		"test:utils": "npx -q tsx ./tests/utils.test.ts"
 	},
 	"bin": {
 		"inibase": "./dist/cli.js"
@@ -59,18 +58,10 @@
 	"types": "./dist",
 	"typesVersions": {
 		"*": {
-			".": [
-				"./dist/index.d.ts"
-			],
-			"file": [
-				"./dist/file.d.ts"
-			],
-			"utils": [
-				"./dist/utils.d.ts"
-			],
-			"utils.server": [
-				"./dist/utils.server.d.ts"
-			]
+			".": ["./dist/index.d.ts"],
+			"file": ["./dist/file.d.ts"],
+			"utils": ["./dist/utils.d.ts"],
+			"utils.server": ["./dist/utils.server.d.ts"]
 		}
 	},
 	"devDependencies": {
