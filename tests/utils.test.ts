@@ -83,7 +83,6 @@ await test("Utilities: isHTML", async (t) => {
 	});
 
 	await t.test("edge cases", () => {
-		// Mismatched tags, depending on your isHTML logic
 		assert.ok(
 			isHTML("<b>unclosed"),
 			"Might pass if we only check presence of <tag>",
@@ -119,10 +118,6 @@ await test("Utilities: isIP", async (t) => {
 		assert.equal(isIP("hello.world"), false, "Not numeric");
 	});
 });
-
-//
-// New tests for isDate, isObject, isArrayOfArrays, isArrayOfNulls, isArrayOfObjects, isURL
-//
 
 await test("Utilities: isDate", async (t) => {
 	await t.test("should return true for Date objects", () => {
@@ -231,6 +226,11 @@ await test("Utilities: isURL", async (t) => {
 		assert.ok(
 			isURL("mailto:test@example.com"),
 			"If your isURL handles mailto (depends on your logic)",
+		);
+		assert.ok(isURL("example.com"), "Basic URL with no protocol");
+		assert.ok(
+			isURL("example_demo.example.com"),
+			"Complex URL with no protocol",
 		);
 	});
 
