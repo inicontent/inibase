@@ -97,7 +97,13 @@ export type Criteria =
 	| ({
 			[logic in "and" | "or"]?: Criteria | (string | number | boolean | null)[];
 	  } & {
-			[key: string]: string | number | boolean | undefined | Criteria;
+			[key: string]:
+				| string
+				| number
+				| boolean
+				| undefined
+				| Criteria
+				| (string | number | boolean)[];
 	  })
 	| null;
 
@@ -1562,7 +1568,7 @@ export default class Inibase {
 							);
 							searchLogicalOperator = "or";
 						}
-						delete value.or;
+						delete (value as Criteria).or;
 					}
 					if (
 						(value as Criteria)?.and &&
@@ -1592,7 +1598,7 @@ export default class Inibase {
 							);
 							searchLogicalOperator = "and";
 						}
-						delete value.and;
+						delete (value as Criteria).and;
 					}
 				} else if (Array.isArray(value)) {
 					const searchCriteria = value
@@ -1640,16 +1646,16 @@ export default class Inibase {
 				);
 
 				if (searchResult) {
-					RETURN = Utils.deepMerge(
-						RETURN,
-						Object.fromEntries(
-							Object.entries(searchResult).map(([id, value]) => {
-								const nestedObj: any = {};
-								this._setNestedKey(nestedObj, key, value);
-								return [id, nestedObj];
-							}),
-						),
+					const formatedSearchResult = Object.fromEntries(
+						Object.entries(searchResult).map(([id, value]) => {
+							const nestedObj = {};
+							this._setNestedKey(nestedObj, key, value);
+							return [id, nestedObj];
+						}),
 					);
+					RETURN = allTrue
+						? formatedSearchResult
+						: Utils.deepMerge(RETURN, formatedSearchResult);
 					this.totalItems.set(`${tableName}-${key}`, totalLines);
 					if (linesNumbers?.size) {
 						if (searchIn) {
