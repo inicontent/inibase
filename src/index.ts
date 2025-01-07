@@ -752,9 +752,9 @@ export default class Inibase {
 		fieldChildrenType?: FieldType | FieldType[] | Schema,
 		_formatOnlyAvailiableKeys?: boolean,
 	): Data | Data[] | number | string | null {
+		if (value === null || value === undefined) return value;
 		if (Array.isArray(fieldType))
 			fieldType = Utils.detectFieldType(value, fieldType) ?? fieldType[0];
-		if (!value) return null;
 		if (Array.isArray(value) && !["array", "json"].includes(fieldType))
 			value = value[0];
 		switch (fieldType) {
@@ -800,7 +800,7 @@ export default class Inibase {
 					? value
 					: UtilsServer.hashPassword(String(value));
 			case "number":
-				return Utils.isNumber(value) ? Number(value) : null;
+				return Utils.isNumber(value) ? Number(value) : 0;
 			case "id":
 				return Utils.isNumber(value)
 					? value
@@ -949,6 +949,8 @@ export default class Inibase {
 				for (const f of field.children) RETURN[f.key] = this.getDefaultValue(f);
 				return RETURN;
 			}
+			case "number":
+				return 0;
 			case "boolean":
 				return false;
 			default:
