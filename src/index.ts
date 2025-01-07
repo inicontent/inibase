@@ -1660,9 +1660,9 @@ export default class Inibase {
 						: Utils.deepMerge(RETURN, formatedSearchResult);
 					this.totalItems.set(`${tableName}-${key}`, totalLines);
 					if (linesNumbers?.size) {
-						if (searchIn) {
+						if (searchIn && !allTrue)
 							for (const lineNumber of linesNumbers) searchIn.add(lineNumber);
-						} else searchIn = linesNumbers;
+						else searchIn = linesNumbers;
 					}
 				} else if (allTrue) return [null, null];
 			}
