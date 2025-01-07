@@ -954,7 +954,7 @@ export default class Inibase {
 			case "boolean":
 				return false;
 			default:
-				return null;
+				return "";
 		}
 	}
 
