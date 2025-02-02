@@ -97,6 +97,7 @@ interface {
   compression: boolean;
   cache: boolean;
   prepend: boolean;
+  decodeID: boolean;
 }
 ```
 
@@ -236,7 +237,8 @@ const db = new Inibase("/databaseName");
 const userTableConfig = {
   compression: true,
   cache: true,
-  prepend: false
+  prepend: false,
+  decodeID: false
 }
 
 const userTableSchema = [

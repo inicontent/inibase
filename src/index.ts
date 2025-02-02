@@ -20,7 +20,7 @@ import * as Utils from "./utils.js";
 import * as UtilsServer from "./utils.server.js";
 
 export interface Data {
-	id?: string;
+	id?: string | number;
 	[key: string]: any;
 	createdAt?: number;
 	updatedAt?: number;
@@ -69,6 +69,7 @@ export interface Config {
 	compression?: boolean;
 	cache?: boolean;
 	prepend?: boolean;
+	decodeID?: boolean;
 }
 
 export interface TableObject {
@@ -341,6 +342,7 @@ export default class Inibase {
 				compression: process.env.INIBASE_COMPRESSION == "true",
 				cache: process.env.INIBASE_CACHE === "true",
 				prepend: process.env.INIBASE_PREPEND === "true",
+				decodeID: process.env.INIBASE_ENCODEID === "true",
 			};
 
 		if (config) {
@@ -478,6 +480,14 @@ export default class Inibase {
 				}
 			}
 			if (
+				config.decodeID !== undefined &&
+				config.decodeID !== table.config.decodeID
+			) {
+				if (config.decodeID)
+					await writeFile(join(tablePath, ".decodeID.config"), "");
+				else await unlink(join(tablePath, ".decodeID.config"));
+			}
+			if (
 				config.prepend !== undefined &&
 				config.prepend !== table.config.prepend
 			) {
@@ -548,6 +558,7 @@ export default class Inibase {
 					),
 					cache: await File.isExists(join(tablePath, ".cache.config")),
 					prepend: await File.isExists(join(tablePath, ".prepend.config")),
+					decodeID: await File.isExists(join(tablePath, ".decodeID.config")),
 				},
 			});
 		return this.tablesMap.get(tableName);
@@ -1194,7 +1205,9 @@ export default class Inibase {
 			const items = await File.get(
 				fieldPath,
 				linesNumber,
-				field.type,
+				field.key === "id" && this.tablesMap.get(tableName).config.decodeID
+					? "number"
+					: field.type,
 				field.children,
 				this.salt,
 			);
@@ -1762,6 +1775,7 @@ export default class Inibase {
 		options: Options | undefined,
 		onlyOne: true,
 		onlyLinesNumbers?: false,
+		_whereIsLinesNumbers?: boolean,
 	): Promise<(Data & TData) | null>;
 	get<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
@@ -1769,6 +1783,7 @@ export default class Inibase {
 		options?: Options,
 		onlyOne?: boolean,
 		onlyLinesNumbers?: false,
+		_whereIsLinesNumbers?: boolean,
 	): Promise<(Data & TData) | null>;
 	get<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
@@ -1776,6 +1791,7 @@ export default class Inibase {
 		options?: Options,
 		onlyOne?: boolean,
 		onlyLinesNumbers?: false,
+		_whereIsLinesNumbers?: boolean,
 	): Promise<(Data & TData)[] | null>;
 	get<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
@@ -1783,6 +1799,7 @@ export default class Inibase {
 		options: Options | undefined,
 		onlyOne: false | undefined,
 		onlyLinesNumbers: true,
+		_whereIsLinesNumbers?: boolean,
 	): Promise<number[] | null>;
 	get<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
@@ -1790,6 +1807,7 @@ export default class Inibase {
 		options: Options | undefined,
 		onlyOne: true,
 		onlyLinesNumbers: true,
+		_whereIsLinesNumbers?: boolean,
 	): Promise<number | null>;
 	public async get<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
@@ -1800,6 +1818,7 @@ export default class Inibase {
 		},
 		onlyOne?: boolean,
 		onlyLinesNumbers?: boolean,
+		_whereIsLinesNumbers?: boolean,
 	): Promise<(Data & TData) | number | ((Data & TData) | number)[] | null> {
 		const tablePath = join(this.databasePath, tableName);
 
@@ -1985,7 +2004,7 @@ export default class Inibase {
 
 				const restOfColumns = await this.get<TData>(
 					tableName,
-					outputArray.map(({ id }) => id as string),
+					outputArray.map(({ id }) => id),
 					(({ sort, ...rest }) => rest)(options),
 				);
 
@@ -2020,8 +2039,9 @@ export default class Inibase {
 			if (!this.totalItems.has(`${tableName}-*`))
 				this.totalItems.set(`${tableName}-*`, pagination[1]);
 		} else if (
-			(Array.isArray(where) && where.every(Utils.isNumber)) ||
-			Utils.isNumber(where)
+			((Array.isArray(where) && where.every(Utils.isNumber)) ||
+				Utils.isNumber(where)) &&
+			(_whereIsLinesNumbers || !this.tablesMap.get(tableName).config.decodeID)
 		) {
 			// "where" in this case, is the line(s) number(s) and not id(s)
 			let lineNumbers = where as number | number[];
@@ -2045,6 +2065,10 @@ export default class Inibase {
 			if (RETURN?.length && !Array.isArray(where))
 				RETURN = (RETURN as (Data & TData)[])[0];
 		} else if (
+			(!_whereIsLinesNumbers &&
+				this.tablesMap.get(tableName).config.decodeID &&
+				((Array.isArray(where) && where.every(Utils.isNumber)) ||
+					Utils.isNumber(where))) ||
 			(Array.isArray(where) && where.every(Utils.isValidID)) ||
 			Utils.isValidID(where)
 		) {
@@ -2127,6 +2151,8 @@ export default class Inibase {
 						.map(Number),
 					options,
 					onlyOne,
+					undefined,
+					true,
 				);
 			}
 			const [LineNumberDataMap, linesNumbers] = await this.applyCriteria<TData>(
@@ -2191,7 +2217,15 @@ export default class Inibase {
 			totalPages: Math.ceil(greatestTotalItems / options.perPage),
 			total: greatestTotalItems,
 		};
-
+		// if (this.tablesMap.get(tableName).config.decodeID) {
+		// 	if (Array.isArray(RETURN)) {
+		// 		for (let index = 0; index < RETURN.length; index++)
+		// 			RETURN[index].id = UtilsServer.decodeID(
+		// 				RETURN[index].id as string,
+		// 				this.salt,
+		// 			);
+		// 	} else RETURN.id = UtilsServer.decodeID(RETURN.id as string, this.salt);
+		// }
 		return onlyOne && Array.isArray(RETURN) ? RETURN[0] : RETURN;
 	}
 
@@ -2342,6 +2376,8 @@ export default class Inibase {
 							: this.totalItems.get(`${tableName}-*`),
 					options,
 					!Utils.isArrayOfObjects(clonedData), // return only one item if data is not array of objects
+					undefined,
+					true,
 				);
 		} finally {
 			if (renameList.length)
@@ -2368,6 +2404,7 @@ export default class Inibase {
 		where?: number | string | (number | string)[] | Criteria | undefined,
 		options?: Options | undefined,
 		returnUpdatedData?: false,
+		_whereIsLinesNumbers?: boolean,
 	): Promise<void>;
 	put<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
@@ -2375,6 +2412,7 @@ export default class Inibase {
 		where: number | string | (number | string)[] | Criteria | undefined,
 		options: Options | undefined,
 		returnUpdatedData: true | boolean,
+		_whereIsLinesNumbers?: boolean,
 	): Promise<(Data & TData) | null>;
 	put<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
@@ -2382,6 +2420,7 @@ export default class Inibase {
 		where: number | string | (number | string)[] | Criteria | undefined,
 		options: Options | undefined,
 		returnUpdatedData: true | boolean,
+		_whereIsLinesNumbers?: boolean,
 	): Promise<(Data & TData)[] | null>;
 	put<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
@@ -2389,6 +2428,7 @@ export default class Inibase {
 		where: number | string | (number | string)[] | Criteria | undefined,
 		options: Options | undefined,
 		returnUpdatedData: true | boolean,
+		_whereIsLinesNumbers?: boolean,
 	): Promise<(Data & TData) | (Data & TData)[] | null>;
 	public async put<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
@@ -2399,6 +2439,7 @@ export default class Inibase {
 			perPage: 15,
 		},
 		returnUpdatedData?: boolean,
+		_whereIsLinesNumbers?: boolean,
 	): Promise<(Data & TData) | (Data & TData)[] | null | undefined | void> {
 		const renameList: string[][] = [];
 		const tablePath = join(this.databasePath, tableName);
@@ -2490,26 +2531,9 @@ export default class Inibase {
 				await File.unlock(join(tablePath, ".tmp"));
 			}
 		} else if (
-			(Array.isArray(where) && where.every(Utils.isValidID)) ||
-			Utils.isValidID(where)
-		) {
-			const lineNumbers = await this.get(
-				tableName,
-				where,
-				undefined,
-				undefined,
-				true,
-			);
-			return this.put<TData>(
-				tableName,
-				clonedData as TData & Data,
-				lineNumbers,
-				options,
-				false,
-			);
-		} else if (
-			(Array.isArray(where) && where.every(Utils.isNumber)) ||
-			Utils.isNumber(where)
+			((Array.isArray(where) && where.every(Utils.isNumber)) ||
+				Utils.isNumber(where)) &&
+			(_whereIsLinesNumbers || !this.tablesMap.get(tableName).config.decodeID)
 		) {
 			// "where" in this case, is the line(s) number(s) and not id(s)
 
@@ -2569,7 +2593,14 @@ export default class Inibase {
 					await this.clearCache(tableName);
 
 				if (returnUpdatedData)
-					return this.get(tableName, where, options, !Array.isArray(where));
+					return this.get(
+						tableName,
+						where,
+						options,
+						!Array.isArray(where),
+						undefined,
+						true,
+					);
 			} finally {
 				if (renameList.length)
 					await Promise.allSettled(
@@ -2577,6 +2608,29 @@ export default class Inibase {
 					);
 				await File.unlock(join(tablePath, ".tmp"), keys);
 			}
+		} else if (
+			(!_whereIsLinesNumbers &&
+				this.tablesMap.get(tableName).config.decodeID &&
+				((Array.isArray(where) && where.every(Utils.isNumber)) ||
+					Utils.isNumber(where))) ||
+			(Array.isArray(where) && where.every(Utils.isValidID)) ||
+			Utils.isValidID(where)
+		) {
+			const lineNumbers = await this.get(
+				tableName,
+				where,
+				undefined,
+				undefined,
+				true,
+			);
+			return this.put<TData>(
+				tableName,
+				clonedData as TData & Data,
+				lineNumbers,
+				options,
+				false,
+				true,
+			);
 		} else if (Utils.isObject(where)) {
 			const lineNumbers = await this.get(
 				tableName,
@@ -2592,6 +2646,7 @@ export default class Inibase {
 					lineNumbers,
 					options,
 					returnUpdatedData,
+					true,
 				);
 		} else throw this.createError("INVALID_PARAMETERS");
 	}
@@ -2606,7 +2661,7 @@ export default class Inibase {
 	public async delete(
 		tableName: string,
 		where?: number | string | (number | string)[] | Criteria,
-		_id?: string | string[],
+		_whereIsLinesNumbers?: boolean,
 	): Promise<boolean | null> {
 		const tablePath = join(this.databasePath, tableName);
 		await this.throwErrorIfTableEmpty(tableName);
@@ -2648,21 +2703,9 @@ export default class Inibase {
 			}
 		}
 		if (
-			(Array.isArray(where) && where.every(Utils.isValidID)) ||
-			Utils.isValidID(where)
-		) {
-			const lineNumbers = await this.get(
-				tableName,
-				where,
-				undefined,
-				undefined,
-				true,
-			);
-			return this.delete(tableName, lineNumbers, where);
-		}
-		if (
-			(Array.isArray(where) && where.every(Utils.isNumber)) ||
-			Utils.isNumber(where)
+			((Array.isArray(where) && where.every(Utils.isNumber)) ||
+				Utils.isNumber(where)) &&
+			(_whereIsLinesNumbers || !this.tablesMap.get(tableName).config.decodeID)
 		) {
 			// "where" in this case, is the line(s) number(s) and not id(s)
 			const files = (await readdir(tablePath))?.filter((fileName: string) =>
@@ -2733,7 +2776,15 @@ export default class Inibase {
 					await File.unlock(join(tablePath, ".tmp"));
 				}
 			}
-		} else if (Utils.isObject(where)) {
+		}
+		if (
+			(!_whereIsLinesNumbers &&
+				this.tablesMap.get(tableName).config.decodeID &&
+				((Array.isArray(where) && where.every(Utils.isNumber)) ||
+					Utils.isNumber(where))) ||
+			(Array.isArray(where) && where.every(Utils.isValidID)) ||
+			Utils.isValidID(where)
+		) {
 			const lineNumbers = await this.get(
 				tableName,
 				where,
@@ -2741,7 +2792,17 @@ export default class Inibase {
 				undefined,
 				true,
 			);
-			if (lineNumbers) return this.delete(tableName, lineNumbers);
+			return this.delete(tableName, lineNumbers, true);
+		}
+		if (Utils.isObject(where)) {
+			const lineNumbers = await this.get(
+				tableName,
+				where,
+				undefined,
+				undefined,
+				true,
+			);
+			if (lineNumbers) return this.delete(tableName, lineNumbers, true);
 		} else throw this.createError("INVALID_PARAMETERS");
 		return false;
 	}
