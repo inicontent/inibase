@@ -183,7 +183,7 @@ await test("Utilities: isArrayOfNulls", async (t) => {
 		assert.equal(isArrayOfNulls([0, null]), true, "Contains 0 and null");
 		assert.equal(
 			isArrayOfNulls([null, "testString"]),
-			true,
+			false,
 			"Contains string, not just null",
 		);
 		assert.equal(isArrayOfNulls("not an array"), false, "Not an array");
