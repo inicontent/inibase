@@ -39,7 +39,9 @@ export const isArrayOfArrays = (input: unknown): input is any[][] =>
 export const isArrayOfNulls = (input: unknown): input is null[] | null[][] =>
 	Array.isArray(input) &&
 	input.every((_input: null) =>
-		Array.isArray(_input) ? isArrayOfNulls(_input) : _input === null,
+		Array.isArray(_input)
+			? isArrayOfNulls(_input)
+			: _input === null || _input === 0,
 	);
 
 /**

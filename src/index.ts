@@ -800,7 +800,11 @@ export default class Inibase {
 					? value
 					: UtilsServer.hashPassword(String(value));
 			case "number":
-				return Utils.isNumber(value) ? Number(value) : 0;
+				return Utils.isNumber(value)
+					? typeof value === "number"
+						? value
+						: Number((value as string).trim())
+					: 0;
 			case "id":
 				return Utils.isNumber(value)
 					? value
@@ -1390,7 +1394,7 @@ export default class Inibase {
 				if (typeof item === "undefined") continue; // Skip undefined items
 				if (!RETURN[index]) RETURN[index] = {};
 				if (Utils.isObject(item)) {
-					if (!Object.values(item).every((i) => i === null))
+					if (!Object.values(item).every((i) => i === null || i === 0))
 						RETURN[index][field.key] = item;
 				}
 			}
