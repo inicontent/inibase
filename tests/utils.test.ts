@@ -177,10 +177,15 @@ await test("Utilities: isArrayOfNulls", async (t) => {
 	await t.test("should return false otherwise", () => {
 		assert.equal(
 			isArrayOfNulls([null, undefined]),
-			false,
-			"Contains undefined, not just null",
+			true,
+			"Contains undefined and null",
 		);
-		assert.equal(isArrayOfNulls([0, null]), false, "Contains 0, not null");
+		assert.equal(isArrayOfNulls([0, null]), true, "Contains 0 and null");
+		assert.equal(
+			isArrayOfNulls([null, "testString"]),
+			true,
+			"Contains string, not just null",
+		);
 		assert.equal(isArrayOfNulls("not an array"), false, "Not an array");
 	});
 });

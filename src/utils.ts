@@ -41,7 +41,7 @@ export const isArrayOfNulls = (input: unknown): input is null[] | null[][] =>
 	input.every((_input: null) =>
 		Array.isArray(_input)
 			? isArrayOfNulls(_input)
-			: _input === null || _input === 0,
+			: _input === null || _input === 0 || _input === undefined,
 	);
 
 /**
