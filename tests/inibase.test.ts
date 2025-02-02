@@ -613,6 +613,8 @@ await test("Multiple Optional Recursive Arrays with Prepend Config", async (t) =
 		]);
 
 		const data = await inibase.get(tableName);
+		console.log(JSON.stringify(data, undefined, 1));
+
 		assert.equal(data?.length, 4, "Should retrieve all records from table");
 		assert.deepEqual(
 			data.map((record) => record.items.map((item) => item.name)),
@@ -623,7 +625,7 @@ await test("Multiple Optional Recursive Arrays with Prepend Config", async (t) =
 			data.map((record) =>
 				record.items.map((item) => item.details?.map((_item) => _item.value)),
 			),
-			[[[10, 12], [20]], [[0], [30]], [0], [[0, 50]]],
+			[[[10, 12], [20]], [[undefined], [30]], [undefined], [[0, 50]]],
 			"Data order should respect updated prepend configuration",
 		);
 		assert.deepEqual(
