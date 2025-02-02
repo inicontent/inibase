@@ -119,7 +119,11 @@ console.log(`   ${textGreen("config")} | ${textGreen("c")}
 						const configName = splitedInput[index].toLocaleLowerCase();
 						if (["true", "false"].includes(configName)) continue;
 
-						if (!["compression", "cache", "prepend"].includes(configName)) {
+						if (
+							!["compression", "cache", "prepend", "decodeID"].includes(
+								configName,
+							)
+						) {
 							console.log(
 								`${textRed("  Err:")} '${configName}' is not a valid config`,
 							);
