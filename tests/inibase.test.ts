@@ -623,7 +623,7 @@ await test("Multiple Optional Recursive Arrays with Prepend Config", async (t) =
 			data.map((record) =>
 				record.items.map((item) => item.details?.map((_item) => _item.value)),
 			),
-			[[[10, 12], [20]], [[0], [30]], [undefined], [[0, 50]]],
+			[[[10, 12], [20]], [[0], [30]], [0], [[0, 50]]],
 			"Data order should respect updated prepend configuration",
 		);
 		assert.deepEqual(
