@@ -355,6 +355,10 @@ export const isEqual = (
 			// If both are null-like, treat as equivalent
 			if (isOriginalNullLike && isComparedNullLike) return true;
 
+			// If both are number-like
+			if (isNumber(originalValue) && isNumber(comparedValue))
+				return Number(originalValue) === Number(comparedValue);
+
 			// Direct equality check for other cases
 			return originalValue === comparedValue;
 		}

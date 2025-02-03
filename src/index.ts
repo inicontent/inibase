@@ -1568,16 +1568,10 @@ export default class Inibase {
 						const searchCriteria = (
 							(value as Criteria)?.or as (string | number | boolean)[]
 						)
-							.map(
-								(
-									single_or,
-								): [
-									ComparisonOperator,
-									string | number | boolean | null | (string | number | null)[],
-								] =>
-									typeof single_or === "string"
-										? Utils.FormatObjectCriteriaValue(single_or)
-										: ["=", single_or],
+							.map((single_or) =>
+								typeof single_or === "string"
+									? Utils.FormatObjectCriteriaValue(single_or)
+									: ["=", single_or],
 							)
 							.filter((a) => a) as [ComparisonOperator, string | number][];
 						if (searchCriteria.length > 0) {
@@ -1596,16 +1590,10 @@ export default class Inibase {
 						const searchCriteria = (
 							(value as Criteria)?.and as (string | number | boolean)[]
 						)
-							.map(
-								(
-									single_and,
-								): [
-									ComparisonOperator,
-									string | number | boolean | null | (string | number | null)[],
-								] =>
-									typeof single_and === "string"
-										? Utils.FormatObjectCriteriaValue(single_and)
-										: ["=", single_and],
+							.map((single_and) =>
+								typeof single_and === "string"
+									? Utils.FormatObjectCriteriaValue(single_and)
+									: ["=", single_and],
 							)
 							.filter((a) => a) as [ComparisonOperator, string | number][];
 						if (searchCriteria.length > 0) {
@@ -1661,7 +1649,9 @@ export default class Inibase {
 					options.perPage,
 					((options.page as number) - 1) * (options.perPage as number) + 1,
 					true,
-					this.salt,
+					field.key === "id" && this.tablesMap.get(tableName).config.decodeID
+						? undefined
+						: this.salt,
 				);
 
 				if (searchResult) {
@@ -1912,7 +1902,11 @@ export default class Inibase {
 					.map((lineNumber) => `NR==${lineNumber}`)
 					.join(" || ")}'`;
 
-			const filesPathes = [["id", true], ...sortArray].map((column) =>
+			const filesPathes = (
+				sortArray.find(([key]) => key === "id")
+					? sortArray
+					: [["id", true], ...sortArray]
+			).map((column) =>
 				join(tablePath, `${column[0]}${this.getFileExtension(tableName)}`),
 			);
 			for await (const path of filesPathes.slice(1))
@@ -1922,7 +1916,7 @@ export default class Inibase {
 			const pasteCommand = `paste '${filesPathes.join("' '")}'`;
 
 			// Construct the sort command dynamically based on the number of files for sorting
-			const index = 2;
+			const index = 1;
 			const sortColumns = sortArray
 				.map(([key, ascending], i) => {
 					const field = Utils.getField(key, schema);
@@ -1990,13 +1984,20 @@ export default class Inibase {
 					// Extract values for each file, including `id${this.getFileExtension(tableName)}`
 					filesPathes.forEach((fileName, index) => {
 						const field = Utils.getField(parse(fileName).name, schema);
-						if (field)
-							outputObject[field.key as string] = File.decode(
-								splitedFileColumns[index],
-								field?.type,
-								field?.children as any,
-								this.salt,
-							);
+						if (field) {
+							if (
+								field.key === "id" &&
+								this.tablesMap.get(tableName).config.decodeID
+							)
+								outputObject[field.key as string] = splitedFileColumns[index];
+							else
+								outputObject[field.key as string] = File.decode(
+									splitedFileColumns[index],
+									field?.type,
+									field?.children as any,
+									this.salt,
+								);
+						}
 					});
 
 					return outputObject;
@@ -2011,7 +2012,10 @@ export default class Inibase {
 				return restOfColumns
 					? outputArray.map((item) => ({
 							...item,
-							...restOfColumns.find(({ id }) => id === item.id),
+							...restOfColumns.find(
+								({ id }) =>
+									id === (Utils.isNumber(item.id) ? Number(item.id) : item.id),
+							),
 						}))
 					: outputArray;
 			} finally {
