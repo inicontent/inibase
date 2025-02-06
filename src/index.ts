@@ -1046,8 +1046,8 @@ export default class Inibase {
 	}
 
 	private joinPathesContents(tableName: string, data: Data | Data[]) {
-		const tablePath = join(this.databasePath, tableName),
-			combinedData = this._CombineData(data);
+		const tablePath = join(this.databasePath, tableName);
+		const combinedData = this._CombineData(data);
 		const newCombinedData: Record<string, any> = {};
 
 		for (const [key, value] of Object.entries(combinedData))
@@ -1549,17 +1549,17 @@ export default class Inibase {
 				const field = Utils.getField(key, this.tablesMap.get(tableName).schema);
 				index++;
 				let searchOperator:
-						| ComparisonOperator
-						| ComparisonOperator[]
-						| undefined = undefined,
-					searchComparedAtValue:
-						| string
-						| number
-						| boolean
-						| null
-						| (string | number | boolean | null)[]
-						| undefined = undefined,
-					searchLogicalOperator: "and" | "or" | undefined = undefined;
+					| ComparisonOperator
+					| ComparisonOperator[]
+					| undefined = undefined;
+				let searchComparedAtValue:
+					| string
+					| number
+					| boolean
+					| null
+					| (string | number | boolean | null)[]
+					| undefined = undefined;
+				let searchLogicalOperator: "and" | "or" | undefined = undefined;
 				if (Utils.isObject(value)) {
 					if (
 						(value as Criteria)?.or &&
@@ -1853,8 +1853,8 @@ export default class Inibase {
 			where = undefined;
 
 		if (options.sort) {
-			let sortArray: [string, boolean][],
-				awkCommand = "";
+			let sortArray: [string, boolean][];
+			let awkCommand = "";
 
 			if (Utils.isObject(options.sort) && !Array.isArray(options.sort)) {
 				// {name: "ASC", age: "DESC"}
@@ -2173,11 +2173,11 @@ export default class Inibase {
 						? (linesNumbers.values().next().value as number)
 						: Array.from(linesNumbers);
 				const alreadyExistsColumns = Object.keys(
-						Object.values(LineNumberDataMap)[0],
-					),
-					alreadyExistsColumnsIDs = Utils.flattenSchema(schema)
-						.filter(({ key }) => alreadyExistsColumns.includes(key))
-						.map(({ id }) => id);
+					Object.values(LineNumberDataMap)[0],
+				);
+				const alreadyExistsColumnsIDs = Utils.flattenSchema(schema)
+					.filter(({ key }) => alreadyExistsColumns.includes(key))
+					.map(({ id }) => id);
 
 				RETURN = Object.values(
 					Utils.deepMerge(
@@ -2221,15 +2221,6 @@ export default class Inibase {
 			totalPages: Math.ceil(greatestTotalItems / options.perPage),
 			total: greatestTotalItems,
 		};
-		// if (this.tablesMap.get(tableName).config.decodeID) {
-		// 	if (Array.isArray(RETURN)) {
-		// 		for (let index = 0; index < RETURN.length; index++)
-		// 			RETURN[index].id = UtilsServer.decodeID(
-		// 				RETURN[index].id as string,
-		// 				this.salt,
-		// 			);
-		// 	} else RETURN.id = UtilsServer.decodeID(RETURN.id as string, this.salt);
-		// }
 		return onlyOne && Array.isArray(RETURN) ? RETURN[0] : RETURN;
 	}
 
@@ -2627,14 +2618,15 @@ export default class Inibase {
 				undefined,
 				true,
 			);
-			return this.put<TData>(
-				tableName,
-				clonedData as TData & Data,
-				lineNumbers,
-				options,
-				false,
-				true,
-			);
+			if (lineNumbers)
+				return this.put<TData>(
+					tableName,
+					clonedData as TData & Data,
+					lineNumbers,
+					options,
+					returnUpdatedData,
+					true,
+				);
 		} else if (Utils.isObject(where)) {
 			const lineNumbers = await this.get(
 				tableName,
