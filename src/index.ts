@@ -950,8 +950,8 @@ export default class Inibase {
 				type: field.type.sort(
 					(a: FieldType, b: FieldType) =>
 						Number(b === "array") - Number(a === "array") ||
-						Number(a === "string") - Number(b === "string") ||
-						Number(a === "number") - Number(b === "number"),
+						Number(a === "number") - Number(b === "number") ||
+						Number(a === "string") - Number(b === "string"),
 				)[0],
 			} as Field);
 
