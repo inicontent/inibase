@@ -1452,7 +1452,7 @@ export default class Inibase {
 				);
 				const isArrayField = this.isArrayField(field.type);
 				if (itemsIDs) {
-					const searchableIDs = new Map();
+					const searchableIDs = new Map<number, any>();
 					for (const [lineNumber, lineContent] of Object.entries(itemsIDs)) {
 						if (typeof lineContent === "undefined") continue; // Skip undefined items
 						if (!RETURN[lineNumber]) RETURN[lineNumber] = {};
@@ -1463,7 +1463,9 @@ export default class Inibase {
 						const items = await this.get(
 							field.table,
 							isArrayField
-								? Array.from(new Set(Array.from(searchableIDs.values()).flat()))
+								? Array.from(
+										new Set(Array.from(searchableIDs.values()).flat()),
+									).flat()
 								: Array.from(new Set(searchableIDs.values())),
 							{
 								...options,
@@ -1473,11 +1475,12 @@ export default class Inibase {
 									.map((column) => column.replace(`${field.key}.`, "")),
 							},
 						);
-
 						if (items) {
 							for (const [lineNumber, lineContent] of searchableIDs.entries()) {
 								const foundedItem = isArrayField
-									? items.filter(({ id }) => lineContent.includes(id))
+									? lineContent.map((item) =>
+											items.filter(({ id }) => item.includes(id)),
+										)
 									: items.find(({ id }) => id === lineContent);
 								if (foundedItem) RETURN[lineNumber][field.key] = foundedItem;
 							}
