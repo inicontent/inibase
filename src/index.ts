@@ -1478,9 +1478,13 @@ export default class Inibase {
 						if (items) {
 							for (const [lineNumber, lineContent] of searchableIDs.entries()) {
 								const foundedItem = isArrayField
-									? lineContent.map((item) =>
-											items.filter(({ id }) => item.includes(id)),
-										)
+									? Utils.isArrayOfArrays(lineContent)
+										? lineContent.map((item) =>
+												items.filter(({ id }) => item.includes(id)),
+											)
+										: lineContent.flatMap((item) =>
+												items.filter(({ id }) => item.includes(id)),
+											)
 									: items.find(({ id }) => id === lineContent);
 								if (foundedItem) RETURN[lineNumber][field.key] = foundedItem;
 							}
