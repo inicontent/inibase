@@ -1482,8 +1482,8 @@ export default class Inibase {
 										? lineContent.map((item) =>
 												items.filter(({ id }) => item.includes(id)),
 											)
-										: lineContent.flatMap((item) =>
-												items.filter(({ id }) => item.includes(id)),
+										: lineContent.flatMap((item: string) =>
+												items.find(({ id }) => item === id),
 											)
 									: items.find(({ id }) => id === lineContent);
 								if (foundedItem) RETURN[lineNumber][field.key] = foundedItem;
