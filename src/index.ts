@@ -1551,6 +1551,8 @@ export default class Inibase {
 		if (Object.keys(criteria).length > 0) {
 			if (allTrue === undefined) allTrue = true;
 
+			criteria = Utils.toDotNotation(criteria, ["or", "and"]);
+
 			let index = -1;
 			for await (const [key, value] of Object.entries(criteria)) {
 				const field = Utils.getField(key, this.tablesMap.get(tableName).schema);
@@ -1698,8 +1700,12 @@ export default class Inibase {
 				RETURN = Object.fromEntries(
 					Object.entries(RETURN).filter(
 						([_index, item]) =>
-							Object.keys(item).filter((key) =>
-								Object.keys(criteriaOR).includes(key),
+							Object.keys(item).filter(
+								(key) =>
+									Object.keys(criteriaOR).includes(key) ||
+									Object.keys(criteriaOR).some((criteriaKey) =>
+										criteriaKey.startsWith(`${key}.`),
+									),
 							).length,
 					),
 				);
