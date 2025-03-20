@@ -21,9 +21,9 @@ import type { ComparisonOperator, FieldType, Schema } from "./index.js";
 import {
 	detectFieldType,
 	isArrayOfObjects,
-	isStringified,
 	isNumber,
 	isObject,
+	isStringified,
 } from "./utils.js";
 import { compare, encodeID, exec, gunzip, gzip } from "./utils.server.js";
 
@@ -845,8 +845,7 @@ export const search = async (
 			// Check if the line meets the specified conditions based on comparison and logical operators.
 			const doesMeetCondition =
 				(Array.isArray(decodedLine) &&
-					!Array.isArray(decodedLine[1]) &&
-					decodedLine.some(meetsConditions)) ||
+					decodedLine.flat().some(meetsConditions)) ||
 				meetsConditions(decodedLine);
 
 			// If the line meets the conditions, process it.
