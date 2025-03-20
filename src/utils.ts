@@ -647,3 +647,36 @@ export const unsetField = (keyPath: string, schema: Schema) => {
 		}
 	}
 };
+
+export function convertToDotNotation(
+	obj: Record<string, any>,
+	skipKeys?: string[],
+	currentPath = "",
+): Record<string, any> {
+	const result: Record<string, any> = {};
+
+	for (const key in obj) {
+		if (Object.prototype.hasOwnProperty.call(obj, key)) {
+			const value = obj[key];
+			const newKey = currentPath ? `${currentPath}.${key}` : key;
+
+			if (skipKeys?.includes(key.toLowerCase())) {
+				// Preserve "or" and "and" keys with their exact values
+				result[newKey] = value;
+			} else if (
+				typeof value === "object" &&
+				value !== null &&
+				!Array.isArray(value)
+			) {
+				// Recursively process nested objects
+				const nested = convertToDotNotation(value, skipKeys, newKey);
+				Object.assign(result, nested);
+			} else {
+				// Add primitive values directly
+				result[newKey] = value;
+			}
+		}
+	}
+
+	return result;
+}
