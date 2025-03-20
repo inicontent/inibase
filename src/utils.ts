@@ -648,7 +648,7 @@ export const unsetField = (keyPath: string, schema: Schema) => {
 	}
 };
 
-export function convertToDotNotation(
+export function toDotNotation(
 	obj: Record<string, any>,
 	skipKeys?: string[],
 	currentPath = "",
@@ -669,7 +669,7 @@ export function convertToDotNotation(
 				!Array.isArray(value)
 			) {
 				// Recursively process nested objects
-				const nested = convertToDotNotation(value, skipKeys, newKey);
+				const nested = toDotNotation(value, skipKeys, newKey);
 				Object.assign(result, nested);
 			} else {
 				// Add primitive values directly
