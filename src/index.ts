@@ -2131,7 +2131,7 @@ export default class Inibase {
 		} else if (Utils.isObject(where)) {
 			let cachedFilePath = "";
 			// Criteria
-			if (this.tablesMap.get(tableName).config.cache)
+			if (this.tablesMap.get(tableName).config.cache) {
 				cachedFilePath = join(
 					tablePath,
 					".cache",
@@ -2140,32 +2140,33 @@ export default class Inibase {
 					}`,
 				);
 
-			if (
-				this.tablesMap.get(tableName).config.cache &&
-				(await File.isExists(cachedFilePath))
-			) {
-				const cachedItems = (await readFile(cachedFilePath, "utf8")).split(",");
+				if (await File.isExists(cachedFilePath)) {
+					const cachedItems = (await readFile(cachedFilePath, "utf8")).split(
+						",",
+					);
 
-				if (!this.totalItems.has(`${tableName}-*`))
-					this.totalItems.set(`${tableName}-*`, cachedItems.length);
+					if (!this.totalItems.has(`${tableName}-*`))
+						this.totalItems.set(`${tableName}-*`, cachedItems.length);
 
-				if (onlyLinesNumbers)
-					return onlyOne ? Number(cachedItems[0]) : cachedItems.map(Number);
+					if (onlyLinesNumbers)
+						return onlyOne ? Number(cachedItems[0]) : cachedItems.map(Number);
 
-				return this.get(
-					tableName,
-					cachedItems
-						.slice(
-							((options.page as number) - 1) * options.perPage,
-							(options.page as number) * options.perPage,
-						)
-						.map(Number),
-					options,
-					onlyOne,
-					undefined,
-					true,
-				);
+					return this.get(
+						tableName,
+						cachedItems
+							.slice(
+								((options.page as number) - 1) * options.perPage,
+								(options.page as number) * options.perPage,
+							)
+							.map(Number),
+						options,
+						onlyOne,
+						undefined,
+						true,
+					);
+				}
 			}
+
 			const [LineNumberDataMap, linesNumbers] = await this.applyCriteria<TData>(
 				tableName,
 				options,
