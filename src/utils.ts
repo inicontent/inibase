@@ -312,6 +312,7 @@ export const detectFieldType = (
 				if (availableTypes.includes("number")) return "number";
 				if (availableTypes.includes("string") && String(input).at(0) === "0")
 					return "string";
+				if (availableTypes.includes("id")) return "id";
 			} else if (typeof input === "string") {
 				if (availableTypes.includes("table") && isValidID(input))
 					return "table";
