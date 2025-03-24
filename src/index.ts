@@ -2249,10 +2249,16 @@ export default class Inibase {
 	 */
 	post<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
-		data: (Data & TData) | (Data & TData)[],
+		data: Data & TData,
 		options?: Options,
 		returnPostedData?: boolean,
-	): Promise<void>;
+	): Promise<string>;
+	post<TData extends Record<string, any> & Partial<Data>>(
+		tableName: string,
+		data: (Data & TData)[],
+		options?: Options,
+		returnPostedData?: boolean,
+	): Promise<string[]>;
 	post<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
 		data: Data & TData,
@@ -2270,7 +2276,7 @@ export default class Inibase {
 		data: (Data & TData) | (Data & TData)[],
 		options?: Options,
 		returnPostedData?: boolean,
-	): Promise<(Data & TData) | (Data & TData)[] | null | void> {
+	): Promise<(Data & TData) | (Data & TData)[] | null | string | string[]> {
 		if (!options)
 			options = {
 				page: 1,
@@ -2388,6 +2394,13 @@ export default class Inibase {
 					undefined,
 					true,
 				);
+
+			return Array.isArray(clonedData)
+				? (this.tablesMap.get(tableName).config.prepend
+						? clonedData.toReversed()
+						: clonedData
+					).map(({ id }) => UtilsServer.encodeID(id, this.salt))
+				: UtilsServer.encodeID((clonedData as Data & TData).id, this.salt);
 		} finally {
 			if (renameList.length)
 				await Promise.allSettled(
