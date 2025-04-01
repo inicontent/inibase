@@ -171,8 +171,7 @@ export const hashString = (str: string): string =>
  * @param operator - The comparison operator (e.g., '=', '!=', '>', '<', '>=', '<=', '[]', '![]', '*', '!*').
  * @param originalValue - The value to compare, can be a single value or an array of values.
  * @param comparedValue - The value or values to compare against.
- * @param field - Field object config.
- * @param fieldChildrenType - Optional type for child elements in array inputs.
+ * @param fieldType - Optional type of the field.
  * @returns boolean - Result of the comparison operation.
  *
  * Note: Handles various data types and comparison logic, including special handling for passwords and regex patterns.
