@@ -136,13 +136,17 @@ export type ErrorLang = "en" | "ar" | "fr" | "es";
 // hide ExperimentalWarning glob()
 process.removeAllListeners("warning");
 
+export const globalConfig: {
+	[database: string]: {
+		tables?: Map<string, TableObject>;
+	};
+} & { salt?: string | Buffer } = {};
+
 export default class Inibase {
 	public pageInfo: Record<string, pageInfo>;
 	public language: ErrorLang;
-	public salt: Buffer;
+	public fileExtension = ".txt";
 	private databasePath: string;
-	private fileExtension = ".txt";
-	private tablesMap: Map<string, TableObject>;
 	private uniqueMap: Map<
 		string | number,
 		{ exclude: Set<number>; columnsValues: Map<number, Set<string | number>> }
@@ -152,7 +156,6 @@ export default class Inibase {
 	constructor(database: string, mainFolder = ".", language: ErrorLang = "en") {
 		this.databasePath = join(mainFolder, database);
 		this.clear();
-
 		this.language = language;
 
 		if (!process.env.INIBASE_SECRET) {
@@ -161,9 +164,12 @@ export default class Inibase {
 				readFileSync(".env").includes("INIBASE_SECRET=")
 			)
 				throw this.createError("NO_ENV");
-			this.salt = scryptSync(randomBytes(16), randomBytes(16), 32);
-			appendFileSync(".env", `\nINIBASE_SECRET=${this.salt.toString("hex")}\n`);
-		} else this.salt = Buffer.from(process.env.INIBASE_SECRET, "hex");
+			globalConfig.salt = scryptSync(randomBytes(16), randomBytes(16), 32);
+			appendFileSync(
+				".env",
+				`\nINIBASE_SECRET=${globalConfig.salt.toString("hex")}\n`,
+			);
+		} else globalConfig.salt = Buffer.from(process.env.INIBASE_SECRET, "hex");
 	}
 
 	private static errorMessages: Record<ErrorLang, Record<ErrorCodes, string>> =
@@ -274,7 +280,7 @@ export default class Inibase {
 	}
 
 	public clear() {
-		this.tablesMap = new Map();
+		globalConfig[this.databasePath] = { tables: new Map() };
 		this.totalItems = new Map();
 		this.pageInfo = {};
 		this.uniqueMap = new Map();
@@ -283,9 +289,11 @@ export default class Inibase {
 	private getFileExtension(tableName: string) {
 		let mainExtension = this.fileExtension;
 		// TODO: ADD ENCRYPTION
-		// if(this.tablesMap.get(tableName).config.encryption)
+		// if(globalConfig[this.databasePath].tables.get(tableName).config.encryption)
 		// 	mainExtension += ".enc"
-		if (this.tablesMap.get(tableName).config.compression)
+		if (
+			globalConfig[this.databasePath].tables.get(tableName).config.compression
+		)
 			mainExtension += ".gz";
 		return mainExtension;
 	}
@@ -308,9 +316,7 @@ export default class Inibase {
 				);
 			else if (field.id)
 				RETURN[
-					Utils.isValidID(field.id)
-						? UtilsServer.decodeID(field.id, this.salt)
-						: field.id
+					Utils.isValidID(field.id) ? UtilsServer.decodeID(field.id) : field.id
 				] = `${(prefix ?? "") + field.key}${this.getFileExtension(tableName)}`;
 
 		return RETURN;
@@ -357,7 +363,7 @@ export default class Inibase {
 			await writeFile(
 				join(tablePath, "schema.json"),
 				JSON.stringify(
-					UtilsServer.addIdToSchema(schema, lastSchemaID, this.salt),
+					UtilsServer.addIdToSchema(schema, lastSchemaID),
 					null,
 					2,
 				),
@@ -413,7 +419,7 @@ export default class Inibase {
 
 			if (await File.isExists(join(tablePath, "schema.json"))) {
 				// update columns files names based on field id
-				schema = UtilsServer.addIdToSchema(schema, lastSchemaID, this.salt);
+				schema = UtilsServer.addIdToSchema(schema, lastSchemaID);
 				if (table.schema?.length) {
 					const replaceOldPathes = Utils.findChangedProperties(
 						this._schemaToIdsPath(tableName, table.schema),
@@ -432,8 +438,7 @@ export default class Inibase {
 							),
 						);
 				}
-			} else
-				schema = UtilsServer.addIdToSchema(schema, lastSchemaID, this.salt);
+			} else schema = UtilsServer.addIdToSchema(schema, lastSchemaID);
 
 			await writeFile(
 				join(tablePath, "schema.json"),
@@ -531,7 +536,7 @@ export default class Inibase {
 			}
 		}
 
-		this.tablesMap.delete(tableName);
+		globalConfig[this.databasePath].tables.delete(tableName);
 	}
 
 	/**
@@ -549,8 +554,8 @@ export default class Inibase {
 		if (!(await File.isExists(tablePath)))
 			throw this.createError("TABLE_NOT_EXISTS", tableName);
 
-		if (!this.tablesMap.has(tableName))
-			this.tablesMap.set(tableName, {
+		if (!globalConfig[this.databasePath].tables.has(tableName))
+			globalConfig[this.databasePath].tables.set(tableName, {
 				schema: await this.getTableSchema(tableName, encodeIDs),
 				config: {
 					compression: await File.isExists(
@@ -561,7 +566,7 @@ export default class Inibase {
 					decodeID: await File.isExists(join(tablePath, ".decodeID.config")),
 				},
 			});
-		return this.tablesMap.get(tableName);
+		return globalConfig[this.databasePath].tables.get(tableName);
 	}
 
 	public async getTableSchema(
@@ -600,7 +605,7 @@ export default class Inibase {
 		];
 
 		if (!encodeIDs) return schema;
-		return UtilsServer.encodeSchemaID(schema, this.salt);
+		return UtilsServer.encodeSchemaID(schema);
 	}
 
 	private async throwErrorIfTableEmpty(tableName: string): Promise<void> {
@@ -643,17 +648,7 @@ export default class Inibase {
 					continue;
 				}
 
-				if (
-					!Utils.validateFieldType(
-						data[field.key],
-						field.type,
-						(field.type === "array" || field.type === "object") &&
-							field.children &&
-							!Utils.isArrayOfObjects(field.children)
-							? field.children
-							: undefined,
-					)
-				)
+				if (!Utils.validateFieldType(data[field.key], field))
 					throw this.createError("INVALID_TYPE", [
 						field.key,
 						(Array.isArray(field.type) ? field.type.join(", ") : field.type) +
@@ -729,7 +724,7 @@ export default class Inibase {
 		// Skip ID and (created|updated)At
 		this._validateData(
 			clonedData,
-			this.tablesMap.get(tableName).schema.slice(1, -2),
+			globalConfig[this.databasePath].tables.get(tableName).schema.slice(1, -2),
 			skipRequiredField,
 		);
 		await this.checkUnique(tableName);
@@ -800,11 +795,11 @@ export default class Inibase {
 					)
 						return Utils.isNumber((value as Data).id)
 							? Number((value as Data).id)
-							: UtilsServer.decodeID((value as Data).id as string, this.salt);
+							: UtilsServer.decodeID((value as Data).id as string);
 				} else if (Utils.isValidID(value) || Utils.isNumber(value))
 					return Utils.isNumber(value)
 						? Number(value)
-						: UtilsServer.decodeID(value, this.salt);
+						: UtilsServer.decodeID(value);
 				break;
 			case "password":
 				return Utils.isPassword(value)
@@ -819,7 +814,7 @@ export default class Inibase {
 			case "id":
 				return Utils.isNumber(value)
 					? value
-					: UtilsServer.decodeID(value as string, this.salt);
+					: UtilsServer.decodeID(value as string);
 			case "json": {
 				if (typeof value === "string" && Utils.isStringified(value))
 					return value;
@@ -838,7 +833,7 @@ export default class Inibase {
 	private async checkUnique(tableName: string) {
 		const tablePath = join(this.databasePath, tableName);
 		const flattenSchema = Utils.flattenSchema(
-			this.tablesMap.get(tableName).schema,
+			globalConfig[this.databasePath].tables.get(tableName).schema,
 		);
 		function hasDuplicates(setA: Set<number>, setB: Set<number>) {
 			for (const value of setA) if (setB.has(value)) return true; // Stop and return true if a duplicate is found
@@ -859,12 +854,10 @@ export default class Inibase {
 					Array.from(values),
 					undefined,
 					valueObject.exclude,
-					field.type,
-					field.children,
+					{ ...field, databasePath: this.databasePath },
 					1,
 					undefined,
 					false,
-					this.salt,
 				);
 				if (totalLines > 0) {
 					if (
@@ -1202,15 +1195,15 @@ export default class Inibase {
 			`${prefix ?? ""}${field.key}${this.getFileExtension(tableName)}`,
 		);
 		if (await File.isExists(fieldPath)) {
-			const items = await File.get(
-				fieldPath,
-				linesNumber,
-				field.key === "id" && this.tablesMap.get(tableName).config.decodeID
-					? "number"
-					: field.type,
-				field.children,
-				this.salt,
-			);
+			const items = await File.get(fieldPath, linesNumber, {
+				...field,
+				type:
+					field.key === "id" &&
+					globalConfig[this.databasePath].tables.get(tableName).config.decodeID
+						? "number"
+						: field.type,
+				databasePath: this.databasePath,
+			});
 			if (items) {
 				for (const [index, item] of Object.entries(items)) {
 					if (typeof item === "undefined") continue; // Skip undefined items
@@ -1443,16 +1436,16 @@ export default class Inibase {
 				`${prefix ?? ""}${field.key}${this.getFileExtension(tableName)}`,
 			);
 			if (await File.isExists(fieldPath)) {
-				const itemsIDs = await File.get(
-					fieldPath,
-					linesNumber,
-					field.type,
-					field.children,
-					this.salt,
-				);
+				const itemsIDs = (await File.get(fieldPath, linesNumber, {
+					...field,
+					databasePath: this.databasePath,
+				})) as Record<number, number | number[]>;
 				const isArrayField = this.isArrayField(field.type);
 				if (itemsIDs) {
-					const searchableIDs = new Map<number, any>();
+					const searchableIDs = new Map<
+						number,
+						number | string | (number | string)[]
+					>();
 					for (const [lineNumber, lineContent] of Object.entries(itemsIDs)) {
 						if (typeof lineContent === "undefined") continue; // Skip undefined items
 						if (!RETURN[lineNumber]) RETURN[lineNumber] = {};
@@ -1462,11 +1455,13 @@ export default class Inibase {
 					if (searchableIDs.size) {
 						const items = await this.get(
 							field.table,
-							isArrayField
-								? Array.from(
-										new Set(Array.from(searchableIDs.values()).flat()),
-									).flat()
-								: Array.from(new Set(searchableIDs.values())),
+							Array.from(
+								new Set(
+									isArrayField
+										? Array.from(searchableIDs.values()).flat()
+										: searchableIDs.values(),
+								),
+							).flat(),
 							{
 								...options,
 								perPage: Number.POSITIVE_INFINITY,
@@ -1475,20 +1470,24 @@ export default class Inibase {
 									.map((column) => column.replace(`${field.key}.`, "")),
 							},
 						);
-						if (items) {
-							for (const [lineNumber, lineContent] of searchableIDs.entries()) {
-								const foundedItem = isArrayField
-									? Utils.isArrayOfArrays(lineContent)
-										? lineContent.map((item) =>
-												items.filter(({ id }) => item.includes(id)),
-											)
-										: lineContent.flatMap((item: string) =>
-												items.find(({ id }) => item === id),
-											)
-									: items.find(({ id }) => id === lineContent);
-								if (foundedItem) RETURN[lineNumber][field.key] = foundedItem;
-							}
-						}
+						for (const [lineNumber, lineContent] of searchableIDs.entries())
+							RETURN[lineNumber][field.key] = isArrayField
+								? Utils.isArrayOfArrays(lineContent)
+									? lineContent.map((item) =>
+											items
+												? items.filter(({ id }) => item.includes(id))
+												: {
+														id: item,
+													},
+										)
+									: (lineContent as (number | string)[]).flatMap((item) =>
+											items
+												? items.find(({ id }) => item === id)
+												: { id: item },
+										)
+								: (items?.find(({ id }) => id === lineContent) ?? {
+										id: lineContent,
+									});
 					}
 				}
 			}
@@ -1555,7 +1554,10 @@ export default class Inibase {
 
 			let index = -1;
 			for await (const [key, value] of Object.entries(criteria)) {
-				const field = Utils.getField(key, this.tablesMap.get(tableName).schema);
+				const field = Utils.getField(
+					key,
+					globalConfig[this.databasePath].tables.get(tableName).schema,
+				);
 				index++;
 				let searchOperator:
 					| ComparisonOperator
@@ -1653,14 +1655,10 @@ export default class Inibase {
 					searchComparedAtValue ?? null,
 					searchLogicalOperator,
 					allTrue ? searchIn : undefined,
-					field?.type,
-					field?.children,
+					{ ...field, databasePath: this.databasePath },
 					options.perPage,
 					((options.page as number) - 1) * (options.perPage as number) + 1,
 					true,
-					field.key === "id" && this.tablesMap.get(tableName).config.decodeID
-						? undefined
-						: this.salt,
 				);
 
 				if (searchResult) {
@@ -1882,7 +1880,7 @@ export default class Inibase {
 
 			let cacheKey = "";
 			// Criteria
-			if (this.tablesMap.get(tableName).config.cache)
+			if (globalConfig[this.databasePath].tables.get(tableName).config.cache)
 				cacheKey = UtilsServer.hashString(inspect(sortArray, { sorted: true }));
 
 			if (where) {
@@ -1898,9 +1896,7 @@ export default class Inibase {
 					(await File.get(
 						join(tablePath, `id${this.getFileExtension(tableName)}`),
 						lineNumbers,
-						"number",
-						undefined,
-						this.salt,
+						{ key: "BLABLA", type: "number" },
 					)) ?? {},
 				).map(Number);
 				awkCommand = `awk '${itemsIDs.map((id) => `$1 == ${id}`).join(" || ")}'`;
@@ -1935,13 +1931,7 @@ export default class Inibase {
 					const field = Utils.getField(key, schema);
 					if (field)
 						return `-k${i + index},${i + index}${
-							Utils.isFieldType(
-								["id", "number", "date"],
-								field.type,
-								field.children,
-							)
-								? "n"
-								: ""
+							Utils.isFieldType(field, ["id", "number", "date"]) ? "n" : ""
 						}${!ascending ? "r" : ""}`;
 					return "";
 				})
@@ -1953,7 +1943,7 @@ export default class Inibase {
 				// Combine && Execute the commands synchronously
 				let lines = (
 					await UtilsServer.exec(
-						this.tablesMap.get(tableName).config.cache
+						globalConfig[this.databasePath].tables.get(tableName).config.cache
 							? (await File.isExists(
 									join(tablePath, ".cache", `${cacheKey}${this.fileExtension}`),
 								))
@@ -2000,15 +1990,14 @@ export default class Inibase {
 						if (field) {
 							if (
 								field.key === "id" &&
-								this.tablesMap.get(tableName).config.decodeID
+								globalConfig[this.databasePath].tables.get(tableName).config
+									.decodeID
 							)
 								outputObject[field.key as string] = splitedFileColumns[index];
 							else
 								outputObject[field.key as string] = File.decode(
 									splitedFileColumns[index],
-									field?.type,
-									field?.children as any,
-									this.salt,
+									{ ...field, databasePath: this.databasePath },
 								);
 						}
 					});
@@ -2058,7 +2047,8 @@ export default class Inibase {
 		} else if (
 			((Array.isArray(where) && where.every(Utils.isNumber)) ||
 				Utils.isNumber(where)) &&
-			(_whereIsLinesNumbers || !this.tablesMap.get(tableName).config.decodeID)
+			(_whereIsLinesNumbers ||
+				!globalConfig[this.databasePath].tables.get(tableName).config.decodeID)
 		) {
 			// "where" in this case, is the line(s) number(s) and not id(s)
 			let lineNumbers = where as number | number[];
@@ -2083,7 +2073,7 @@ export default class Inibase {
 				RETURN = (RETURN as (Data & TData)[])[0];
 		} else if (
 			(!_whereIsLinesNumbers &&
-				this.tablesMap.get(tableName).config.decodeID &&
+				globalConfig[this.databasePath].tables.get(tableName).config.decodeID &&
 				((Array.isArray(where) && where.every(Utils.isNumber)) ||
 					Utils.isNumber(where))) ||
 			(Array.isArray(where) && where.every(Utils.isValidID)) ||
@@ -2095,16 +2085,14 @@ export default class Inibase {
 				join(tablePath, `id${this.getFileExtension(tableName)}`),
 				"[]",
 				Ids.map((id) =>
-					Utils.isNumber(id) ? Number(id) : UtilsServer.decodeID(id, this.salt),
+					Utils.isNumber(id) ? Number(id) : UtilsServer.decodeID(id),
 				),
 				undefined,
 				undefined,
-				"number",
-				undefined,
+				{ key: "BLABLA", type: "number" },
 				Ids.length,
 				0,
 				!this.totalItems.has(`${tableName}-*`),
-				this.salt,
 			);
 			if (!lineNumbers) return null;
 
@@ -2137,7 +2125,7 @@ export default class Inibase {
 		} else if (Utils.isObject(where)) {
 			let cachedFilePath = "";
 			// Criteria
-			if (this.tablesMap.get(tableName).config.cache) {
+			if (globalConfig[this.databasePath].tables.get(tableName).config.cache) {
 				cachedFilePath = join(
 					tablePath,
 					".cache",
@@ -2200,16 +2188,16 @@ export default class Inibase {
 							tableName,
 							Utils.filterSchema(
 								schema,
-								({ id, type, children }) =>
-									!alreadyExistsColumnsIDs.includes(id) ||
-									Utils.isFieldType("table", type, children),
+								(field) =>
+									!alreadyExistsColumnsIDs.includes(field.id) ||
+									Utils.isFieldType(field, "table"),
 							),
 							Object.keys(LineNumberDataMap).map(Number),
 							options,
 						),
 					),
 				);
-				if (this.tablesMap.get(tableName).config.cache)
+				if (globalConfig[this.databasePath].tables.get(tableName).config.cache)
 					await writeFile(cachedFilePath, Array.from(linesNumbers).join(","));
 			}
 		}
@@ -2285,7 +2273,7 @@ export default class Inibase {
 		const tablePath = join(this.databasePath, tableName);
 		await this.getTable(tableName);
 
-		if (!this.tablesMap.get(tableName).schema)
+		if (!globalConfig[this.databasePath].tables.get(tableName).schema)
 			throw this.createError("NO_SCHEMA", tableName);
 
 		if (!returnPostedData) returnPostedData = false;
@@ -2329,13 +2317,13 @@ export default class Inibase {
 
 			clonedData = this.formatData<TData>(
 				clonedData,
-				this.tablesMap.get(tableName).schema,
+				globalConfig[this.databasePath].tables.get(tableName).schema,
 				false,
 			);
 
 			const pathesContents = this.joinPathesContents(
 				tableName,
-				this.tablesMap.get(tableName).config.prepend
+				globalConfig[this.databasePath].tables.get(tableName).config.prepend
 					? Array.isArray(clonedData)
 						? clonedData.toReversed()
 						: clonedData
@@ -2345,7 +2333,7 @@ export default class Inibase {
 			await Promise.allSettled(
 				Object.entries(pathesContents).map(async ([path, content]) =>
 					renameList.push(
-						this.tablesMap.get(tableName).config.prepend
+						globalConfig[this.databasePath].tables.get(tableName).config.prepend
 							? await File.prepend(path, content)
 							: await File.append(path, content),
 					),
@@ -2358,7 +2346,7 @@ export default class Inibase {
 					.map(async ([tempPath, filePath]) => rename(tempPath, filePath)),
 			);
 
-			if (this.tablesMap.get(tableName).config.cache)
+			if (globalConfig[this.databasePath].tables.get(tableName).config.cache)
 				await this.clearCache(tableName);
 
 			const currentValue = this.totalItems.get(`${tableName}-*`) || 0;
@@ -2378,7 +2366,7 @@ export default class Inibase {
 			if (returnPostedData)
 				return this.get<TData>(
 					tableName,
-					this.tablesMap.get(tableName).config.prepend
+					globalConfig[this.databasePath].tables.get(tableName).config.prepend
 						? Array.isArray(clonedData)
 							? clonedData.map((_, index) => index + 1).toReversed()
 							: 1
@@ -2396,11 +2384,11 @@ export default class Inibase {
 				);
 
 			return Array.isArray(clonedData)
-				? (this.tablesMap.get(tableName).config.prepend
+				? (globalConfig[this.databasePath].tables.get(tableName).config.prepend
 						? clonedData.toReversed()
 						: clonedData
-					).map(({ id }) => UtilsServer.encodeID(id, this.salt))
-				: UtilsServer.encodeID((clonedData as Data & TData).id, this.salt);
+					).map(({ id }) => UtilsServer.encodeID(id))
+				: UtilsServer.encodeID((clonedData as Data & TData).id);
 		} finally {
 			if (renameList.length)
 				await Promise.allSettled(
@@ -2502,7 +2490,7 @@ export default class Inibase {
 
 			clonedData = this.formatData<TData>(
 				clonedData,
-				this.tablesMap.get(tableName).schema,
+				globalConfig[this.databasePath].tables.get(tableName).schema,
 				true,
 			);
 
@@ -2540,7 +2528,7 @@ export default class Inibase {
 						.map(async ([tempPath, filePath]) => rename(tempPath, filePath)),
 				);
 
-				if (this.tablesMap.get(tableName).config.cache)
+				if (globalConfig[this.databasePath].tables.get(tableName).config.cache)
 					await this.clearCache(join(tablePath, ".cache"));
 
 				if (returnUpdatedData)
@@ -2555,7 +2543,8 @@ export default class Inibase {
 		} else if (
 			((Array.isArray(where) && where.every(Utils.isNumber)) ||
 				Utils.isNumber(where)) &&
-			(_whereIsLinesNumbers || !this.tablesMap.get(tableName).config.decodeID)
+			(_whereIsLinesNumbers ||
+				!globalConfig[this.databasePath].tables.get(tableName).config.decodeID)
 		) {
 			// "where" in this case, is the line(s) number(s) and not id(s)
 
@@ -2563,7 +2552,7 @@ export default class Inibase {
 
 			clonedData = this.formatData<TData>(
 				clonedData,
-				this.tablesMap.get(tableName).schema,
+				globalConfig[this.databasePath].tables.get(tableName).schema,
 				true,
 			);
 
@@ -2611,7 +2600,7 @@ export default class Inibase {
 						.map(async ([tempPath, filePath]) => rename(tempPath, filePath)),
 				);
 
-				if (this.tablesMap.get(tableName).config.cache)
+				if (globalConfig[this.databasePath].tables.get(tableName).config.cache)
 					await this.clearCache(tableName);
 
 				if (returnUpdatedData)
@@ -2632,7 +2621,7 @@ export default class Inibase {
 			}
 		} else if (
 			(!_whereIsLinesNumbers &&
-				this.tablesMap.get(tableName).config.decodeID &&
+				globalConfig[this.databasePath].tables.get(tableName).config.decodeID &&
 				((Array.isArray(where) && where.every(Utils.isNumber)) ||
 					Utils.isNumber(where))) ||
 			(Array.isArray(where) && where.every(Utils.isValidID)) ||
@@ -2712,7 +2701,7 @@ export default class Inibase {
 						.map(async (file) => unlink(join(tablePath, file))),
 				);
 
-				if (this.tablesMap.get(tableName).config.cache)
+				if (globalConfig[this.databasePath].tables.get(tableName).config.cache)
 					await this.clearCache(tableName);
 
 				await rename(
@@ -2728,7 +2717,8 @@ export default class Inibase {
 		if (
 			((Array.isArray(where) && where.every(Utils.isNumber)) ||
 				Utils.isNumber(where)) &&
-			(_whereIsLinesNumbers || !this.tablesMap.get(tableName).config.decodeID)
+			(_whereIsLinesNumbers ||
+				!globalConfig[this.databasePath].tables.get(tableName).config.decodeID)
 		) {
 			// "where" in this case, is the line(s) number(s) and not id(s)
 			const files = (await readdir(tablePath))?.filter((fileName: string) =>
@@ -2779,7 +2769,9 @@ export default class Inibase {
 								.map(async (file) => unlink(join(tablePath, file))),
 						);
 
-					if (this.tablesMap.get(tableName).config.cache)
+					if (
+						globalConfig[this.databasePath].tables.get(tableName).config.cache
+					)
 						await this.clearCache(tableName);
 
 					await rename(
@@ -2802,7 +2794,7 @@ export default class Inibase {
 		}
 		if (
 			(!_whereIsLinesNumbers &&
-				this.tablesMap.get(tableName).config.decodeID &&
+				globalConfig[this.databasePath].tables.get(tableName).config.decodeID &&
 				((Array.isArray(where) && where.every(Utils.isNumber)) ||
 					Utils.isNumber(where))) ||
 			(Array.isArray(where) && where.every(Utils.isValidID)) ||

@@ -334,32 +334,27 @@ export const detectFieldType = (
 	return undefined;
 };
 
-export const isFieldType = (
-	compareAtType: string | string[],
-	fieldType?: FieldType | FieldType[],
-	fieldChildrenType?: FieldType | FieldType[] | Schema,
-) => {
-	if (fieldType) {
-		if (Array.isArray(fieldType)) {
-			if (
-				fieldType.some((type) =>
-					Array.isArray(compareAtType)
-						? compareAtType.includes(type)
-						: compareAtType === type,
-				)
+export const isFieldType = (field: Field, compareAtType: string | string[]) => {
+	if (Array.isArray(field.type)) {
+		if (
+			field.type.some((type) =>
+				Array.isArray(compareAtType)
+					? compareAtType.includes(type)
+					: compareAtType === type,
 			)
-				return true;
-		} else if (
-			(Array.isArray(compareAtType) && compareAtType.includes(fieldType)) ||
-			compareAtType === fieldType
 		)
 			return true;
-	}
-	if (fieldChildrenType) {
-		if (Array.isArray(fieldChildrenType)) {
-			if (!isArrayOfObjects(fieldChildrenType)) {
+	} else if (
+		(Array.isArray(compareAtType) && compareAtType.includes(field.type)) ||
+		compareAtType === field.type
+	)
+		return true;
+
+	if (field.children) {
+		if (Array.isArray(field.children)) {
+			if (!isArrayOfObjects(field.children)) {
 				if (
-					fieldChildrenType.some((type) =>
+					field.children.some((type) =>
 						Array.isArray(compareAtType)
 							? compareAtType.includes(type)
 							: compareAtType === type,
@@ -369,11 +364,12 @@ export const isFieldType = (
 			}
 		} else if (
 			(Array.isArray(compareAtType) &&
-				compareAtType.includes(fieldChildrenType)) ||
-			compareAtType === fieldChildrenType
+				compareAtType.includes(field.children)) ||
+			compareAtType === field.children
 		)
 			return true;
 	}
+
 	return false;
 };
 
@@ -410,35 +406,37 @@ export const filterSchema = (
  * Validates if the given value matches the specified field type(s).
  *
  * @param value - The value to be validated.
- * @param fieldType - The expected field type or an array of possible field types.
- * @param fieldChildrenType - Optional; the expected type(s) of children elements, used if the field type is an array.
+ * @param field - Field object config.
  * @returns A boolean indicating whether the value matches the specified field type(s).
  */
-export const validateFieldType = (
-	value: any,
-	fieldType: FieldType | FieldType[],
-	fieldChildrenType?: FieldType | FieldType[],
-): boolean => {
+export const validateFieldType = (value: any, field: Field): boolean => {
 	if (value === null) return true;
-	if (Array.isArray(fieldType)) {
-		const detectedFieldType = detectFieldType(value, fieldType);
+
+	if (Array.isArray(field.type)) {
+		const detectedFieldType = detectFieldType(value, field.type);
 		if (!detectedFieldType) return false;
-		fieldType = detectedFieldType;
+		field.type = detectedFieldType;
 	}
-	if (fieldType === "array" && fieldChildrenType)
+
+	if (field.type === "array" && field.children)
 		return (
 			Array.isArray(value) &&
-			value.every((v: any) => {
-				let _fieldChildrenType = fieldChildrenType;
-				if (Array.isArray(_fieldChildrenType)) {
-					const detectedFieldType = detectFieldType(v, _fieldChildrenType);
-					if (!detectedFieldType) return false;
-					_fieldChildrenType = detectedFieldType;
-				}
-				return validateFieldType(v, _fieldChildrenType);
-			})
+			(isArrayOfObjects(field.children) ||
+				value.every((v: any) => {
+					let _fieldChildrenType = field.children as FieldType | FieldType[];
+					if (Array.isArray(_fieldChildrenType)) {
+						const detectedFieldType = detectFieldType(v, _fieldChildrenType);
+						if (!detectedFieldType) return false;
+						_fieldChildrenType = detectedFieldType;
+					}
+					return validateFieldType(v, {
+						key: "BLABLA",
+						type: _fieldChildrenType,
+					});
+				}))
 		);
-	switch (fieldType) {
+
+	switch (field.type) {
 		case "string":
 			return isString(value);
 		case "password":

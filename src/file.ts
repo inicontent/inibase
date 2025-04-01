@@ -17,7 +17,12 @@ import { pipeline } from "node:stream/promises";
 import { createGunzip, createGzip } from "node:zlib";
 
 import Inison from "inison";
-import type { ComparisonOperator, FieldType, Schema } from "./index.js";
+import {
+	type ComparisonOperator,
+	type Field,
+	type FieldType,
+	globalConfig,
+} from "./index.js";
 import {
 	detectFieldType,
 	isArrayOfObjects,
@@ -186,49 +191,44 @@ const unSecureString = (input: string): string | number | null => {
  * Handles different data types and structures, including nested arrays.
  *
  * @param value - The value to be decoded, can be string, number, or array.
- * @param fieldType - Optional type of the field to guide decoding (e.g., 'number', 'boolean').
+ * @param field - Field object config.
  * @param fieldChildrenType - Optional type for children elements, used for arrays.
- * @param secretKey - Optional secret key for decoding, can be string or Buffer.
  * @returns Decoded value, transformed according to the specified field type(s).
  */
 const decodeHelper = (
 	value: string | number | any[],
-	fieldType?: FieldType | FieldType[],
-	fieldChildrenType?: FieldType | FieldType[] | Schema,
-	secretKey?: string | Buffer,
+	field: Field & { databasePath?: string },
 ): any => {
-	if (Array.isArray(value) && fieldType !== "array")
-		return value.map((v) =>
-			decodeHelper(v, fieldType, fieldChildrenType, secretKey),
-		);
-	switch (fieldType as FieldType) {
+	if (Array.isArray(value) && field.type !== "array")
+		return value.map((v) => decodeHelper(v, field));
+	switch (field.type) {
 		case "number":
 			return isNumber(value) ? Number(value) : null;
 		case "boolean":
 			return typeof value === "string" ? value === "true" : Boolean(value);
 		case "array":
-			if (!Array.isArray(value)) return [value];
+			if (!Array.isArray(value)) value = [value];
 
-			if (fieldChildrenType && !isArrayOfObjects(fieldChildrenType))
-				return fieldChildrenType
-					? value.map(
-							(v) =>
-								decode(
-									v,
-									Array.isArray(fieldChildrenType)
-										? detectFieldType(v, fieldChildrenType)
-										: fieldChildrenType,
-									undefined,
-									secretKey,
-								) as string | number | boolean | null,
-						)
-					: value;
+			if (field.children && !isArrayOfObjects(field.children))
+				return value.map((v) =>
+					decode(v, {
+						...field,
+						type: Array.isArray(field.children)
+							? detectFieldType(v, field.children as FieldType[])
+							: field.children,
+					}),
+				);
 			break;
 		case "table":
-		case "id":
-			return isNumber(value) && secretKey
-				? encodeID(value as number, secretKey)
+			return isNumber(value) &&
+				(!field.table ||
+					!field.databasePath ||
+					!globalConfig[field.databasePath].tables.get(field.table).config
+						.decodeID)
+				? encodeID(value)
 				: value;
+		case "id":
+			return isNumber(value) ? encodeID(value) : value;
 		default:
 			return value;
 	}
@@ -239,23 +239,18 @@ const decodeHelper = (
  * Handles different formats of input, including strings, numbers, and their array representations.
  *
  * @param input - The input to be decoded, can be a string, number, or null.
- * @param fieldType - Optional type of the field to guide decoding (e.g., 'number', 'boolean').
- * @param fieldChildrenType - Optional type for child elements in array inputs.
- * @param secretKey - Optional secret key for decoding, can be a string or Buffer.
+ * @param field - Field object config.
  * @returns Decoded value as a string, number, boolean, or array of these, or null if no fieldType or input is null/empty.
  */
 export const decode = (
 	input: string | null | number,
-	fieldType?: FieldType | FieldType[],
-	fieldChildrenType?: FieldType | FieldType[] | Schema,
-	secretKey?: string | Buffer,
+	field: Field & { databasePath?: string },
 ): string | number | boolean | null | (string | number | null | boolean)[] => {
-	if (!fieldType) return null;
 	if (input === null || input === "") return undefined;
 
 	// Detect the fieldType based on the input and the provided array of possible types.
-	if (Array.isArray(fieldType))
-		fieldType = detectFieldType(String(input), fieldType);
+	if (Array.isArray(field.type))
+		field.type = detectFieldType(String(input), field.type);
 
 	// Decode the input using the decodeHelper function.
 	return decodeHelper(
@@ -264,9 +259,7 @@ export const decode = (
 				? Inison.unstringify(input)
 				: unSecureString(input)
 			: input,
-		fieldType,
-		fieldChildrenType,
-		secretKey,
+		field,
 	);
 };
 
@@ -301,9 +294,8 @@ function _groupIntoRanges(arr: number[], action: "p" | "d" = "p") {
  *
  * @param filePath - Path of the file to be read.
  * @param lineNumbers - Optional line number(s) to read from the file. If -1, reads the last line.
- * @param fieldType - Optional type of the field to guide decoding (e.g., 'number', 'boolean').
- * @param fieldChildrenType - Optional type for child elements in array inputs.
- * @param secretKey - Optional secret key for decoding, can be a string or Buffer.
+ * @param field - Field object config.
+ * @param readWholeFile - Optional Flag to indicate whether to continue reading the file after reaching the limit.
  * @returns Promise resolving to a tuple:
  *   1. Record of line numbers and their decoded content or null if no lines are read.
  *   2. Total count of lines processed.
@@ -311,9 +303,7 @@ function _groupIntoRanges(arr: number[], action: "p" | "d" = "p") {
 export function get(
 	filePath: string,
 	lineNumbers?: number | number[],
-	fieldType?: FieldType | FieldType[],
-	fieldChildrenType?: FieldType | FieldType[] | Schema,
-	secretKey?: string | Buffer,
+	field?: Field & { databasePath?: string },
 	readWholeFile?: false,
 ): Promise<Record<
 	number,
@@ -326,9 +316,7 @@ export function get(
 export function get(
 	filePath: string,
 	lineNumbers: undefined | number | number[],
-	fieldType: undefined | FieldType | FieldType[],
-	fieldChildrenType: undefined | FieldType | FieldType[],
-	secretKey: undefined | string | Buffer,
+	field: undefined | (Field & { databasePath?: string }),
 	readWholeFile: true,
 ): Promise<
 	[
@@ -346,9 +334,7 @@ export function get(
 export async function get(
 	filePath: string,
 	lineNumbers?: number | number[],
-	fieldType?: FieldType | FieldType[],
-	fieldChildrenType?: FieldType | FieldType[] | Schema,
-	secretKey?: string | Buffer,
+	field?: Field & { databasePath?: string },
 	readWholeFile = false,
 ): Promise<
 	| Record<
@@ -390,12 +376,7 @@ export async function get(
 		if (!lineNumbers) {
 			for await (const line of rl) {
 				linesCount++;
-				lines[linesCount] = decode(
-					line,
-					fieldType,
-					fieldChildrenType,
-					secretKey,
-				);
+				lines[linesCount] = decode(line, field);
 			}
 		} else if (lineNumbers == -1) {
 			const escapedFilePath = escapeShellPath(filePath);
@@ -403,13 +384,7 @@ export async function get(
 					? `zcat ${escapedFilePath} | sed -n '$p'`
 					: `sed -n '$p' ${escapedFilePath}`,
 				foundedLine = (await exec(command)).stdout.trimEnd();
-			if (foundedLine)
-				lines[linesCount] = decode(
-					foundedLine,
-					fieldType,
-					fieldChildrenType,
-					secretKey,
-				);
+			if (foundedLine) lines[linesCount] = decode(foundedLine, field);
 		} else {
 			lineNumbers = Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers];
 			if (lineNumbers.some(Number.isNaN))
@@ -419,12 +394,7 @@ export async function get(
 				for await (const line of rl) {
 					linesCount++;
 					if (!lineNumbersArray.has(linesCount)) continue;
-					lines[linesCount] = decode(
-						line,
-						fieldType,
-						fieldChildrenType,
-						secretKey,
-					);
+					lines[linesCount] = decode(line, field);
 					lineNumbersArray.delete(linesCount);
 				}
 				return [lines, linesCount];
@@ -438,12 +408,7 @@ export async function get(
 
 			let index = 0;
 			for (const line of foundedLines) {
-				lines[lineNumbers[index]] = decode(
-					line,
-					fieldType,
-					fieldChildrenType,
-					secretKey,
-				);
+				lines[lineNumbers[index]] = decode(line, field);
 				index++;
 			}
 		}
@@ -757,12 +722,10 @@ export const remove = async (
  * @param operator - Comparison operator(s) for evaluation (e.g., '=', '!=', '>', '<').
  * @param comparedAtValue - Value(s) to compare each line against.
  * @param logicalOperator - Optional logical operator ('and' or 'or') for combining multiple comparisons.
- * @param fieldType - Optional type of the field to guide comparison.
- * @param fieldChildrenType - Optional type for child elements in array inputs.
+ * @param field - Field object config.
  * @param limit - Optional limit on the number of results to return.
  * @param offset - Optional offset to start returning results from.
  * @param readWholeFile - Flag to indicate whether to continue reading the file after reaching the limit.
- * @param secretKey - Optional secret key for decoding, can be a string or Buffer.
  * @returns Promise resolving to a tuple:
  *   1. Record of line numbers and their content that match the criteria or null if none.
  *   2. The count of found items or processed items based on the 'readWholeFile' flag.
@@ -780,12 +743,10 @@ export const search = async (
 		| (string | number | boolean | null)[],
 	logicalOperator?: "and" | "or",
 	searchIn?: Set<number>,
-	fieldType?: FieldType | FieldType[],
-	fieldChildrenType?: FieldType | FieldType[] | Schema,
+	field?: Field & { databasePath?: string },
 	limit?: number,
 	offset?: number,
 	readWholeFile?: boolean,
-	secretKey?: string | Buffer,
 ): Promise<
 	[
 		Record<
@@ -813,13 +774,13 @@ export const search = async (
 			Array.isArray(comparedAtValue) &&
 			((logicalOperator === "or" &&
 				operator.some((single_operator, index) =>
-					compare(single_operator, value, comparedAtValue[index], fieldType),
+					compare(single_operator, value, comparedAtValue[index], field.type),
 				)) ||
 				operator.every((single_operator, index) =>
-					compare(single_operator, value, comparedAtValue[index], fieldType),
+					compare(single_operator, value, comparedAtValue[index], field.type),
 				))) ||
 		(!Array.isArray(operator) &&
-			compare(operator, value, comparedAtValue, fieldType));
+			compare(operator, value, comparedAtValue, field.type));
 
 	try {
 		// Open the file for reading.
@@ -840,7 +801,7 @@ export const search = async (
 				continue;
 
 			// Decode the line for comparison.
-			const decodedLine = decode(line, fieldType, fieldChildrenType, secretKey);
+			const decodedLine = decode(line, field);
 
 			// Check if the line meets the specified conditions based on comparison and logical operators.
 			const doesMeetCondition =
@@ -906,11 +867,13 @@ export const sum = async (
 			for await (const line of rl) {
 				linesCount++;
 				if (!lineNumbersArray.has(linesCount)) continue;
-				sum += +(decode(line, "number") ?? 0);
+				sum += +(decode(line, { key: "BLABLA", type: "number" }) ?? 0);
 				lineNumbersArray.delete(linesCount);
 				if (!lineNumbersArray.size) break;
 			}
-		} else for await (const line of rl) sum += +(decode(line, "number") ?? 0);
+		} else
+			for await (const line of rl)
+				sum += +(decode(line, { key: "BLABLA", type: "number" }) ?? 0);
 
 		return sum;
 	} finally {
@@ -947,14 +910,18 @@ export const max = async (
 			for await (const line of rl) {
 				linesCount++;
 				if (!lineNumbersArray.has(linesCount)) continue;
-				const lineContentNum = +(decode(line, "number") ?? 0);
+				const lineContentNum = +(
+					decode(line, { key: "BLABLA", type: "number" }) ?? 0
+				);
 				if (lineContentNum > max) max = lineContentNum;
 				lineNumbersArray.delete(linesCount);
 				if (!lineNumbersArray.size) break;
 			}
 		} else
 			for await (const line of rl) {
-				const lineContentNum = +(decode(line, "number") ?? 0);
+				const lineContentNum = +(
+					decode(line, { key: "BLABLA", type: "number" }) ?? 0
+				);
 				if (lineContentNum > max) max = lineContentNum;
 			}
 
@@ -992,14 +959,18 @@ export const min = async (
 			for await (const line of rl) {
 				linesCount++;
 				if (!lineNumbersArray.has(linesCount)) continue;
-				const lineContentNum = +(decode(line, "number") ?? 0);
+				const lineContentNum = +(
+					decode(line, { key: "BLABLA", type: "number" }) ?? 0
+				);
 				if (lineContentNum < min) min = lineContentNum;
 				lineNumbersArray.delete(linesCount);
 				if (!lineNumbersArray.size) break;
 			}
 		} else
 			for await (const line of rl) {
-				const lineContentNum = +(decode(line, "number") ?? 0);
+				const lineContentNum = +(
+					decode(line, { key: "BLABLA", type: "number" }) ?? 0
+				);
 				if (lineContentNum < min) min = lineContentNum;
 			}
 

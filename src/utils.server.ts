@@ -1,4 +1,4 @@
-import { exec as execSync, execFile as execFileSync } from "node:child_process";
+import { execFile as execFileSync, exec as execSync } from "node:child_process";
 import {
 	createCipheriv,
 	createDecipheriv,
@@ -6,10 +6,12 @@ import {
 	randomBytes,
 	scryptSync,
 } from "node:crypto";
-import { gunzip as gunzipSync, gzip as gzipSync } from "node:zlib";
 import { promisify } from "node:util";
+import { gunzip as gunzipSync, gzip as gzipSync } from "node:zlib";
 
+import RE2 from "re2";
 import type { ComparisonOperator, Field, FieldType, Schema } from "./index.js";
+import { globalConfig } from "./index.js";
 import {
 	detectFieldType,
 	isArrayOfObjects,
@@ -17,7 +19,6 @@ import {
 	isPassword,
 	isValidID,
 } from "./utils.js";
-import RE2 from "re2";
 
 export const exec = promisify(execSync);
 
@@ -60,13 +61,11 @@ export const comparePassword = (hash: string, password: string) => {
 const derivedKeyCache = new Map<string, Buffer>();
 
 // Helper function to create cipher or decipher
-const getKeyAndIv = (
-	secretKeyOrSalt: string | number | Buffer,
-): { key: Buffer; iv: Buffer } => {
-	if (Buffer.isBuffer(secretKeyOrSalt)) {
-		return { key: secretKeyOrSalt, iv: secretKeyOrSalt.subarray(0, 16) };
+const getKeyAndIv = (): { key: Buffer; iv: Buffer } => {
+	if (Buffer.isBuffer(globalConfig.salt)) {
+		return { key: globalConfig.salt, iv: globalConfig.salt.subarray(0, 16) };
 	}
-	const cacheKey = secretKeyOrSalt.toString();
+	const cacheKey = globalConfig.salt.toString();
 	let key = derivedKeyCache.get(cacheKey);
 
 	if (!key) {
@@ -81,44 +80,31 @@ const getKeyAndIv = (
 const INIBASE_SECRET = process.env.INIBASE_SECRET ?? "inibase";
 
 // Optimized encodeID
-export const encodeID = (
-	id: number | string,
-	secretKeyOrSalt: string | number | Buffer,
-): string => {
-	const { key, iv } = getKeyAndIv(secretKeyOrSalt);
+export const encodeID = (id: number | string): string => {
+	const { key, iv } = getKeyAndIv();
 	const cipher = createCipheriv("aes-256-cbc", key, iv);
 
 	return cipher.update(id.toString(), "utf8", "hex") + cipher.final("hex");
 };
 
 // Optimized decodeID
-export const decodeID = (
-	input: string,
-	secretKeyOrSalt: string | number | Buffer,
-): number => {
-	const { key, iv } = getKeyAndIv(secretKeyOrSalt);
+export const decodeID = (input: string): number => {
+	const { key, iv } = getKeyAndIv();
 	const decipher = createDecipheriv("aes-256-cbc", key, iv);
 
 	return Number(decipher.update(input, "hex", "utf8") + decipher.final("utf8"));
 };
 
 // Function to recursively flatten an array of objects and their nested children
-export const extractIdsFromSchema = (
-	schema: Schema,
-	secretKeyOrSalt: string | number | Buffer,
-): number[] => {
+export const extractIdsFromSchema = (schema: Schema): number[] => {
 	const result: number[] = [];
 
 	for (const field of schema) {
 		if (field.id)
-			result.push(
-				typeof field.id === "number"
-					? field.id
-					: decodeID(field.id, secretKeyOrSalt),
-			);
+			result.push(typeof field.id === "number" ? field.id : decodeID(field.id));
 
 		if (field.children && isArrayOfObjects(field.children))
-			result.push(...extractIdsFromSchema(field.children, secretKeyOrSalt));
+			result.push(...extractIdsFromSchema(field.children));
 	}
 
 	return result;
@@ -128,40 +114,28 @@ export const extractIdsFromSchema = (
  * Finds the last ID number in a schema, potentially decoding it if encrypted.
  *
  * @param schema - The schema to search, defined as an array of schema objects.
- * @param secretKeyOrSalt - The secret key or salt for decoding an encrypted ID, can be a string, number, or Buffer.
  * @returns The last ID number in the schema, decoded if necessary.
  */
-export const findLastIdNumber = (
-	schema: Schema,
-	secretKeyOrSalt: string | number | Buffer,
-): number => Math.max(...extractIdsFromSchema(schema, secretKeyOrSalt));
+export const findLastIdNumber = (schema: Schema): number =>
+	Math.max(...extractIdsFromSchema(schema));
 
 /**
  * Adds or updates IDs in a schema, encoding them using a provided secret key or salt.
  *
  * @param schema - The schema to update, defined as an array of schema objects.
  * @param startWithID - An object containing the starting ID for generating new IDs.
- * @param secretKeyOrSalt - The secret key or salt for encoding IDs, can be a string, number, or Buffer.
- * @param encodeIDs - If true, IDs will be encoded, else they will remain as numbers.
  * @returns The updated schema with encoded IDs.
  */
 export const addIdToSchema = (
 	schema: Schema,
 	startWithID: { value: number },
-	secretKeyOrSalt: string | number | Buffer,
-	encodeIDs?: boolean,
 ) => {
 	function _addIdToField(field: Field) {
 		if (!field.id) {
 			startWithID.value++;
-			field.id = encodeIDs
-				? encodeID(startWithID.value, secretKeyOrSalt)
-				: startWithID.value;
-		} else {
-			if (isValidID(field.id)) {
-				if (!encodeIDs) field.id = decodeID(field.id, secretKeyOrSalt);
-			} else if (encodeIDs) field.id = encodeID(field.id, secretKeyOrSalt);
-		}
+			field.id = encodeID(startWithID.value);
+		} else
+			field.id = isValidID(field.id) ? decodeID(field.id) : encodeID(field.id);
 
 		if (
 			(field.type === "array" || field.type === "object") &&
@@ -175,17 +149,14 @@ export const addIdToSchema = (
 	return _addIdToSchema(schema);
 };
 
-export const encodeSchemaID = (
-	schema: Schema,
-	secretKeyOrSalt: string | number | Buffer,
-): Schema =>
+export const encodeSchemaID = (schema: Schema): Schema =>
 	schema.map((field) => ({
 		...field,
-		id: isNumber(field.id) ? encodeID(field.id, secretKeyOrSalt) : field.id,
+		id: isNumber(field.id) ? encodeID(field.id) : field.id,
 		...(field.children
 			? isArrayOfObjects(field.children)
 				? {
-						children: encodeSchemaID(field.children as Schema, secretKeyOrSalt),
+						children: encodeSchemaID(field.children as Schema),
 					}
 				: { children: field.children }
 			: {}),
@@ -200,7 +171,7 @@ export const hashString = (str: string): string =>
  * @param operator - The comparison operator (e.g., '=', '!=', '>', '<', '>=', '<=', '[]', '![]', '*', '!*').
  * @param originalValue - The value to compare, can be a single value or an array of values.
  * @param comparedValue - The value or values to compare against.
- * @param fieldType - Optional type of the field to guide comparison (e.g., 'password', 'boolean').
+ * @param field - Field object config.
  * @param fieldChildrenType - Optional type for child elements in array inputs.
  * @returns boolean - Result of the comparison operation.
  *
@@ -316,7 +287,7 @@ const compareNonNullValues = (
  *
  * @param originalValue - The original value.
  * @param comparedValue - The value to compare against.
- * @param fieldType - Type of the field.
+ * @param field - Field object config.
  * @returns boolean - Result of the equality check.
  */
 export const isEqual = (
