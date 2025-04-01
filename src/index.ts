@@ -742,47 +742,50 @@ export default class Inibase {
 
 	private formatField(
 		value: Data | number | string,
-		fieldType?: FieldType | FieldType[],
-		fieldChildrenType?: FieldType | FieldType[] | Schema,
+		field?: Field,
 		_formatOnlyAvailiableKeys?: boolean,
 	): Data | number | string | null;
 	private formatField(
 		value: (number | string | Data)[],
-		fieldType?: FieldType | FieldType[],
-		fieldChildrenType?: FieldType | FieldType[] | Schema,
+		field?: Field,
 		_formatOnlyAvailiableKeys?: boolean,
 	): (number | string | null | Data)[];
 	private formatField(
 		value: Data | number | string | (number | string | Data)[],
-		fieldType?: FieldType | FieldType[],
-		fieldChildrenType?: FieldType | FieldType[] | Schema,
+		field?: Field,
 		_formatOnlyAvailiableKeys?: boolean,
 	): Data | Data[] | number | string | null {
 		if (value === null || value === undefined) return value;
-		if (Array.isArray(fieldType))
-			fieldType = Utils.detectFieldType(value, fieldType) ?? fieldType[0];
-		if (Array.isArray(value) && !["array", "json"].includes(fieldType))
+		if (Array.isArray(field.type))
+			field.type = Utils.detectFieldType(value, field.type) ?? field.type[0];
+		if (Array.isArray(value) && !["array", "json"].includes(field.type))
 			value = value[0];
-		switch (fieldType) {
+		switch (field.type) {
 			case "array":
-				if (!fieldChildrenType) return null;
+				if (!field.children) return null;
+
 				if (!Array.isArray(value)) value = [value];
-				if (Utils.isArrayOfObjects(fieldChildrenType)) {
+
+				if (Utils.isArrayOfObjects(field.children))
 					return this.formatData(
 						value as Data[],
-						fieldChildrenType,
+						field.children,
 						_formatOnlyAvailiableKeys,
 					);
-				}
+
 				if (!value.length) return null;
+
 				return (value as (string | number | Data)[]).map((_value) =>
-					this.formatField(_value, fieldChildrenType),
+					this.formatField(_value, {
+						...field,
+						type: field.children as FieldType | FieldType[],
+					}),
 				);
 			case "object":
-				if (Utils.isArrayOfObjects(fieldChildrenType))
+				if (Utils.isArrayOfObjects(field.children))
 					return this.formatData(
 						value as Data,
-						fieldChildrenType,
+						field.children,
 						_formatOnlyAvailiableKeys,
 					);
 				break;
@@ -926,8 +929,7 @@ export default class Inibase {
 				}
 				RETURN[field.key] = this.formatField(
 					clonedData[field.key],
-					field.type,
-					field.children,
+					field,
 					formatOnlyAvailiableKeys,
 				);
 			}
