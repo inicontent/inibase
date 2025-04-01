@@ -569,10 +569,7 @@ export default class Inibase {
 		return globalConfig[this.databasePath].tables.get(tableName);
 	}
 
-	public async getTableSchema(
-		tableName: string,
-		encodeIDs = true,
-	): Promise<Schema | undefined> {
+	public async getTableSchema(tableName: string, encodeIDs = true) {
 		const tablePath = join(this.databasePath, tableName);
 		if (!(await File.isExists(join(tablePath, "schema.json"))))
 			return undefined;
@@ -581,7 +578,7 @@ export default class Inibase {
 
 		if (!schemaFile) return undefined;
 
-		let schema = JSON.parse(schemaFile);
+		let schema: Schema = JSON.parse(schemaFile);
 
 		schema = [
 			{
