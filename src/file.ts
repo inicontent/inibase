@@ -192,7 +192,6 @@ const unSecureString = (input: string): string | number | null => {
  *
  * @param value - The value to be decoded, can be string, number, or array.
  * @param field - Field object config.
- * @param fieldChildrenType - Optional type for children elements, used for arrays.
  * @returns Decoded value, transformed according to the specified field type(s).
  */
 const decodeHelper = (
@@ -223,7 +222,7 @@ const decodeHelper = (
 			return isNumber(value) &&
 				(!field.table ||
 					!field.databasePath ||
-					!globalConfig[field.databasePath].tables.get(field.table).config
+					!globalConfig[field.databasePath].tables?.get(field.table)?.config
 						.decodeID)
 				? encodeID(value)
 				: value;
@@ -362,15 +361,15 @@ export async function get(
 
 	try {
 		fileHandle = await open(filePath, "r");
-		const rl = createReadLineInternface(filePath, fileHandle),
-			lines: Record<
-				number,
-				| string
-				| number
-				| boolean
-				| null
-				| (string | number | boolean | (string | number | boolean)[] | null)[]
-			> = {};
+		const rl = createReadLineInternface(filePath, fileHandle);
+		const lines: Record<
+			number,
+			| string
+			| number
+			| boolean
+			| null
+			| (string | number | boolean | (string | number | boolean)[] | null)[]
+		> = {};
 		let linesCount = 0;
 
 		if (!lineNumbers) {
@@ -381,9 +380,9 @@ export async function get(
 		} else if (lineNumbers == -1) {
 			const escapedFilePath = escapeShellPath(filePath);
 			const command = filePath.endsWith(".gz")
-					? `zcat ${escapedFilePath} | sed -n '$p'`
-					: `sed -n '$p' ${escapedFilePath}`,
-				foundedLine = (await exec(command)).stdout.trimEnd();
+				? `zcat ${escapedFilePath} | sed -n '$p'`
+				: `sed -n '$p' ${escapedFilePath}`;
+			const foundedLine = (await exec(command)).stdout.trimEnd();
 			if (foundedLine) lines[linesCount] = decode(foundedLine, field);
 		} else {
 			lineNumbers = Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers];
@@ -402,9 +401,9 @@ export async function get(
 
 			const escapedFilePath = escapeShellPath(filePath);
 			const command = filePath.endsWith(".gz")
-					? `zcat ${escapedFilePath} | sed -n '${_groupIntoRanges(lineNumbers)}'`
-					: `sed -n '${_groupIntoRanges(lineNumbers)}' ${escapedFilePath}`,
-				foundedLines = (await exec(command)).stdout.trimEnd().split("\n");
+				? `zcat ${escapedFilePath} | sed -n '${_groupIntoRanges(lineNumbers)}'`
+				: `sed -n '${_groupIntoRanges(lineNumbers)}' ${escapedFilePath}`;
+			const foundedLines = (await exec(command)).stdout.trimEnd().split("\n");
 
 			let index = 0;
 			for (const line of foundedLines) {
@@ -852,8 +851,8 @@ export const sum = async (
 	filePath: string,
 	lineNumbers?: number | number[],
 ): Promise<number> => {
-	let sum = 0,
-		fileHandle = null;
+	let sum = 0;
+	let fileHandle = null;
 	try {
 		fileHandle = await open(filePath, "r");
 		const rl = createReadLineInternface(filePath, fileHandle);
@@ -894,9 +893,9 @@ export const max = async (
 	filePath: string,
 	lineNumbers?: number | number[],
 ): Promise<number> => {
-	let max = 0,
-		fileHandle = null,
-		rl = null;
+	let max = 0;
+	let fileHandle = null;
+	let rl = null;
 	try {
 		fileHandle = await open(filePath, "r");
 		rl = createReadLineInternface(filePath, fileHandle);
@@ -944,8 +943,8 @@ export const min = async (
 	filePath: string,
 	lineNumbers?: number | number[],
 ): Promise<number> => {
-	let min = 0,
-		fileHandle = null;
+	let min = 0;
+	let fileHandle = null;
 	try {
 		fileHandle = await open(filePath, "r");
 		const rl = createReadLineInternface(filePath, fileHandle);

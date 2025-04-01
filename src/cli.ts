@@ -8,7 +8,7 @@ import Inison from "inison";
 
 import { isExists } from "./file.js";
 import Inibase, { type Options, type Criteria, type Data } from "./index.js";
-import { isStringified, isNumber, setField, unsetField } from "./utils.js";
+import { isNumber, isStringified, setField, unsetField } from "./utils.js";
 
 const textGreen = (input: string) => `\u001b[1;32m${input}\u001b[0m`;
 const textRed = (input: string) => `\u001b[1;31m${input}\u001b[0m`;
@@ -225,12 +225,12 @@ console.log(`   ${textGreen("config")} | ${textGreen("c")}
 			}
 
 			let where: undefined | string | number | Criteria | (string | number)[] =
-					undefined,
-				page: undefined | Options["page"] = undefined,
-				perPage: undefined | Options["perPage"] = undefined,
-				columns: undefined | Options["columns"] = undefined,
-				sort: undefined | Options["sort"] = undefined,
-				data: undefined | Data = undefined;
+				undefined;
+			let page: undefined | Options["page"] = undefined;
+			let perPage: undefined | Options["perPage"] = undefined;
+			let columns: undefined | Options["columns"] = undefined;
+			let sort: undefined | Options["sort"] = undefined;
+			let data: undefined | Data = undefined;
 
 			if (splitedInput.toSpliced(0, 1).length) {
 				const parsedArgs = parseArgs({
