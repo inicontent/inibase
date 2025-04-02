@@ -65,7 +65,7 @@ export interface Options {
 		| string;
 }
 
-export interface Config {
+export interface TableConfig {
 	compression?: boolean;
 	cache?: boolean;
 	prepend?: boolean;
@@ -74,7 +74,7 @@ export interface Config {
 
 export interface TableObject {
 	schema?: Schema;
-	config: Config;
+	config: TableConfig;
 }
 
 export type ComparisonOperator =
@@ -292,7 +292,7 @@ export default class Inibase {
 		// if(globalConfig[this.databasePath].tables.get(tableName).config.encryption)
 		// 	mainExtension += ".enc"
 		if (
-			globalConfig[this.databasePath].tables.get(tableName).config.compression
+			globalConfig[this.databasePath].tables.get(tableName)?.config.compression
 		)
 			mainExtension += ".gz";
 		return mainExtension;
@@ -327,12 +327,12 @@ export default class Inibase {
 	 *
 	 * @param {string} tableName
 	 * @param {Schema} [schema]
-	 * @param {Config} [config]
+	 * @param {TableConfig} [config]
 	 */
 	public async createTable(
 		tableName: string,
 		schema?: Schema,
-		config?: Config,
+		config?: TableConfig,
 	) {
 		const tablePath = join(this.databasePath, tableName);
 
@@ -393,12 +393,12 @@ export default class Inibase {
 	 *
 	 * @param {string} tableName
 	 * @param {Schema} [schema]
-	 * @param {(Config&{name?: string})} [config]
+	 * @param {(TableConfig&{name?: string})} [config]
 	 */
 	public async updateTable(
 		tableName: string,
 		schema?: Schema,
-		config?: Config & { name?: string },
+		config?: TableConfig & { name?: string },
 	) {
 		const table = await this.getTable(tableName);
 		const tablePath = join(this.databasePath, tableName);
