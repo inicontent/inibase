@@ -155,8 +155,11 @@ export default class Inibase {
 
 	constructor(database: string, mainFolder = ".", language: ErrorLang = "en") {
 		this.databasePath = join(mainFolder, database);
-		this.clear();
+
 		this.language = language;
+
+		if (!globalConfig[this.databasePath])
+			globalConfig[this.databasePath] = { tables: new Map() };
 
 		if (!process.env.INIBASE_SECRET) {
 			if (
@@ -279,20 +282,13 @@ export default class Inibase {
 		return error;
 	}
 
-	public clear() {
-		globalConfig[this.databasePath] = { tables: new Map() };
-		this.totalItems = new Map();
-		this.pageInfo = {};
-		this.uniqueMap = new Map();
-	}
-
 	private getFileExtension(tableName: string) {
 		let mainExtension = this.fileExtension;
 		// TODO: ADD ENCRYPTION
 		// if(globalConfig[this.databasePath].tables.get(tableName).config.encryption)
 		// 	mainExtension += ".enc"
 		if (
-			globalConfig[this.databasePath].tables.get(tableName)?.config.compression
+			globalConfig[this.databasePath].tables.get(tableName).config.compression
 		)
 			mainExtension += ".gz";
 		return mainExtension;
