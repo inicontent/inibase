@@ -158,6 +158,12 @@ export default class Inibase {
 
 		this.language = language;
 
+		this.pageInfo = {};
+
+		this.totalItems = new Map();
+
+		this.uniqueMap = new Map();
+
 		if (!globalConfig[this.databasePath])
 			globalConfig[this.databasePath] = { tables: new Map() };
 
