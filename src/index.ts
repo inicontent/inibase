@@ -1515,35 +1515,14 @@ export default class Inibase {
 		criteria?: Criteria,
 		allTrue?: boolean,
 		searchIn?: Set<number>,
-	): Promise<[Record<number, TData & Data> | null, Set<number> | null]> {
+	): Promise<Record<number, TData & Data> | null> {
 		const tablePath = join(this.databasePath, tableName);
 
 		let RETURN: Record<number, TData & Data> = {};
 		if (!criteria) return [null, null];
-		if (criteria.and && Utils.isObject(criteria.and)) {
-			const [searchResult, lineNumbers] = await this.applyCriteria(
-				tableName,
-				options,
-				criteria.and as Criteria,
-				true,
-				searchIn,
-			);
-			if (searchResult) {
-				RETURN = Utils.deepMerge(
-					RETURN,
-					Object.fromEntries(
-						Object.entries(searchResult).filter(
-							([_k, v], _i) =>
-								Object.keys(v).filter((key) =>
-									Object.keys(criteria.and).includes(key),
-								).length,
-						),
-					),
-				);
-				delete criteria.and;
-				searchIn = lineNumbers;
-			} else return [null, null];
-		}
+
+		const criteriaAND = criteria.and;
+		if (criteriaAND) delete criteria.and;
 
 		const criteriaOR = criteria.or;
 		if (criteriaOR) delete criteria.or;
@@ -1655,8 +1634,12 @@ export default class Inibase {
 					searchOperator ?? "=",
 					searchComparedAtValue ?? null,
 					searchLogicalOperator,
-					allTrue ? searchIn : undefined,
-					{ ...field, databasePath: this.databasePath },
+					searchIn,
+					{
+						...field,
+						databasePath: this.databasePath,
+						table: field.table ?? tableName,
+					},
 					options.perPage,
 					((options.page as number) - 1) * (options.perPage as number) + 1,
 					true,
@@ -1674,17 +1657,40 @@ export default class Inibase {
 						? formatedSearchResult
 						: Utils.deepMerge(RETURN, formatedSearchResult);
 					this.totalItems.set(`${tableName}-${key}`, totalLines);
-					if (linesNumbers?.size) {
-						if (searchIn && !allTrue)
+					if (linesNumbers?.size && allTrue) {
+						if (searchIn)
 							for (const lineNumber of linesNumbers) searchIn.add(lineNumber);
 						else searchIn = linesNumbers;
 					}
-				} else if (allTrue) return [null, null];
+				} else if (allTrue) return null;
 			}
 		}
 
+		if (criteriaAND && Utils.isObject(criteriaAND)) {
+			const searchResult = await this.applyCriteria(
+				tableName,
+				options,
+				criteriaAND as Criteria,
+				true,
+				searchIn,
+			);
+			if (searchResult) {
+				RETURN = Utils.deepMerge(
+					RETURN,
+					Object.fromEntries(
+						Object.entries(searchResult).filter(
+							([_k, v], _i) =>
+								Object.keys(v).filter((key) =>
+									Object.keys(criteriaAND).includes(key),
+								).length,
+						),
+					),
+				);
+			} else return null;
+		}
+
 		if (criteriaOR && Utils.isObject(criteriaOR)) {
-			const [searchResult, lineNumbers] = await this.applyCriteria(
+			const searchResult = await this.applyCriteria(
 				tableName,
 				options,
 				criteriaOR as Criteria,
@@ -1709,12 +1715,10 @@ export default class Inibase {
 					),
 				);
 				if (!Object.keys(RETURN).length) RETURN = {};
-
-				searchIn = lineNumbers;
 			}
 		}
 
-		return [Object.keys(RETURN).length ? RETURN : null, searchIn];
+		return Object.keys(RETURN).length ? RETURN : null;
 	}
 
 	private _filterSchemaByColumns(schema: Schema, columns: string[]): Schema {
@@ -2162,21 +2166,24 @@ export default class Inibase {
 				}
 			}
 
-			const [LineNumberDataMap, linesNumbers] = await this.applyCriteria<TData>(
+			const LineNumberDataObj = await this.applyCriteria<TData>(
 				tableName,
 				options,
 				where as Criteria,
 			);
-			if (LineNumberDataMap && linesNumbers?.size) {
+			if (LineNumberDataObj) {
 				if (!this.totalItems.has(`${tableName}-*`))
-					this.totalItems.set(`${tableName}-*`, linesNumbers.size);
+					this.totalItems.set(
+						`${tableName}-*`,
+						Object.keys(LineNumberDataObj).length,
+					);
 
 				if (onlyLinesNumbers)
 					return onlyOne
-						? (linesNumbers.values().next().value as number)
-						: Array.from(linesNumbers);
+						? Number(Object.keys(LineNumberDataObj)[0])
+						: Object.keys(LineNumberDataObj).map(Number);
 				const alreadyExistsColumns = Object.keys(
-					Object.values(LineNumberDataMap)[0],
+					Object.values(LineNumberDataObj)[0],
 				);
 				const alreadyExistsColumnsIDs = Utils.flattenSchema(schema)
 					.filter(({ key }) => alreadyExistsColumns.includes(key))
@@ -2184,7 +2191,7 @@ export default class Inibase {
 
 				RETURN = Object.values(
 					Utils.deepMerge(
-						LineNumberDataMap,
+						LineNumberDataObj,
 						await this.processSchemaData(
 							tableName,
 							Utils.filterSchema(
@@ -2193,13 +2200,16 @@ export default class Inibase {
 									!alreadyExistsColumnsIDs.includes(field.id) ||
 									Utils.isFieldType(field, "table"),
 							),
-							Object.keys(LineNumberDataMap).map(Number),
+							Object.keys(LineNumberDataObj).map(Number),
 							options,
 						),
 					),
 				);
 				if (globalConfig[this.databasePath].tables.get(tableName).config.cache)
-					await writeFile(cachedFilePath, Array.from(linesNumbers).join(","));
+					await writeFile(
+						cachedFilePath,
+						Object.keys(LineNumberDataObj).join(","),
+					);
 			}
 		}
 
