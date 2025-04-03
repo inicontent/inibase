@@ -1715,7 +1715,7 @@ export default class Inibase {
 					),
 				);
 				if (!Object.keys(RETURN).length) RETURN = {};
-			}
+			} else RETURN = {};
 		}
 
 		return Object.keys(RETURN).length ? RETURN : null;
