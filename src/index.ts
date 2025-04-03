@@ -1653,15 +1653,14 @@ export default class Inibase {
 							return [id, nestedObj];
 						}),
 					);
+
 					RETURN = allTrue
 						? formatedSearchResult
 						: Utils.deepMerge(RETURN, formatedSearchResult);
+
 					this.totalItems.set(`${tableName}-${key}`, totalLines);
-					if (linesNumbers?.size && allTrue) {
-						if (searchIn)
-							for (const lineNumber of linesNumbers) searchIn.add(lineNumber);
-						else searchIn = linesNumbers;
-					}
+
+					if (linesNumbers?.size && allTrue) searchIn = linesNumbers;
 				} else if (allTrue) return null;
 			}
 		}
@@ -1674,6 +1673,7 @@ export default class Inibase {
 				true,
 				searchIn,
 			);
+
 			if (searchResult) {
 				RETURN = Utils.deepMerge(
 					RETURN,
