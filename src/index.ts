@@ -1650,6 +1650,7 @@ export default class Inibase {
 					((options.page as number) - 1) * (options.perPage as number) + 1,
 					true,
 				);
+				console.log(searchResult, totalLines, linesNumbers);
 
 				if (searchResult) {
 					const formatedSearchResult = Object.fromEntries(
@@ -1732,6 +1733,7 @@ export default class Inibase {
 			.map((field) => {
 				if (columns.some((column) => column.startsWith("!")))
 					return columns.includes(`!${field.key}`) ? null : field;
+
 				if (columns.includes(field.key) || columns.includes("*")) return field;
 
 				if (
