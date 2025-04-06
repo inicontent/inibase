@@ -1650,7 +1650,6 @@ export default class Inibase {
 					((options.page as number) - 1) * (options.perPage as number) + 1,
 					true,
 				);
-				console.log(searchResult, totalLines, linesNumbers);
 
 				if (searchResult) {
 					const formatedSearchResult = Object.fromEntries(
