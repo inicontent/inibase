@@ -1539,6 +1539,7 @@ export default class Inibase {
 					key,
 					globalConfig[this.databasePath].tables.get(tableName).schema,
 				);
+				if (!field) continue;
 				index++;
 				let searchOperator:
 					| ComparisonOperator
