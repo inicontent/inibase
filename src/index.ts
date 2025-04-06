@@ -1456,12 +1456,13 @@ export default class Inibase {
 						if (lineContent !== null && lineContent !== undefined)
 							searchableIDs.set(lineNumber, lineContent);
 					}
+
 					if (searchableIDs.size) {
 						const items = await this.get(
 							field.table,
-							Array.from(
-								new Set(Array.from(searchableIDs.values()).flat()),
-							).flat(),
+							Array.from(new Set(Array.from(searchableIDs.values()).flat()))
+								.flat()
+								.filter((item) => item),
 							{
 								...options,
 								perPage: Number.POSITIVE_INFINITY,
@@ -1471,24 +1472,27 @@ export default class Inibase {
 							},
 						);
 
-						for (const [lineNumber, lineContent] of searchableIDs.entries()) {
-							RETURN[lineNumber][field.key] = Array.isArray(lineContent)
-								? Utils.isArrayOfArrays(lineContent)
-									? lineContent.map((item) =>
-											items
-												? items.find(({ id }) => item === id)
-												: {
-														id: item,
-													},
-										)
-									: (lineContent as (number | string)[]).flatMap((item) =>
-											items
-												? items.find(({ id }) => item === id)
-												: { id: item },
-										)
-								: (items?.find(({ id }) => id === lineContent) ?? {
+						const formatLineContent = (
+							lineContent?: string | number | (string | number)[],
+						) =>
+							Array.isArray(lineContent)
+								? lineContent.map((singleContent) =>
+										singleContent
+											? Array.isArray(singleContent)
+												? singleContent.map(formatLineContent)
+												: items
+													? items.find(({ id }) => singleContent === id)
+													: {
+															id: singleContent,
+														}
+											: singleContent,
+									)
+								: (items?.find(({ id }) => lineContent === id) ?? {
 										id: lineContent,
 									});
+						for (const [lineNumber, lineContent] of searchableIDs.entries()) {
+							if (!lineContent) continue;
+							RETURN[lineNumber][field.key] = formatLineContent(lineContent);
 						}
 					}
 				}
