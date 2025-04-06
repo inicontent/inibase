@@ -1437,11 +1437,14 @@ export default class Inibase {
 				`${prefix ?? ""}${field.key}${this.getFileExtension(tableName)}`,
 			);
 			if (await File.isExists(fieldPath)) {
+				// add table to globalConfig
+				await this.getTable(field.table);
+
 				const itemsIDs = (await File.get(fieldPath, linesNumber, {
 					...field,
 					databasePath: this.databasePath,
 				})) as Record<number, number | number[]>;
-				const isArrayField = this.isArrayField(field.type);
+
 				if (itemsIDs) {
 					const searchableIDs = new Map<
 						number,
@@ -1457,11 +1460,7 @@ export default class Inibase {
 						const items = await this.get(
 							field.table,
 							Array.from(
-								new Set(
-									isArrayField
-										? Array.from(searchableIDs.values()).flat()
-										: searchableIDs.values(),
-								),
+								new Set(Array.from(searchableIDs.values()).flat()),
 							).flat(),
 							{
 								...options,
@@ -1471,12 +1470,13 @@ export default class Inibase {
 									.map((column) => column.replace(`${field.key}.`, "")),
 							},
 						);
-						for (const [lineNumber, lineContent] of searchableIDs.entries())
-							RETURN[lineNumber][field.key] = isArrayField
+
+						for (const [lineNumber, lineContent] of searchableIDs.entries()) {
+							RETURN[lineNumber][field.key] = Array.isArray(lineContent)
 								? Utils.isArrayOfArrays(lineContent)
 									? lineContent.map((item) =>
 											items
-												? items.filter(({ id }) => item.includes(id))
+												? items.find(({ id }) => item === id)
 												: {
 														id: item,
 													},
@@ -1489,6 +1489,7 @@ export default class Inibase {
 								: (items?.find(({ id }) => id === lineContent) ?? {
 										id: lineContent,
 									});
+						}
 					}
 				}
 			}

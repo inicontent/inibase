@@ -223,9 +223,9 @@ const decodeHelper = (
 			return isNumber(value) &&
 				(!field.table ||
 					!field.databasePath ||
-					field.key !== "id" ||
-					!globalConfig[field.databasePath].tables?.get(field.table)?.config
-						.decodeID)
+					(!globalConfig[field.databasePath].tables?.get(field.table)?.config
+						.decodeID &&
+						field.key !== "id"))
 				? encodeID(value)
 				: value;
 		default:
