@@ -138,7 +138,7 @@ process.removeAllListeners("warning");
 
 export const globalConfig: {
 	[database: string]: {
-		tables?: Map<string, TableObject>;
+		tables?: Map<string, TableObject & { timestamp?: Date }>;
 	};
 } & { salt?: string | Buffer } = {};
 
@@ -556,7 +556,11 @@ export default class Inibase {
 		if (!(await File.isExists(tablePath)))
 			throw this.createError("TABLE_NOT_EXISTS", tableName);
 
-		if (!globalConfig[this.databasePath].tables.has(tableName))
+		if (
+			!globalConfig[this.databasePath].tables.has(tableName) ||
+			globalConfig[this.databasePath].tables.get(tableName).timestamp !==
+				(await File.getFileDate(join(tablePath, "schema.json")))
+		)
 			globalConfig[this.databasePath].tables.set(tableName, {
 				schema: await this.getTableSchema(tableName, encodeIDs),
 				config: {
@@ -567,12 +571,14 @@ export default class Inibase {
 					prepend: await File.isExists(join(tablePath, ".prepend.config")),
 					decodeID: await File.isExists(join(tablePath, ".decodeID.config")),
 				},
+				timestamp: await File.getFileDate(join(tablePath, "schema.json")),
 			});
 		return globalConfig[this.databasePath].tables.get(tableName);
 	}
 
 	public async getTableSchema(tableName: string, encodeIDs = true) {
 		const tablePath = join(this.databasePath, tableName);
+
 		if (!(await File.isExists(join(tablePath, "schema.json"))))
 			return undefined;
 

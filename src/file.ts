@@ -7,6 +7,7 @@ import {
 	constants as fsConstants,
 	open,
 	readFile,
+	stat,
 	unlink,
 	writeFile,
 } from "node:fs/promises";
@@ -977,3 +978,8 @@ export const min = async (
 		await fileHandle?.close();
 	}
 };
+
+export const getFileDate = (path: string) =>
+	stat(path)
+		.then((s) => s.mtime || s.birthtime)
+		.catch(() => new Date());
