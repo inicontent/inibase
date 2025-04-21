@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { execFile as execFileSync, exec as execSync } from "node:child_process";
 import {
 	createCipheriv,
@@ -60,6 +61,9 @@ export const comparePassword = (hash: string, password: string) => {
 // Cache for derived keys if using scrypt
 const derivedKeyCache = new Map<string, Buffer>();
 
+// Ensure the environment variable is read once
+const INIBASE_SECRET = process.env.INIBASE_SECRET ?? "inibase";
+
 // Helper function to create cipher or decipher
 const getKeyAndIv = (): { key: Buffer; iv: Buffer } => {
 	if (Buffer.isBuffer(globalConfig.salt)) {
@@ -76,9 +80,6 @@ const getKeyAndIv = (): { key: Buffer; iv: Buffer } => {
 	return { key, iv: key.subarray(0, 16) };
 };
 
-// Ensure the environment variable is read once
-const INIBASE_SECRET = process.env.INIBASE_SECRET ?? "inibase";
-
 // Optimized encodeID
 export const encodeID = (id: number | string): string => {
 	const { key, iv } = getKeyAndIv();
@@ -88,7 +89,7 @@ export const encodeID = (id: number | string): string => {
 };
 
 // Optimized decodeID
-export const decodeID = (input: string): number => {
+export const decodeID = (input?: string): number => {
 	const { key, iv } = getKeyAndIv();
 	const decipher = createDecipheriv("aes-256-cbc", key, iv);
 

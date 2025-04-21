@@ -760,7 +760,7 @@ export default class Inibase {
 		field?: Field,
 		_formatOnlyAvailiableKeys?: boolean,
 	): Data | Data[] | number | string | null {
-		if (value === null || value === undefined) return value;
+		if (value === null || value === undefined || value === "") return value;
 		if (Array.isArray(field.type))
 			field.type = Utils.detectFieldType(value, field.type) ?? field.type[0];
 		if (Array.isArray(value) && !["array", "json"].includes(field.type))
