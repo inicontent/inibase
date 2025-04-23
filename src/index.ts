@@ -1482,17 +1482,19 @@ export default class Inibase {
 							lineContent?: string | number | (string | number)[],
 						) =>
 							Array.isArray(lineContent)
-								? lineContent.map((singleContent) =>
-										singleContent
-											? Array.isArray(singleContent)
-												? singleContent.map(formatLineContent)
-												: items
-													? items.find(({ id }) => singleContent === id)
-													: {
-															id: singleContent,
-														}
-											: singleContent,
-									)
+								? lineContent
+										.map((singleContent) =>
+											singleContent
+												? Array.isArray(singleContent)
+													? singleContent.map(formatLineContent)
+													: items
+														? items.find(({ id }) => singleContent === id)
+														: {
+																id: singleContent,
+															}
+												: singleContent,
+										)
+										.filter(Boolean)
 								: (items?.find(({ id }) => lineContent === id) ?? {
 										id: lineContent,
 									});
