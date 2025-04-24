@@ -411,14 +411,14 @@ export const filterSchema = (
  */
 export const validateFieldType = (value: any, field: Field): boolean => {
 	if (value === null) return true;
-
-	if (Array.isArray(field.type)) {
-		const detectedFieldType = detectFieldType(value, field.type);
+	let _fieldType = field.type as FieldType | FieldType[];
+	if (Array.isArray(_fieldType)) {
+		const detectedFieldType = detectFieldType(value, _fieldType);
 		if (!detectedFieldType) return false;
-		field.type = detectedFieldType;
+		_fieldType = detectedFieldType;
 	}
 
-	if (field.type === "array" && field.children)
+	if (_fieldType === "array" && field.children)
 		return (
 			Array.isArray(value) &&
 			(isArrayOfObjects(field.children) ||
@@ -436,7 +436,7 @@ export const validateFieldType = (value: any, field: Field): boolean => {
 				}))
 		);
 
-	switch (field.type) {
+	switch (_fieldType) {
 		case "string":
 			return isString(value);
 		case "password":
