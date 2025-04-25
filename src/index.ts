@@ -1487,20 +1487,20 @@ export default class Inibase {
 											singleContent
 												? Array.isArray(singleContent)
 													? singleContent.map(formatLineContent)
-													: items
-														? items.find(({ id }) => singleContent === id)
-														: {
-																id: singleContent,
-															}
+													: items?.find(({ id }) => singleContent === id)
 												: singleContent,
 										)
 										.filter(Boolean)
-								: (items?.find(({ id }) => lineContent === id) ?? {
-										id: lineContent,
-									});
+								: items?.find(({ id }) => lineContent === id);
 						for (const [lineNumber, lineContent] of searchableIDs.entries()) {
 							if (!lineContent) continue;
-							RETURN[lineNumber][field.key] = formatLineContent(lineContent);
+							const formatedLineContent = formatLineContent(lineContent);
+							if (
+								formatedLineContent &&
+								(!Array.isArray(formatedLineContent) ||
+									formatedLineContent.length > 0)
+							)
+								RETURN[lineNumber][field.key] = formatedLineContent;
 						}
 					}
 				}
