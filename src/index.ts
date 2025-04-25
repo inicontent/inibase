@@ -1655,7 +1655,8 @@ export default class Inibase {
 						table: field.table ?? tableName,
 					},
 					options.perPage,
-					((options.page as number) - 1) * (options.perPage as number) + 1,
+					((options.page as number) - 1) * (options.perPage as number) +
+						(options.page > 1 ? 1 : 0),
 					true,
 				);
 
@@ -1854,6 +1855,7 @@ export default class Inibase {
 		}
 
 		// Default values for page and perPage
+		options.columns = options.columns || [];
 		options.page = options.page || 1;
 		options.perPage = options.perPage || 15;
 		let RETURN!: (Data & TData) | (Data & TData)[] | null;

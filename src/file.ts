@@ -812,11 +812,12 @@ export const search = async (
 			if (doesMeetCondition) {
 				// Increment the found items counter.
 				linesNumbers.add(linesCount);
+
 				// Check if the line should be skipped based on the offset.
 				if (offset && linesNumbers.size < offset) continue;
 
 				// Check if the limit has been reached.
-				if (limit && linesNumbers.size >= limit + (offset ?? 0)) {
+				if (limit && linesNumbers.size > limit + (offset ? offset - 1 : 0)) {
 					if (readWholeFile) continue;
 					break;
 				}
