@@ -816,7 +816,7 @@ export const search = async (
 				if (offset && linesNumbers.size < offset) continue;
 
 				// Check if the limit has been reached.
-				if (limit && linesNumbers.size > limit + (offset ?? 0)) {
+				if (limit && linesNumbers.size >= limit + (offset ?? 0)) {
 					if (readWholeFile) continue;
 					break;
 				}
