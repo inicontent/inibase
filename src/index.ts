@@ -2182,12 +2182,12 @@ export default class Inibase {
 					);
 				}
 			}
-
 			const LineNumberDataObj = await this.applyCriteria<TData>(
 				tableName,
 				options,
 				where as Criteria,
 			);
+
 			if (LineNumberDataObj) {
 				if (!this.totalItems.has(`${tableName}-*`))
 					this.totalItems.set(
@@ -2227,6 +2227,7 @@ export default class Inibase {
 						cachedFilePath,
 						Object.keys(LineNumberDataObj).join(","),
 					);
+				this.totalItems.delete(`${tableName}-*`);
 			}
 		}
 
