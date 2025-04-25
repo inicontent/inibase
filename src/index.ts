@@ -761,11 +761,15 @@ export default class Inibase {
 		_formatOnlyAvailiableKeys?: boolean,
 	): Data | Data[] | number | string | null {
 		if (value === null || value === undefined || value === "") return value;
-		if (Array.isArray(field.type))
-			field.type = Utils.detectFieldType(value, field.type) ?? field.type[0];
-		if (Array.isArray(value) && !["array", "json"].includes(field.type))
+
+		let _fieldType = field.type;
+		if (Array.isArray(_fieldType))
+			_fieldType = Utils.detectFieldType(value, _fieldType) ?? _fieldType[0];
+
+		if (Array.isArray(value) && !["array", "json"].includes(_fieldType))
 			value = value[0];
-		switch (field.type) {
+
+		switch (_fieldType) {
 			case "array":
 				if (!field.children) return null;
 
@@ -1260,8 +1264,9 @@ export default class Inibase {
 					prefix,
 				);
 			} else {
+				let _fieldChildren = field.children as Schema;
 				// Handling array of objects and filtering nested arrays
-				const nestedArrayFields = field.children.filter(
+				const nestedArrayFields = _fieldChildren.filter(
 					(children: Field) =>
 						children.type === "array" &&
 						Utils.isArrayOfObjects(children.children),
@@ -1281,7 +1286,7 @@ export default class Inibase {
 							this._processSchemaDataHelper(RETURN, item, index, field);
 
 					// Remove nested arrays after processing
-					field.children = field.children.filter(
+					_fieldChildren = _fieldChildren.filter(
 						(children: Field) =>
 							!nestedArrayFields.map(({ key }) => key).includes(children.key),
 					) as Schema;
@@ -1290,7 +1295,7 @@ export default class Inibase {
 				// Process remaining items for the field's children
 				const items = await this.processSchemaData(
 					tableName,
-					field.children as Schema,
+					_fieldChildren,
 					linesNumber,
 					options,
 					`${(prefix ?? "") + field.key}.`,
@@ -1354,7 +1359,6 @@ export default class Inibase {
 			}
 		} else if (this.isSimpleField(field.children)) {
 			// If `children` is FieldType, handle it as an array of simple types (no recursion needed here)
-
 			await this.processSimpleField(
 				tableName,
 				field,

@@ -411,7 +411,7 @@ export const filterSchema = (
  */
 export const validateFieldType = (value: any, field: Field): boolean => {
 	if (value === null) return true;
-	let _fieldType = field.type as FieldType | FieldType[];
+	let _fieldType = field.type;
 	if (Array.isArray(_fieldType)) {
 		const detectedFieldType = detectFieldType(value, _fieldType);
 		if (!detectedFieldType) return false;
