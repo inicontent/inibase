@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
-import { test } from "node:test";
 import { existsSync, rmSync } from "node:fs";
+import { test } from "node:test";
 
 import Inibase, { type Schema } from "../src/index.js";
 

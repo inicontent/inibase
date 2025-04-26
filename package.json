@@ -49,11 +49,12 @@
 	"license": "MIT",
 	"scripts": {
 		"prepublishOnly": "lefthook run pre-push -f",
-		"prepublish": "npx -q tsc",
-		"build": "npx -q tsc",
+		"prepublish": "tsc",
+		"prebuild": "biome check --write src",
+		"build": "tsc",
 		"benchmark": "./benchmark/run.js",
-		"test": "npx -q tsx ./tests/inibase.test.ts",
-		"test:utils": "npx -q tsx ./tests/utils.test.ts"
+		"test": "tsx ./tests/inibase.test.ts",
+		"test:utils": "tsx ./tests/utils.test.ts"
 	},
 	"bin": {
 		"inibase": "./dist/cli.js"
@@ -77,14 +78,15 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "1.9.4",
-		"@types/bun": "^1.1.10",
-		"@types/node": "^22.7.4",
-		"lefthook": "^1.10.1",
-		"tinybench": "^3.0.7",
-		"typescript": "^5.7.2"
+		"@types/bun": "^1.2.10",
+		"@types/node": "^22.15.2",
+		"lefthook": "^1.11.11",
+		"tinybench": "^4.0.1",
+		"tsx": "^4.19.3",
+		"typescript": "^5.8.3"
 	},
 	"dependencies": {
-		"dotenv": "^16.4.5",
+		"dotenv": "^16.5.0",
 		"inison": "^2.0.1",
 		"re2": "^1.21.4"
 	}

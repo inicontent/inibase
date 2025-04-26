@@ -1,16 +1,16 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import {
-	isHTML,
-	isEmail,
-	isNumber,
-	isString,
-	isIP,
 	isArrayOfArrays,
 	isArrayOfNulls,
 	isArrayOfObjects,
 	isDate,
+	isEmail,
+	isHTML,
+	isIP,
+	isNumber,
 	isObject,
+	isString,
 	isURL,
 } from "../src/utils";
 

@@ -1,7 +1,7 @@
+import { Console } from "node:console";
+import { rm } from "node:fs/promises";
 import { isExists } from "../src/file";
 import Inibase from "../src/index";
-import { rm } from "node:fs/promises";
-import { Console } from "node:console";
 
 const garbageCollection = async () => {
 	if (typeof Bun === "undefined") {
