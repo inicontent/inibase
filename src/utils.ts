@@ -508,8 +508,11 @@ export const FormatObjectCriteriaValue = (
 		case "[":
 			return value[1] === "]"
 				? [
-						value.slice(0, 2) as ComparisonOperator,
-						(value.slice(2) as string | number).toString().split(","),
+						"[]",
+						(value.slice(2) as string | number)
+							.toString()
+							.split(",")
+							.map((v) => (isNumber(v) ? Number(v) : v)),
 					]
 				: ["[]", value.slice(1) as string | number];
 		case "!":
@@ -520,23 +523,20 @@ export const FormatObjectCriteriaValue = (
 					]
 				: value[1] === "["
 					? [
-							value.slice(0, 3) as ComparisonOperator,
-							value.slice(3) as string | number,
+							"![]",
+							(value.slice(3) as string | number)
+								.toString()
+								.split(",")
+								.map((v) => (isNumber(v) ? Number(v) : v)),
 						]
 					: [
 							`${value.slice(0, 1)}=` as ComparisonOperator,
 							value.slice(1) as string | number,
 						];
 		case "=":
-			return [
-				value.slice(0, 1) as ComparisonOperator,
-				value.slice(1) as string | number,
-			];
+			return ["=", value.slice(1) as string | number];
 		case "*":
-			return [
-				value.slice(0, 1) as ComparisonOperator,
-				value.slice(1) as string | number,
-			];
+			return ["*", value.slice(1) as string | number];
 		default:
 			return ["=", value];
 	}

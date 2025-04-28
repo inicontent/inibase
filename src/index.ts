@@ -1512,18 +1512,6 @@ export default class Inibase {
 		}
 	}
 
-	private _setNestedKey(obj: any, path: string, value: any) {
-		const keys = path.split(".");
-		let current = obj;
-		keys.forEach((key, index) => {
-			if (index === keys.length - 1) {
-				current[key] = value; // Set the value at the last key
-			} else {
-				current[key] = current[key] || {}; // Ensure the object structure exists
-				current = current[key];
-			}
-		});
-	}
 	private async applyCriteria<
 		TData extends Record<string, any> & Partial<Data>,
 	>(
@@ -1535,119 +1523,101 @@ export default class Inibase {
 	): Promise<Record<number, TData & Data> | null> {
 		const tablePath = join(this.databasePath, tableName);
 
-		let RETURN: Record<number, TData & Data> = {};
-		if (!criteria) return [null, null];
+		/** result container – we mutate rows in-place instead of deep-merging */
+		const RETURN: Record<number, TData & Data> = {};
 
-		const criteriaAND = criteria.and;
+		/* ---------- fast exit ---------- */
+		if (!criteria || Object.keys(criteria).length === 0) return null;
+
+		/* ---------- split top-level logical groups ---------- */
+		const criteriaAND = criteria.and as Criteria | undefined;
+		const criteriaOR = criteria.or as Criteria | undefined;
 		if (criteriaAND) delete criteria.and;
-
-		const criteriaOR = criteria.or;
 		if (criteriaOR) delete criteria.or;
 
-		if (Object.keys(criteria).length > 0) {
+		/** cache table schema once – Utils.getField() is cheap but we call it a lot */
+		const schema = globalConfig[this.databasePath].tables.get(tableName).schema;
+
+		/* ---------- MAIN LOOP  (top-level criteria only) ---------- */
+		if (Object.keys(criteria).length) {
 			if (allTrue === undefined) allTrue = true;
 
-			criteria = Utils.toDotNotation(criteria, ["or", "and"]);
+			for (const [key, rawValue] of Object.entries(criteria)) {
+				/* bail early if no candidates left for an “AND” chain */
+				if (allTrue && searchIn && searchIn.size === 0) return null;
 
-			let index = -1;
-			for await (const [key, value] of Object.entries(criteria)) {
-				const field = Utils.getField(
-					key,
-					globalConfig[this.databasePath].tables.get(tableName).schema,
-				);
+				const field = Utils.getField(key, schema);
 				if (!field) continue;
-				index++;
+
+				let value: any = rawValue;
+
+				/* ----- resolve relational sub-queries ----- */
+				if (field.table && Utils.isObject(value)) {
+					const rel = await this.get(field.table, value as Criteria, {
+						columns: "id",
+					});
+					value = rel?.length ? `[]${rel.map(({ id }) => id)}` : undefined; //  ⟵  no match → abort whole AND-chain
+					if (value === undefined && allTrue) return null;
+				}
+
+				/* ----- determine operator / compare value ----- */
 				let searchOperator:
 					| ComparisonOperator
 					| ComparisonOperator[]
-					| undefined = undefined;
+					| undefined;
 				let searchComparedAtValue:
 					| string
 					| number
 					| boolean
 					| null
-					| (string | number | boolean | null)[]
-					| undefined = undefined;
-				let searchLogicalOperator: "and" | "or" | undefined = undefined;
+					| (string | number | boolean | null)[];
+
+				let searchLogicalOperator: "and" | "or" | undefined;
+
 				if (Utils.isObject(value)) {
-					if (
-						(value as Criteria)?.or &&
-						Array.isArray((value as Criteria)?.or)
-					) {
-						const searchCriteria = (
-							(value as Criteria)?.or as (string | number | boolean)[]
-						)
-							.map((single_or) =>
-								typeof single_or === "string"
-									? Utils.FormatObjectCriteriaValue(single_or)
-									: ["=", single_or],
+					/* nested object with .and / .or inside */
+					const nestedAnd = (value as Criteria).and;
+					const nestedOr = (value as Criteria).or;
+					if (nestedAnd || nestedOr) {
+						const logicalChild = nestedAnd ?? nestedOr!;
+						const logic: "and" | "or" = nestedAnd ? "and" : "or";
+
+						const crit = Object.entries(logicalChild)
+							.map((item) =>
+								typeof item[1] === "string"
+									? Utils.FormatObjectCriteriaValue(item[1] as string)
+									: ["=", item[1]],
 							)
-							.filter((a) => a) as [ComparisonOperator, string | number][];
-						if (searchCriteria.length > 0) {
-							searchOperator = searchCriteria.map((single_or) => single_or[0]);
-							searchComparedAtValue = searchCriteria.map(
-								(single_or) => single_or[1],
-							);
-							searchLogicalOperator = "or";
+							.filter(Boolean) as [ComparisonOperator, any][];
+
+						if (crit.length) {
+							searchOperator = crit.map((c) => c[0]);
+							searchComparedAtValue = crit.map((c) => c[1]);
+							searchLogicalOperator = logic;
 						}
-						delete (value as Criteria).or;
-					}
-					if (
-						(value as Criteria)?.and &&
-						Array.isArray((value as Criteria)?.and)
-					) {
-						const searchCriteria = (
-							(value as Criteria)?.and as (string | number | boolean)[]
-						)
-							.map((single_and) =>
-								typeof single_and === "string"
-									? Utils.FormatObjectCriteriaValue(single_and)
-									: ["=", single_and],
-							)
-							.filter((a) => a) as [ComparisonOperator, string | number][];
-						if (searchCriteria.length > 0) {
-							searchOperator = searchCriteria.map(
-								(single_and) => single_and[0],
-							);
-							searchComparedAtValue = searchCriteria.map(
-								(single_and) => single_and[1],
-							);
-							searchLogicalOperator = "and";
-						}
-						delete (value as Criteria).and;
 					}
 				} else if (Array.isArray(value)) {
-					const searchCriteria = value
-						.map(
-							(
-								single,
-							): [
-								ComparisonOperator,
-								string | number | boolean | null | (string | number | null)[],
-							] =>
-								typeof single === "string"
-									? Utils.FormatObjectCriteriaValue(single)
-									: ["=", single],
+					const crit = value
+						.map((v) =>
+							typeof v === "string"
+								? Utils.FormatObjectCriteriaValue(v)
+								: ["=", v],
 						)
-						.filter((a) => a) as [ComparisonOperator, string | number][];
-					if (searchCriteria.length > 0) {
-						searchOperator = searchCriteria.map((single) => single[0]);
-						searchComparedAtValue = searchCriteria.map((single) => single[1]);
-						searchLogicalOperator = "and";
-					}
+						.filter(Boolean) as [ComparisonOperator, any][];
+					searchOperator = crit.map((c) => c[0]);
+					searchComparedAtValue = crit.map((c) => c[1]);
+					searchLogicalOperator = "or";
 				} else if (typeof value === "string") {
-					const ComparisonOperatorValue =
-						Utils.FormatObjectCriteriaValue(value);
-					if (ComparisonOperatorValue) {
-						searchOperator = ComparisonOperatorValue[0];
-						searchComparedAtValue = ComparisonOperatorValue[1];
-					}
+					const [op, val] = Utils.FormatObjectCriteriaValue(value);
+					searchOperator = op;
+					searchComparedAtValue = val;
 				} else {
 					searchOperator = "=";
 					searchComparedAtValue = value as number | boolean;
 				}
 
-				const [searchResult, totalLines, linesNumbers] = await File.search(
+				/* ---------- disk search ---------- */
+				const [hitRows, totalLines, lineSet] = await File.search(
 					join(tablePath, `${key}${this.getFileExtension(tableName)}`),
 					searchOperator ?? "=",
 					searchComparedAtValue ?? null,
@@ -1660,83 +1630,57 @@ export default class Inibase {
 					},
 					options.perPage,
 					((options.page as number) - 1) * (options.perPage as number) +
-						(options.page > 1 ? 1 : 0),
+						(options.page! > 1 ? 1 : 0),
 					true,
 				);
 
-				if (searchResult) {
-					const formatedSearchResult = Object.fromEntries(
-						Object.entries(searchResult).map(([id, value]) => {
-							const nestedObj = {};
-							this._setNestedKey(nestedObj, key, value);
-							return [id, nestedObj];
-						}),
-					);
+				if (!hitRows) {
+					if (allTrue) return null; // AND-chain broken
+					continue; // OR-chain: just skip
+				}
 
-					RETURN = allTrue
-						? formatedSearchResult
-						: Utils.deepMerge(RETURN, formatedSearchResult);
+				/* ---------- map rows into RETURN without deep-merge ---------- */
+				for (const [lnStr, val] of Object.entries(hitRows)) {
+					const ln = +lnStr;
+					const row = (RETURN[ln] ??= {} as any);
+					row[key] = val;
+				}
 
-					this.totalItems.set(`${tableName}-${key}`, totalLines);
+				this.totalItems.set(`${tableName}-${key}`, totalLines);
 
-					if (linesNumbers?.size && allTrue) searchIn = linesNumbers;
-				} else if (allTrue) return null;
+				/* shrink search domain for next AND condition */
+				if (lineSet?.size && allTrue) searchIn = lineSet;
 			}
 		}
 
+		/* ---------- process nested .and / .or recursively (unchanged) ---------- */
 		if (criteriaAND && Utils.isObject(criteriaAND)) {
-			const searchResult = await this.applyCriteria(
+			const res = await this.applyCriteria<TData>(
 				tableName,
 				options,
-				criteriaAND as Criteria,
+				criteriaAND,
 				true,
 				searchIn,
 			);
-
-			if (searchResult) {
-				RETURN = Utils.deepMerge(
-					RETURN,
-					Object.fromEntries(
-						Object.entries(searchResult).filter(
-							([_k, v], _i) =>
-								Object.keys(v).filter((key) =>
-									Object.keys(criteriaAND).includes(key),
-								).length,
-						),
-					),
-				);
-			} else return null;
+			if (!res) return null;
+			for (const [lnStr, data] of Object.entries(res))
+				(RETURN[+lnStr] ??= {} as any), Object.assign(RETURN[+lnStr], data);
 		}
 
 		if (criteriaOR && Utils.isObject(criteriaOR)) {
-			const searchResult = await this.applyCriteria(
+			const res = await this.applyCriteria<TData>(
 				tableName,
 				options,
-				criteriaOR as Criteria,
+				criteriaOR,
 				false,
-				searchIn,
+				undefined,
 			);
-
-			if (searchResult) {
-				RETURN = Utils.deepMerge(RETURN, searchResult);
-
-				if (!Object.keys(RETURN).length) RETURN = {};
-				RETURN = Object.fromEntries(
-					Object.entries(RETURN).filter(
-						([_index, item]) =>
-							Object.keys(item).filter(
-								(key) =>
-									Object.keys(criteriaOR).includes(key) ||
-									Object.keys(criteriaOR).some((criteriaKey) =>
-										criteriaKey.startsWith(`${key}.`),
-									),
-							).length,
-					),
-				);
-				if (!Object.keys(RETURN).length) RETURN = {};
-			} else RETURN = {};
+			if (res)
+				for (const [lnStr, data] of Object.entries(res))
+					(RETURN[+lnStr] ??= {} as any), Object.assign(RETURN[+lnStr], data);
 		}
 
+		/* ---------- final answer ---------- */
 		return Object.keys(RETURN).length ? RETURN : null;
 	}
 

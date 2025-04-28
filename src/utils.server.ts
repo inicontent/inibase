@@ -134,9 +134,8 @@ export const addIdToSchema = (
 	function _addIdToField(field: Field) {
 		if (!field.id) {
 			startWithID.value++;
-			field.id = encodeID(startWithID.value);
-		} else
-			field.id = isValidID(field.id) ? decodeID(field.id) : encodeID(field.id);
+			field.id = startWithID.value;
+		} else if (isValidID(field.id)) field.id = decodeID(field.id);
 
 		if (
 			(field.type === "array" || field.type === "object") &&

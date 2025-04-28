@@ -838,147 +838,78 @@ export const search = async (
 		await fileHandle?.close();
 	}
 };
-
 /**
- * Asynchronously calculates the sum of numerical values from specified lines in a file.
+ * Reads the file once and returns either the sum, min or max of the
+ * (optionally-selected) numeric lines.
  *
- * @param filePath - Path of the file to read.
- * @param lineNumbers - Optional specific line number(s) to include in the sum. If not provided, sums all lines.
- * @returns Promise<number>. The sum of numerical values from the specified lines.
+ * @param filePath   Absolute path of the column file (may be .gz-compressed).
+ * @param wanted     Metric to compute: "sum" (default), "min" or "max".
+ * @param lineNumbers Specific line-number(s) to restrict the scan to.
  *
- * Note: Decodes each line as a number using the 'decode' function. Non-numeric lines contribute 0 to the sum.
+ * @returns Promise<number>  The requested metric, or 0 if no numeric value found.
  */
-export const sum = async (
+async function reduceNumbers(
 	filePath: string,
+	wanted: "sum" | "min" | "max" = "sum",
 	lineNumbers?: number | number[],
-): Promise<number> => {
+): Promise<number> {
+	/* optional subset */
+	const filter = lineNumbers
+		? new Set(Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers])
+		: null;
+
+	/* running aggregators */
 	let sum = 0;
-	let fileHandle = null;
+	let min = Infinity;
+	let max = -Infinity;
+	let processed = 0; // count of numeric lines we actually used
+	let seen = 0; // count of filtered lines we have visited
+	let line = 0;
+
+	const fh = await open(filePath, "r");
+	const rl = createReadLineInternface(filePath, fh);
+
 	try {
-		fileHandle = await open(filePath, "r");
-		const rl = createReadLineInternface(filePath, fileHandle);
+		for await (const txt of rl) {
+			line++;
 
-		if (lineNumbers) {
-			let linesCount = 0;
-			const lineNumbersArray = new Set(
-				Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers],
-			);
+			/* skip unwanted lines */
+			if (filter && !filter.has(line)) continue;
 
-			for await (const line of rl) {
-				linesCount++;
-				if (!lineNumbersArray.has(linesCount)) continue;
-				sum += +(decode(line, { key: "BLABLA", type: "number" }) ?? 0);
-				lineNumbersArray.delete(linesCount);
-				if (!lineNumbersArray.size) break;
+			const num = Number(decode(txt, { key: "BLABLA", type: "number" })); // ← your existing decode()
+			if (isNaN(num)) continue;
+
+			processed++;
+
+			if (wanted === "sum") {
+				sum += num;
+			} else if (wanted === "min") {
+				if (num < min) min = num;
+			} else if (wanted === "max") {
+				if (num > max) max = num;
 			}
-		} else
-			for await (const line of rl)
-				sum += +(decode(line, { key: "BLABLA", type: "number" }) ?? 0);
 
-		return sum;
+			/* early break when we have consumed all requested lines */
+			if (filter && ++seen === filter.size) break;
+		}
 	} finally {
-		await fileHandle?.close();
+		await fh.close();
 	}
-};
 
-/**
- * Asynchronously finds the maximum numerical value from specified lines in a file.
- *
- * @param filePath - Path of the file to read.
- * @param lineNumbers - Optional specific line number(s) to consider for finding the maximum value. If not provided, considers all lines.
- * @returns Promise<number>. The maximum numerical value found in the specified lines.
- *
- * Note: Decodes each line as a number using the 'decode' function. Considers only numerical values for determining the maximum.
- */
-export const max = async (
-	filePath: string,
-	lineNumbers?: number | number[],
-): Promise<number> => {
-	let max = 0;
-	let fileHandle = null;
-	let rl = null;
-	try {
-		fileHandle = await open(filePath, "r");
-		rl = createReadLineInternface(filePath, fileHandle);
+	if (processed === 0) return 0; // nothing numeric found
 
-		if (lineNumbers) {
-			let linesCount = 0;
+	return wanted === "sum" ? sum : wanted === "min" ? min : max;
+}
 
-			const lineNumbersArray = new Set(
-				Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers],
-			);
-			for await (const line of rl) {
-				linesCount++;
-				if (!lineNumbersArray.has(linesCount)) continue;
-				const lineContentNum = +(
-					decode(line, { key: "BLABLA", type: "number" }) ?? 0
-				);
-				if (lineContentNum > max) max = lineContentNum;
-				lineNumbersArray.delete(linesCount);
-				if (!lineNumbersArray.size) break;
-			}
-		} else
-			for await (const line of rl) {
-				const lineContentNum = +(
-					decode(line, { key: "BLABLA", type: "number" }) ?? 0
-				);
-				if (lineContentNum > max) max = lineContentNum;
-			}
+/* Optional convenience wrappers (signatures unchanged) */
+export const sum = (fp: string, ln?: number | number[]) =>
+	reduceNumbers(fp, "sum", ln);
 
-		return max;
-	} finally {
-		await fileHandle?.close();
-	}
-};
+export const min = (fp: string, ln?: number | number[]) =>
+	reduceNumbers(fp, "min", ln);
 
-/**
- * Asynchronously finds the minimum numerical value from specified lines in a file.
- *
- * @param filePath - Path of the file to read.
- * @param lineNumbers - Optional specific line number(s) to consider for finding the minimum value. If not provided, considers all lines.
- * @returns Promise<number>. The minimum numerical value found in the specified lines.
- *
- * Note: Decodes each line as a number using the 'decode' function. Considers only numerical values for determining the minimum.
- */
-export const min = async (
-	filePath: string,
-	lineNumbers?: number | number[],
-): Promise<number> => {
-	let min = 0;
-	let fileHandle = null;
-	try {
-		fileHandle = await open(filePath, "r");
-		const rl = createReadLineInternface(filePath, fileHandle);
-
-		if (lineNumbers) {
-			let linesCount = 0;
-
-			const lineNumbersArray = new Set(
-				Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers],
-			);
-			for await (const line of rl) {
-				linesCount++;
-				if (!lineNumbersArray.has(linesCount)) continue;
-				const lineContentNum = +(
-					decode(line, { key: "BLABLA", type: "number" }) ?? 0
-				);
-				if (lineContentNum < min) min = lineContentNum;
-				lineNumbersArray.delete(linesCount);
-				if (!lineNumbersArray.size) break;
-			}
-		} else
-			for await (const line of rl) {
-				const lineContentNum = +(
-					decode(line, { key: "BLABLA", type: "number" }) ?? 0
-				);
-				if (lineContentNum < min) min = lineContentNum;
-			}
-
-		return min;
-	} finally {
-		await fileHandle?.close();
-	}
-};
+export const max = (fp: string, ln?: number | number[]) =>
+	reduceNumbers(fp, "max", ln);
 
 export const getFileDate = (path: string) =>
 	stat(path)
