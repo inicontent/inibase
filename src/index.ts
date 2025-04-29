@@ -1512,6 +1512,17 @@ export default class Inibase {
 		}
 	}
 
+	private _setNestedKey(obj: any, path: string, value: any): void {
+		const keys = path.split(".");
+		const lastKey = keys.pop()!;
+		const target = keys.reduce((acc, key) => {
+			if (typeof acc[key] !== "object" || acc[key] === null) {
+				acc[key] = {};
+			}
+			return acc[key];
+		}, obj);
+		target[lastKey] = value;
+	}
 	private async applyCriteria<
 		TData extends Record<string, any> & Partial<Data>,
 	>(
@@ -1523,56 +1534,46 @@ export default class Inibase {
 	): Promise<Record<number, TData & Data> | null> {
 		const tablePath = join(this.databasePath, tableName);
 
-		/** result container – we mutate rows in-place instead of deep-merging */
-		const RETURN: Record<number, TData & Data> = {};
+		let RETURN: Record<number, TData & Data> = {};
 
-		/* ---------- fast exit ---------- */
 		if (!criteria || Object.keys(criteria).length === 0) return null;
 
-		/* ---------- split top-level logical groups ---------- */
-		const criteriaAND = criteria.and as Criteria | undefined;
-		const criteriaOR = criteria.or as Criteria | undefined;
+		const criteriaAND = criteria.and;
 		if (criteriaAND) delete criteria.and;
+
+		const criteriaOR = criteria.or;
 		if (criteriaOR) delete criteria.or;
 
-		/** cache table schema once – Utils.getField() is cheap but we call it a lot */
 		const schema = globalConfig[this.databasePath].tables.get(tableName).schema;
 
-		/* ---------- MAIN LOOP  (top-level criteria only) ---------- */
 		if (Object.keys(criteria).length) {
 			if (allTrue === undefined) allTrue = true;
 
-			for (const [key, rawValue] of Object.entries(criteria)) {
-				/* bail early if no candidates left for an “AND” chain */
-				if (allTrue && searchIn && searchIn.size === 0) return null;
-
+			for await (let [key, value] of Object.entries(criteria)) {
 				const field = Utils.getField(key, schema);
 				if (!field) continue;
 
-				let value: any = rawValue;
-
-				/* ----- resolve relational sub-queries ----- */
 				if (field.table && Utils.isObject(value)) {
-					const rel = await this.get(field.table, value as Criteria, {
+					const items = await this.get(field.table, value as Criteria, {
 						columns: "id",
+						perPage: Number.POSITIVE_INFINITY,
 					});
-					value = rel?.length ? `[]${rel.map(({ id }) => id)}` : undefined; //  ⟵  no match → abort whole AND-chain
-					if (value === undefined && allTrue) return null;
+					if (items?.length) value = `[]${items.map(({ id }) => id)}`;
+					else if (allTrue) return null;
 				}
 
-				/* ----- determine operator / compare value ----- */
 				let searchOperator:
 					| ComparisonOperator
 					| ComparisonOperator[]
-					| undefined;
+					| undefined = undefined;
 				let searchComparedAtValue:
 					| string
 					| number
 					| boolean
 					| null
-					| (string | number | boolean | null)[];
-
-				let searchLogicalOperator: "and" | "or" | undefined;
+					| (string | number | boolean | null)[]
+					| undefined = undefined;
+				let searchLogicalOperator: "and" | "or" | undefined = undefined;
 
 				if (Utils.isObject(value)) {
 					/* nested object with .and / .or inside */
@@ -1595,6 +1596,8 @@ export default class Inibase {
 							searchComparedAtValue = crit.map((c) => c[1]);
 							searchLogicalOperator = logic;
 						}
+
+						delete (value as Criteria)[logic];
 					}
 				} else if (Array.isArray(value)) {
 					const crit = value
@@ -1616,11 +1619,10 @@ export default class Inibase {
 					searchComparedAtValue = value as number | boolean;
 				}
 
-				/* ---------- disk search ---------- */
-				const [hitRows, totalLines, lineSet] = await File.search(
+				const [searchResult, totalLines, linesNumbers] = await File.search(
 					join(tablePath, `${key}${this.getFileExtension(tableName)}`),
 					searchOperator ?? "=",
-					searchComparedAtValue ?? null,
+					searchComparedAtValue,
 					searchLogicalOperator,
 					searchIn,
 					{
@@ -1630,57 +1632,86 @@ export default class Inibase {
 					},
 					options.perPage,
 					((options.page as number) - 1) * (options.perPage as number) +
-						(options.page! > 1 ? 1 : 0),
+						(options.page > 1 ? 1 : 0),
 					true,
 				);
 
-				if (!hitRows) {
-					if (allTrue) return null; // AND-chain broken
-					continue; // OR-chain: just skip
+				if (!searchResult) {
+					if (allTrue) return null;
+					continue;
 				}
 
-				/* ---------- map rows into RETURN without deep-merge ---------- */
-				for (const [lnStr, val] of Object.entries(hitRows)) {
-					const ln = +lnStr;
-					const row = (RETURN[ln] ??= {} as any);
-					row[key] = val;
-				}
+				const formatedSearchResult = Object.fromEntries(
+					Object.entries(searchResult).map(([id, value]) => {
+						const nestedObj = {};
+						this._setNestedKey(nestedObj, key, value);
+						return [id, nestedObj];
+					}),
+				);
+
+				RETURN = allTrue
+					? formatedSearchResult
+					: Utils.deepMerge(RETURN, formatedSearchResult);
 
 				this.totalItems.set(`${tableName}-${key}`, totalLines);
 
-				/* shrink search domain for next AND condition */
-				if (lineSet?.size && allTrue) searchIn = lineSet;
+				if (linesNumbers?.size && allTrue) searchIn = linesNumbers;
 			}
 		}
 
-		/* ---------- process nested .and / .or recursively (unchanged) ---------- */
 		if (criteriaAND && Utils.isObject(criteriaAND)) {
-			const res = await this.applyCriteria<TData>(
+			const searchResult = await this.applyCriteria(
 				tableName,
 				options,
-				criteriaAND,
+				criteriaAND as Criteria,
 				true,
 				searchIn,
 			);
-			if (!res) return null;
-			for (const [lnStr, data] of Object.entries(res))
-				(RETURN[+lnStr] ??= {} as any), Object.assign(RETURN[+lnStr], data);
+
+			if (searchResult)
+				RETURN = Utils.deepMerge(
+					RETURN,
+					Object.fromEntries(
+						Object.entries(searchResult).filter(
+							([_k, v], _i) =>
+								Object.keys(v).filter((key) =>
+									Object.keys(criteriaAND).includes(key),
+								).length,
+						),
+					),
+				);
+			else return null;
 		}
 
 		if (criteriaOR && Utils.isObject(criteriaOR)) {
-			const res = await this.applyCriteria<TData>(
+			const searchResult = await this.applyCriteria(
 				tableName,
 				options,
-				criteriaOR,
+				criteriaOR as Criteria,
 				false,
-				undefined,
+				searchIn,
 			);
-			if (res)
-				for (const [lnStr, data] of Object.entries(res))
-					(RETURN[+lnStr] ??= {} as any), Object.assign(RETURN[+lnStr], data);
+
+			if (searchResult) {
+				RETURN = Utils.deepMerge(RETURN, searchResult);
+
+				if (!Object.keys(RETURN).length) RETURN = {};
+				RETURN = Object.fromEntries(
+					Object.entries(RETURN).filter(
+						([_index, item]) =>
+							Object.keys(item).filter(
+								(key) =>
+									Object.keys(criteriaOR).includes(key) ||
+									Object.keys(criteriaOR).some((criteriaKey) =>
+										criteriaKey.startsWith(`${key}.`),
+									),
+							).length,
+					),
+				);
+				if (!Object.keys(RETURN).length) RETURN = {};
+			} else RETURN = {};
 		}
 
-		/* ---------- final answer ---------- */
 		return Object.keys(RETURN).length ? RETURN : null;
 	}
 
