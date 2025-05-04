@@ -1128,8 +1128,8 @@ export default class Inibase {
 	>(
 		tableName: string,
 		schema: Schema,
-		linesNumber: number[],
-		options: Options,
+		linesNumber?: number[],
+		options?: Options,
 		prefix?: string,
 	): Promise<Record<number, TData & Data>> {
 		const RETURN: Record<number, TData & Data> = {};
@@ -1139,9 +1139,8 @@ export default class Inibase {
 				await this.processSimpleField(
 					tableName,
 					field,
-					linesNumber,
 					RETURN,
-					options,
+					linesNumber,
 					prefix,
 				);
 			} else if (this.isArrayField(field.type)) {
@@ -1149,8 +1148,8 @@ export default class Inibase {
 				await this.processArrayField(
 					tableName,
 					field,
-					linesNumber,
 					RETURN,
+					linesNumber,
 					options,
 					prefix,
 				);
@@ -1159,8 +1158,8 @@ export default class Inibase {
 				await this.processObjectField(
 					tableName,
 					field,
-					linesNumber,
 					RETURN,
+					linesNumber,
 					options,
 					prefix,
 				);
@@ -1169,8 +1168,8 @@ export default class Inibase {
 				await this.processTableField(
 					tableName,
 					field,
-					linesNumber,
 					RETURN,
+					linesNumber,
 					options,
 					prefix,
 				);
@@ -1195,9 +1194,8 @@ export default class Inibase {
 	private async processSimpleField(
 		tableName: string,
 		field: Field,
-		linesNumber: number[],
 		RETURN: Record<number, Data>,
-		_options: Options,
+		linesNumber?: number[],
 		prefix?: string,
 	) {
 		const fieldPath = join(
@@ -1239,9 +1237,9 @@ export default class Inibase {
 	private async processArrayField(
 		tableName: string,
 		field: Field,
-		linesNumber: number[],
 		RETURN: Record<number, Data>,
-		options: Options,
+		linesNumber?: number[],
+		options?: Options,
 		prefix?: string,
 	) {
 		if (Array.isArray(field.children)) {
@@ -1249,17 +1247,16 @@ export default class Inibase {
 				await this.processSimpleField(
 					tableName,
 					field,
-					linesNumber,
 					RETURN,
-					options,
+					linesNumber,
 					prefix,
 				);
 			} else if (this.isTableField(field.children)) {
 				await this.processTableField(
 					tableName,
 					field,
-					linesNumber,
 					RETURN,
+					linesNumber,
 					options,
 					prefix,
 				);
@@ -1362,17 +1359,16 @@ export default class Inibase {
 			await this.processSimpleField(
 				tableName,
 				field,
-				linesNumber,
 				RETURN,
-				options,
+				linesNumber,
 				prefix,
 			);
 		} else if (this.isTableField(field.children)) {
 			await this.processTableField(
 				tableName,
 				field,
-				linesNumber,
 				RETURN,
+				linesNumber,
 				options,
 				prefix,
 			);
@@ -1393,9 +1389,9 @@ export default class Inibase {
 	private async processObjectField(
 		tableName: string,
 		field: Field,
-		linesNumber: number[],
 		RETURN: Record<number, Data>,
-		options: Options,
+		linesNumber?: number[],
+		options?: Options,
 		prefix?: string,
 	) {
 		if (Array.isArray(field.children)) {
@@ -1432,9 +1428,9 @@ export default class Inibase {
 	private async processTableField(
 		tableName: string,
 		field: Field,
-		linesNumber: number[],
 		RETURN: Record<number, Data>,
-		options: Options,
+		linesNumber?: number[],
+		options?: Options,
 		prefix?: string,
 	) {
 		if (
@@ -1475,7 +1471,7 @@ export default class Inibase {
 								.filter((item) => item),
 							{
 								...options,
-								perPage: Number.POSITIVE_INFINITY,
+								perPage: -1,
 								columns: (options.columns as string[] | undefined)
 									?.filter((column) => column.includes(`${field.key}.`))
 									.map((column) => column.replace(`${field.key}.`, "")),
@@ -1556,7 +1552,7 @@ export default class Inibase {
 				if (field.table && Utils.isObject(value)) {
 					const items = await this.get(field.table, value as Criteria, {
 						columns: "id",
-						perPage: Number.POSITIVE_INFINITY,
+						perPage: -1,
 					});
 					if (items?.length) value = `[]${items.map(({ id }) => id)}`;
 					else if (allTrue) return null;
@@ -1630,9 +1626,11 @@ export default class Inibase {
 						databasePath: this.databasePath,
 						table: field.table ?? tableName,
 					},
-					options.perPage,
-					((options.page as number) - 1) * (options.perPage as number) +
-						(options.page > 1 ? 1 : 0),
+					options.perPage < 0 ? undefined : options.perPage,
+					options.perPage < 0
+						? undefined
+						: ((options.page as number) - 1) * (options.perPage as number) +
+								(options.page > 1 ? 1 : 0),
 					true,
 				);
 
@@ -2032,13 +2030,15 @@ export default class Inibase {
 				await this.processSchemaData(
 					tableName,
 					schema,
-					Array.from(
-						{ length: options.perPage },
-						(_, index) =>
-							((options.page as number) - 1) * (options.perPage as number) +
-							index +
-							1,
-					),
+					options.perPage < 0
+						? undefined
+						: Array.from(
+								{ length: options.perPage },
+								(_, index) =>
+									((options.page as number) - 1) * (options.perPage as number) +
+									index +
+									1,
+							),
 					options,
 				),
 			);
