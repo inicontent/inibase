@@ -80,7 +80,6 @@ const getKeyAndIv = (): { key: Buffer; iv: Buffer } => {
 	return { key, iv: key.subarray(0, 16) };
 };
 
-// Optimized encodeID
 export const encodeID = (id: number | string): string => {
 	const { key, iv } = getKeyAndIv();
 	const cipher = createCipheriv("aes-256-cbc", key, iv);
@@ -88,13 +87,16 @@ export const encodeID = (id: number | string): string => {
 	return cipher.update(id.toString(), "utf8", "hex") + cipher.final("hex");
 };
 
-// Optimized decodeID
-export const decodeID = (input?: string): number => {
+export function decodeID(input: string, raw: true): string;
+export function decodeID(input?: string, raw?: false): number;
+export function decodeID(input?: string, raw?: boolean) {
 	const { key, iv } = getKeyAndIv();
 	const decipher = createDecipheriv("aes-256-cbc", key, iv);
 
-	return Number(decipher.update(input, "hex", "utf8") + decipher.final("utf8"));
-};
+	const rawData =
+		decipher.update(input, "hex", "utf8") + decipher.final("utf8");
+	return raw ? rawData : Number(rawData);
+}
 
 // Function to recursively flatten an array of objects and their nested children
 export const extractIdsFromSchema = (schema: Schema): number[] => {
