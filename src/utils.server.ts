@@ -92,10 +92,13 @@ export function decodeID(input?: string, raw?: false): number;
 export function decodeID(input?: string, raw?: boolean) {
 	const { key, iv } = getKeyAndIv();
 	const decipher = createDecipheriv("aes-256-cbc", key, iv);
-
-	const rawData =
-		decipher.update(input, "hex", "utf8") + decipher.final("utf8");
-	return raw ? rawData : Number(rawData);
+	try {
+		const rawData =
+			decipher.update(input, "hex", "utf8") + decipher.final("utf8");
+		return raw ? rawData : Number(rawData);
+	} catch {
+		return null;
+	}
 }
 
 // Function to recursively flatten an array of objects and their nested children
