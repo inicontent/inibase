@@ -860,8 +860,8 @@ async function reduceNumbers(
 
 	/* running aggregators */
 	let sum = 0;
-	let min = Infinity;
-	let max = -Infinity;
+	let min = Number.POSITIVE_INFINITY;
+	let max = Number.NEGATIVE_INFINITY;
 	let processed = 0; // count of numeric lines we actually used
 	let seen = 0; // count of filtered lines we have visited
 	let line = 0;
@@ -876,8 +876,8 @@ async function reduceNumbers(
 			/* skip unwanted lines */
 			if (filter && !filter.has(line)) continue;
 
-			const num = Number(decode(txt, { key: "BLABLA", type: "number" })); // ← your existing decode()
-			if (isNaN(num)) continue;
+			const num = Number(decode(txt, { key: "BLABLA", type: "number" }));
+			if (Number.isNaN(num)) continue;
 
 			processed++;
 

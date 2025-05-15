@@ -1510,7 +1510,7 @@ export default class Inibase {
 
 	private _setNestedKey(obj: any, path: string, value: any): void {
 		const keys = path.split(".");
-		const lastKey = keys.pop()!;
+		const lastKey = keys.pop();
 		const target = keys.reduce((acc, key) => {
 			if (typeof acc[key] !== "object" || acc[key] === null) {
 				acc[key] = {};
@@ -1576,7 +1576,7 @@ export default class Inibase {
 					const nestedAnd = (value as Criteria).and;
 					const nestedOr = (value as Criteria).or;
 					if (nestedAnd || nestedOr) {
-						const logicalChild = nestedAnd ?? nestedOr!;
+						const logicalChild = nestedAnd ?? nestedOr;
 						const logic: "and" | "or" = nestedAnd ? "and" : "or";
 
 						const crit = Object.entries(logicalChild)
