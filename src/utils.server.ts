@@ -87,9 +87,12 @@ export const encodeID = (id: number | string): string => {
 	return cipher.update(id.toString(), "utf8", "hex") + cipher.final("hex");
 };
 
-export function decodeID(input: string, raw: true): string;
-export function decodeID(input?: string, raw?: false): number;
-export function decodeID(input?: string, raw?: boolean) {
+export function decodeID(input: string, raw: true): string | null;
+export function decodeID(input?: string, raw?: false): number | null;
+export function decodeID(
+	input?: string,
+	raw?: boolean,
+): string | number | null {
 	const { key, iv } = getKeyAndIv();
 	const decipher = createDecipheriv("aes-256-cbc", key, iv);
 	try {
