@@ -2164,7 +2164,7 @@ export default class Inibase {
 			const LineNumberDataObj = await this.applyCriteria<TData>(
 				tableName,
 				options,
-				where as Criteria,
+				structuredClone(where) as Criteria,
 			);
 
 			if (LineNumberDataObj) {
