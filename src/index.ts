@@ -151,7 +151,7 @@ export default class Inibase {
 		string | number,
 		{ exclude: Set<number>; columnsValues: Map<number, Set<string | number>> }
 	>;
-	private totalItems: Map<string, number>;
+	public totalItems: Map<string, number>;
 
 	constructor(database: string, mainFolder = ".", language: ErrorLang = "en") {
 		this.databasePath = join(mainFolder, database);
@@ -1486,7 +1486,7 @@ export default class Inibase {
 										.map((singleContent) =>
 											singleContent
 												? Array.isArray(singleContent)
-													? singleContent.map(formatLineContent)
+													? singleContent.map(formatLineContent).filter(Boolean)
 													: items?.find(({ id }) => singleContent === id)
 												: singleContent,
 										)
@@ -1666,7 +1666,8 @@ export default class Inibase {
 				searchIn,
 			);
 
-			if (searchResult)
+			if (searchResult) {
+				searchIn = new Set(Object.keys(searchResult).map(Number));
 				RETURN = Utils.deepMerge(
 					RETURN,
 					Object.fromEntries(
@@ -1678,7 +1679,7 @@ export default class Inibase {
 						),
 					),
 				);
-			else return null;
+			} else return null;
 		}
 
 		if (criteriaOR && Utils.isObject(criteriaOR)) {
@@ -2043,8 +2044,7 @@ export default class Inibase {
 				),
 			);
 
-			if (!this.totalItems.has(`${tableName}-*`))
-				this.totalItems.set(`${tableName}-*`, pagination[1]);
+			this.totalItems.set(`${tableName}-id`, pagination[1]);
 		} else if (
 			((Array.isArray(where) && where.every(Utils.isNumber)) ||
 				Utils.isNumber(where)) &&
@@ -2055,8 +2055,7 @@ export default class Inibase {
 			let lineNumbers = where as number | number[];
 			if (!Array.isArray(lineNumbers)) lineNumbers = [lineNumbers];
 
-			if (!this.totalItems.has(`${tableName}-*`))
-				this.totalItems.set(`${tableName}-*`, lineNumbers.length);
+			this.totalItems.set(`${tableName}-id`, lineNumbers.length);
 
 			// useless
 			if (onlyLinesNumbers) return lineNumbers;
@@ -2093,12 +2092,11 @@ export default class Inibase {
 				{ key: "BLABLA", type: "number" },
 				Ids.length,
 				0,
-				!this.totalItems.has(`${tableName}-*`),
+				!this.totalItems.has(`${tableName}-id`),
 			);
 			if (!lineNumbers) return null;
 
-			if (!this.totalItems.has(`${tableName}-*`))
-				this.totalItems.set(`${tableName}-*`, countItems);
+			this.totalItems.set(`${tableName}-id`, countItems);
 
 			if (onlyLinesNumbers)
 				return Object.keys(lineNumbers).length
@@ -2168,12 +2166,10 @@ export default class Inibase {
 			);
 
 			if (LineNumberDataObj) {
-				if (!this.totalItems.has(`${tableName}-*`))
-					this.totalItems.set(
-						`${tableName}-*`,
-						Object.keys(LineNumberDataObj).length,
-					);
-
+				this.totalItems.set(
+					`${tableName}-*`,
+					Object.keys(LineNumberDataObj).length,
+				);
 				if (onlyLinesNumbers)
 					return onlyOne
 						? Number(Object.keys(LineNumberDataObj)[0])
@@ -2206,7 +2202,6 @@ export default class Inibase {
 						cachedFilePath,
 						Object.keys(LineNumberDataObj).join(","),
 					);
-				this.totalItems.delete(`${tableName}-*`);
 			}
 		}
 
@@ -2224,11 +2219,13 @@ export default class Inibase {
 						.filter(([k]) => k.startsWith(`${tableName}-`))
 						.map(([, v]) => v),
 				);
-
 		this.pageInfo[tableName] = {
 			...(({ columns, ...restOfOptions }) => restOfOptions)(options),
 			perPage: Array.isArray(RETURN) ? RETURN.length : 1,
-			totalPages: Math.ceil(greatestTotalItems / options.perPage),
+			totalPages:
+				options.perPage < 0
+					? undefined
+					: Math.ceil(greatestTotalItems / options.perPage),
 			total: greatestTotalItems,
 		};
 		return onlyOne && Array.isArray(RETURN) ? RETURN[0] : RETURN;
