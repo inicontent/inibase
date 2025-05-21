@@ -1345,7 +1345,11 @@ export default class Inibase {
 
 												if (!RETURN[index][field.key][_i])
 													RETURN[index][field.key][_i] = {};
-												RETURN[index][field.key][_i][key] = value[_i];
+												RETURN[index][field.key][_i][key] = Array.isArray(
+													value[_i],
+												)
+													? value[_i].filter(Boolean)
+													: value[_i];
 											}
 									}
 								}
@@ -1482,15 +1486,13 @@ export default class Inibase {
 							lineContent?: string | number | (string | number)[],
 						) =>
 							Array.isArray(lineContent)
-								? lineContent
-										.map((singleContent) =>
-											singleContent
-												? Array.isArray(singleContent)
-													? singleContent.map(formatLineContent).filter(Boolean)
-													: items?.find(({ id }) => singleContent === id)
-												: singleContent,
-										)
-										.filter(Boolean)
+								? lineContent.map((singleContent) =>
+										singleContent
+											? Array.isArray(singleContent)
+												? singleContent.map(formatLineContent)
+												: items?.find(({ id }) => singleContent === id)
+											: singleContent,
+									)
 								: items?.find(({ id }) => lineContent === id);
 						for (const [lineNumber, lineContent] of searchableIDs.entries()) {
 							if (!lineContent) continue;
