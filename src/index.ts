@@ -2168,10 +2168,6 @@ export default class Inibase {
 			);
 
 			if (LineNumberDataObj) {
-				this.totalItems.set(
-					`${tableName}-*`,
-					Object.keys(LineNumberDataObj).length,
-				);
 				if (onlyLinesNumbers)
 					return onlyOne
 						? Number(Object.keys(LineNumberDataObj)[0])
@@ -2226,7 +2222,7 @@ export default class Inibase {
 			perPage: Array.isArray(RETURN) ? RETURN.length : 1,
 			totalPages:
 				options.perPage < 0
-					? undefined
+					? 1
 					: Math.ceil(greatestTotalItems / options.perPage),
 			total: greatestTotalItems,
 		};
