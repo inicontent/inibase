@@ -118,19 +118,21 @@ declare global {
 	}
 }
 
-export type ErrorCodes =
-	| "GROUP_UNIQUE"
-	| "FIELD_UNIQUE"
-	| "FIELD_REQUIRED"
-	| "NO_SCHEMA"
-	| "TABLE_EMPTY"
-	| "INVALID_ID"
-	| "INVALID_TYPE"
-	| "INVALID_PARAMETERS"
-	| "NO_ENV"
-	| "TABLE_EXISTS"
-	| "TABLE_NOT_EXISTS"
-	| "INVALID_REGEX_MATCH";
+export const ERROR_CODES = [
+	"GROUP_UNIQUE",
+	"FIELD_UNIQUE",
+	"FIELD_REQUIRED",
+	"NO_SCHEMA",
+	"TABLE_EMPTY",
+	"INVALID_ID",
+	"INVALID_TYPE",
+	"INVALID_PARAMETERS",
+	"NO_ENV",
+	"TABLE_EXISTS",
+	"TABLE_NOT_EXISTS",
+	"INVALID_REGEX_MATCH",
+] as const;
+export type ErrorCode = (typeof ERROR_CODES)[number];
 export type ErrorLang = "en" | "ar" | "fr" | "es";
 
 // hide ExperimentalWarning glob()
@@ -181,95 +183,93 @@ export default class Inibase {
 		} else globalConfig.salt = Buffer.from(process.env.INIBASE_SECRET, "hex");
 	}
 
-	private static errorMessages: Record<ErrorLang, Record<ErrorCodes, string>> =
-		{
-			en: {
-				TABLE_EMPTY: "Table {variable} is empty",
-				TABLE_EXISTS: "Table {variable} already exists",
-				TABLE_NOT_EXISTS: "Table {variable} doesn't exist",
-				NO_SCHEMA: "Table {variable} does't have a schema",
-				GROUP_UNIQUE:
-					"Group {variable} should be unique, got duplicated content in {variable}",
-				FIELD_UNIQUE:
-					"Field {variable} should be unique, got {variable} instead",
-				FIELD_REQUIRED: "Field {variable} is required",
-				INVALID_ID: "The given ID(s) is/are not valid(s)",
-				INVALID_TYPE:
-					"Expect {variable} to be {variable}, got {variable} instead",
-				INVALID_PARAMETERS: "The given parameters are not valid",
-				INVALID_REGEX_MATCH:
-					"Field {variable} does not match the expected pattern",
-				NO_ENV:
-					Number(process.versions.node.split(".").reduce((a, b) => a + b)) >= 26
-						? "please run with '--env-file=.env'"
-						: "please use dotenv",
-			},
-			ar: {
-				TABLE_EMPTY: "الجدول {variable} فارغ",
-				TABLE_EXISTS: "الجدول {variable} موجود بالفعل",
-				TABLE_NOT_EXISTS: "الجدول {variable} غير موجود",
-				NO_SCHEMA: "الجدول {variable} ليس لديه مخطط",
-				GROUP_UNIQUE:
-					"المجموعة {variable} يجب أن تكون فريدة، تم العثور على محتوى مكرر في {variable}",
-				FIELD_UNIQUE:
-					"الحقل {variable} يجب أن يكون فريدًا، تم العثور على {variable} بدلاً من ذلك",
-				FIELD_REQUIRED: "الحقل {variable} مطلوب",
-				INVALID_ID: "المعرف أو المعرفات المقدمة غير صالحة",
-				INVALID_TYPE:
-					"من المتوقع أن يكون {variable} من النوع {variable}، لكن تم العثور على {variable} بدلاً من ذلك",
-				INVALID_PARAMETERS: "المعلمات المقدمة غير صالحة",
-				INVALID_REGEX_MATCH: "الحقل {variable} لا يتطابق مع النمط المتوقع",
-				NO_ENV:
-					Number(process.versions.node.split(".").reduce((a, b) => a + b)) >= 26
-						? "يرجى التشغيل باستخدام '--env-file=.env'"
-						: "يرجى استخدام dotenv",
-			},
-			fr: {
-				TABLE_EMPTY: "La table {variable} est vide",
-				TABLE_EXISTS: "La table {variable} existe déjà",
-				TABLE_NOT_EXISTS: "La table {variable} n'existe pas",
-				NO_SCHEMA: "La table {variable} n'a pas de schéma",
-				GROUP_UNIQUE:
-					"Le groupe {variable} doit être unique, contenu dupliqué trouvé dans {variable}",
-				FIELD_UNIQUE:
-					"Le champ {variable} doit être unique, trouvé {variable} à la place",
-				FIELD_REQUIRED: "Le champ {variable} est obligatoire",
-				INVALID_ID: "Le(s) ID donné(s) n'est/ne sont pas valide(s)",
-				INVALID_TYPE:
-					"Attendu que {variable} soit de type {variable}, mais trouvé {variable} à la place",
-				INVALID_PARAMETERS: "Les paramètres donnés ne sont pas valides",
-				INVALID_REGEX_MATCH:
-					"Le champ {variable} ne correspond pas au modèle attendu",
-				NO_ENV:
-					Number(process.versions.node.split(".").reduce((a, b) => a + b)) >= 26
-						? "veuillez exécuter avec '--env-file=.env'"
-						: "veuillez utiliser dotenv",
-			},
-			es: {
-				TABLE_EMPTY: "La tabla {variable} está vacía",
-				TABLE_EXISTS: "La tabla {variable} ya existe",
-				TABLE_NOT_EXISTS: "La tabla {variable} no existe",
-				NO_SCHEMA: "La tabla {variable} no tiene un esquema",
-				GROUP_UNIQUE:
-					"El grupo {variable} debe ser único, se encontró contenido duplicado en {variable}",
-				FIELD_UNIQUE:
-					"El campo {variable} debe ser único, se encontró {variable} en su lugar",
-				FIELD_REQUIRED: "El campo {variable} es obligatorio",
-				INVALID_ID: "El/los ID proporcionado(s) no es/son válido(s)",
-				INVALID_TYPE:
-					"Se espera que {variable} sea {variable}, pero se encontró {variable} en su lugar",
-				INVALID_PARAMETERS: "Los parámetros proporcionados no son válidos",
-				INVALID_REGEX_MATCH:
-					"El campo {variable} no coincide con el patrón esperado",
-				NO_ENV:
-					Number(process.versions.node.split(".").reduce((a, b) => a + b)) >= 26
-						? "por favor ejecute con '--env-file=.env'"
-						: "por favor use dotenv",
-			},
-		};
+	private static errorMessages: Record<ErrorLang, Record<ErrorCode, string>> = {
+		en: {
+			TABLE_EMPTY: "Table {variable} is empty",
+			TABLE_EXISTS: "Table {variable} already exists",
+			TABLE_NOT_EXISTS: "Table {variable} doesn't exist",
+			NO_SCHEMA: "Table {variable} does't have a schema",
+			GROUP_UNIQUE:
+				"Group {variable} should be unique, got duplicated content in {variable}",
+			FIELD_UNIQUE: "Field {variable} should be unique, got {variable} instead",
+			FIELD_REQUIRED: "Field {variable} is required",
+			INVALID_ID: "The given ID(s) is/are not valid(s)",
+			INVALID_TYPE:
+				"Expect {variable} to be {variable}, got {variable} instead",
+			INVALID_PARAMETERS: "The given parameters are not valid",
+			INVALID_REGEX_MATCH:
+				"Field {variable} does not match the expected pattern",
+			NO_ENV:
+				Number(process.versions.node.split(".").reduce((a, b) => a + b)) >= 26
+					? "please run with '--env-file=.env'"
+					: "please use dotenv",
+		},
+		ar: {
+			TABLE_EMPTY: "الجدول {variable} فارغ",
+			TABLE_EXISTS: "الجدول {variable} موجود بالفعل",
+			TABLE_NOT_EXISTS: "الجدول {variable} غير موجود",
+			NO_SCHEMA: "الجدول {variable} ليس لديه مخطط",
+			GROUP_UNIQUE:
+				"المجموعة {variable} يجب أن تكون فريدة، تم العثور على محتوى مكرر في {variable}",
+			FIELD_UNIQUE:
+				"الحقل {variable} يجب أن يكون فريدًا، تم العثور على {variable} بدلاً من ذلك",
+			FIELD_REQUIRED: "الحقل {variable} مطلوب",
+			INVALID_ID: "المعرف أو المعرفات المقدمة غير صالحة",
+			INVALID_TYPE:
+				"من المتوقع أن يكون {variable} من النوع {variable}، لكن تم العثور على {variable} بدلاً من ذلك",
+			INVALID_PARAMETERS: "المعلمات المقدمة غير صالحة",
+			INVALID_REGEX_MATCH: "الحقل {variable} لا يتطابق مع النمط المتوقع",
+			NO_ENV:
+				Number(process.versions.node.split(".").reduce((a, b) => a + b)) >= 26
+					? "يرجى التشغيل باستخدام '--env-file=.env'"
+					: "يرجى استخدام dotenv",
+		},
+		fr: {
+			TABLE_EMPTY: "La table {variable} est vide",
+			TABLE_EXISTS: "La table {variable} existe déjà",
+			TABLE_NOT_EXISTS: "La table {variable} n'existe pas",
+			NO_SCHEMA: "La table {variable} n'a pas de schéma",
+			GROUP_UNIQUE:
+				"Le groupe {variable} doit être unique, contenu dupliqué trouvé dans {variable}",
+			FIELD_UNIQUE:
+				"Le champ {variable} doit être unique, trouvé {variable} à la place",
+			FIELD_REQUIRED: "Le champ {variable} est obligatoire",
+			INVALID_ID: "Le(s) ID donné(s) n'est/ne sont pas valide(s)",
+			INVALID_TYPE:
+				"Attendu que {variable} soit de type {variable}, mais trouvé {variable} à la place",
+			INVALID_PARAMETERS: "Les paramètres donnés ne sont pas valides",
+			INVALID_REGEX_MATCH:
+				"Le champ {variable} ne correspond pas au modèle attendu",
+			NO_ENV:
+				Number(process.versions.node.split(".").reduce((a, b) => a + b)) >= 26
+					? "veuillez exécuter avec '--env-file=.env'"
+					: "veuillez utiliser dotenv",
+		},
+		es: {
+			TABLE_EMPTY: "La tabla {variable} está vacía",
+			TABLE_EXISTS: "La tabla {variable} ya existe",
+			TABLE_NOT_EXISTS: "La tabla {variable} no existe",
+			NO_SCHEMA: "La tabla {variable} no tiene un esquema",
+			GROUP_UNIQUE:
+				"El grupo {variable} debe ser único, se encontró contenido duplicado en {variable}",
+			FIELD_UNIQUE:
+				"El campo {variable} debe ser único, se encontró {variable} en su lugar",
+			FIELD_REQUIRED: "El campo {variable} es obligatorio",
+			INVALID_ID: "El/los ID proporcionado(s) no es/son válido(s)",
+			INVALID_TYPE:
+				"Se espera que {variable} sea {variable}, pero se encontró {variable} en su lugar",
+			INVALID_PARAMETERS: "Los parámetros proporcionados no son válidos",
+			INVALID_REGEX_MATCH:
+				"El campo {variable} no coincide con el patrón esperado",
+			NO_ENV:
+				Number(process.versions.node.split(".").reduce((a, b) => a + b)) >= 26
+					? "por favor ejecute con '--env-file=.env'"
+					: "por favor use dotenv",
+		},
+	};
 
 	public createError(
-		name: ErrorCodes,
+		name: ErrorCode,
 		variable?: string | number | (string | number)[],
 	): Error {
 		const errorMessage = Inibase.errorMessages[this.language]?.[name];
