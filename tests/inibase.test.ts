@@ -8,12 +8,12 @@ import Inibase, { type Schema } from "../src/index.js";
 const dbPath = "test-db";
 let inibase: Inibase;
 
-function removeDtabase() {
+function removeDatabase() {
 	if (existsSync(dbPath)) rmSync(dbPath, { recursive: true, force: true });
 }
 
 function initializeDatabase() {
-	removeDtabase();
+	removeDatabase();
 	inibase = new Inibase(dbPath);
 }
 
@@ -75,7 +75,7 @@ await test("Basic Table Operations", async (t) => {
 		const dataAfterDelete = await inibase.get(tableName);
 		assert.equal(dataAfterDelete, null, "Table should be empty after deletion");
 	});
-}).catch(removeDtabase);
+});
 
 await test("Complex Schema with Flexible Children Definitions", async (t) => {
 	initializeDatabase();
@@ -200,7 +200,7 @@ await test("Complex Schema with Flexible Children Definitions", async (t) => {
 		const dataAfterDelete = await inibase.get(tableName);
 		assert.equal(dataAfterDelete, null, "All records should be deleted");
 	});
-}).catch(removeDtabase);
+});
 
 await test("Single Unique Field", async (t) => {
 	initializeDatabase();
@@ -228,7 +228,7 @@ await test("Single Unique Field", async (t) => {
 			"Should reject duplicate unique field value",
 		);
 	});
-}).catch(removeDtabase);
+});
 
 await test("Group of Unique Fields", async (t) => {
 	initializeDatabase();
@@ -297,7 +297,7 @@ await test("Group of Unique Fields", async (t) => {
 			"Should reject duplicate unique value",
 		);
 	});
-}).catch(removeDtabase);
+});
 
 await test("Regex Validation", async (t) => {
 	initializeDatabase();
@@ -342,7 +342,7 @@ await test("Regex Validation", async (t) => {
 			"Should reject data that is too long",
 		);
 	});
-}).catch(removeDtabase);
+});
 
 await test("Compression Configuration", async (t) => {
 	initializeDatabase();
@@ -433,7 +433,7 @@ await test("Compression Configuration", async (t) => {
 			"Last record should exist after enabling compression",
 		);
 	});
-}).catch(removeDtabase);
+});
 
 await test("Prepend Configuration", async (t) => {
 	initializeDatabase();
@@ -494,7 +494,7 @@ await test("Prepend Configuration", async (t) => {
 			"Remaining data order should still follow prepend configuration",
 		);
 	});
-}).catch(removeDtabase);
+});
 
 await test("Multiple Optional Recursive Arrays with Prepend Config", async (t) => {
 	initializeDatabase();
@@ -677,5 +677,7 @@ await test("Multiple Optional Recursive Arrays with Prepend Config", async (t) =
 		);
 	});
 })
-	.catch(removeDtabase)
-	.finally(removeDtabase);
+
+await test("Cleanup Database", async (t) => {
+	removeDatabase();
+})
