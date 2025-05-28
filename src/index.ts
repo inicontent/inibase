@@ -43,7 +43,7 @@ export type FieldType =
 	| "id";
 
 export type Field = {
-	id?: string | number;
+	id?: number;
 	key: string;
 	type: FieldType | FieldType[];
 	required?: boolean;
@@ -144,16 +144,22 @@ export const globalConfig: {
 	};
 } & { salt?: string | Buffer } = {};
 
+/**
+ * @param {string} database - Database name
+ * @param {string} [mainFolder="."] - Main folder path
+ * @param {ErrorLang} [language="en"] - Language for error messages
+ */
 export default class Inibase {
 	public pageInfo: Record<string, pageInfo>;
 	public language: ErrorLang;
 	public fileExtension = ".txt";
+	public totalItems: Map<string, number>;
 	private databasePath: string;
 	private uniqueMap: Map<
 		string | number,
 		{ exclude: Set<number>; columnsValues: Map<number, Set<string | number>> }
 	>;
-	public totalItems: Map<string, number>;
+	private schemaFileExtension = process.env.INIBASE_SCHEMA_EXTENSION ?? "json";
 
 	constructor(database: string, mainFolder = ".", language: ErrorLang = "en") {
 		this.databasePath = join(mainFolder, database);
@@ -300,7 +306,7 @@ export default class Inibase {
 		return mainExtension;
 	}
 
-	private _schemaToIdsPath(tableName: string, schema: Schema, prefix = "") {
+	private schemaToIdsPath(tableName: string, schema: Schema, prefix = "") {
 		const RETURN: any = {};
 		for (const field of schema)
 			if (
@@ -310,16 +316,15 @@ export default class Inibase {
 			)
 				Utils.deepMerge(
 					RETURN,
-					this._schemaToIdsPath(
+					this.schemaToIdsPath(
 						tableName,
 						field.children,
 						`${(prefix ?? "") + field.key}.`,
 					),
 				);
 			else if (field.id)
-				RETURN[
-					Utils.isValidID(field.id) ? UtilsServer.decodeID(field.id) : field.id
-				] = `${(prefix ?? "") + field.key}${this.getFileExtension(tableName)}`;
+				RETURN[field.id] =
+					`${(prefix ?? "") + field.key}${this.getFileExtension(tableName)}`;
 
 		return RETURN;
 	}
@@ -363,12 +368,10 @@ export default class Inibase {
 		if (schema) {
 			const lastSchemaID = { value: 0 };
 			await writeFile(
-				join(tablePath, "schema.json"),
-				JSON.stringify(
-					UtilsServer.addIdToSchema(schema, lastSchemaID),
-					null,
-					2,
-				),
+				join(tablePath, `schema.${this.schemaFileExtension}`),
+				this.schemaFileExtension === "json"
+					? JSON.stringify(Utils.addIdToSchema(schema, lastSchemaID), null, 2)
+					: Inison.stringify(Utils.addIdToSchema(schema, lastSchemaID)),
 			);
 			await writeFile(join(tablePath, `${lastSchemaID.value}.schema`), "");
 		} else await writeFile(join(tablePath, "0.schema"), "");
@@ -419,32 +422,40 @@ export default class Inibase {
 				value: schemaIdFilePath ? Number(parse(schemaIdFilePath).name) : 0,
 			};
 
-			if (await File.isExists(join(tablePath, "schema.json"))) {
-				// update columns files names based on field id
-				schema = UtilsServer.addIdToSchema(schema, lastSchemaID);
-				if (table.schema?.length) {
-					const replaceOldPathes = Utils.findChangedProperties(
-						this._schemaToIdsPath(tableName, table.schema),
-						this._schemaToIdsPath(tableName, schema),
+			schema = Utils.addIdToSchema(schema, lastSchemaID);
+
+			// if schema.json exists, update columns files names based on field id
+			if (
+				(await File.isExists(
+					join(tablePath, `schema.${this.schemaFileExtension}`),
+				)) &&
+				table.schema?.length
+			) {
+				const replaceOldPathes = Utils.findChangedProperties(
+					this.schemaToIdsPath(tableName, table.schema),
+					this.schemaToIdsPath(tableName, schema),
+				);
+				if (replaceOldPathes)
+					await Promise.all(
+						Object.entries(replaceOldPathes).map(async ([oldPath, newPath]) => {
+							if (await File.isExists(join(tablePath, oldPath))) {
+								// if newPath is null, it means the field was removed
+								if (newPath === null) await unlink(join(tablePath, oldPath));
+								else
+									await rename(
+										join(tablePath, oldPath),
+										join(tablePath, newPath),
+									);
+							}
+						}),
 					);
-					if (replaceOldPathes)
-						await Promise.all(
-							Object.entries(replaceOldPathes).map(
-								async ([oldPath, newPath]) => {
-									if (await File.isExists(join(tablePath, oldPath)))
-										await rename(
-											join(tablePath, oldPath),
-											join(tablePath, newPath),
-										);
-								},
-							),
-						);
-				}
-			} else schema = UtilsServer.addIdToSchema(schema, lastSchemaID);
+			}
 
 			await writeFile(
-				join(tablePath, "schema.json"),
-				JSON.stringify(schema, null, 2),
+				join(tablePath, `schema.${this.schemaFileExtension}`),
+				this.schemaFileExtension === "json"
+					? JSON.stringify(schema, null, 2)
+					: Inison.stringify(schema),
 			);
 			if (schemaIdFilePath)
 				await rename(
@@ -527,13 +538,21 @@ export default class Inibase {
 			if (config.name) {
 				await rename(tablePath, join(this.databasePath, config.name));
 				// replace table name in other linked tables (relationship)
-				for await (const schemaPath of glob("**/schema.json", {
-					cwd: this.databasePath,
-				}))
+				for await (const schemaPath of glob(
+					`**/schema.${this.schemaFileExtension}`,
+					{
+						cwd: this.databasePath,
+					},
+				))
 					await this.replaceStringInFile(
 						schemaPath,
-						`"table": "${tableName}"`,
-						`"table": "${config.name}"`,
+						// TODO: escape caracters in table name
+						this.schemaFileExtension === "json"
+							? `"table": "${tableName}"`
+							: `table:${tableName}`,
+						this.schemaFileExtension === "json"
+							? `"table": "${config.name}"`
+							: `table:${config.name}`,
 					);
 			}
 		}
@@ -547,10 +566,7 @@ export default class Inibase {
 	 * @param {string} tableName
 	 * @return {*}  {Promise<TableObject>}
 	 */
-	public async getTable(
-		tableName: string,
-		encodeIDs = true,
-	): Promise<TableObject> {
+	public async getTable(tableName: string): Promise<TableObject> {
 		const tablePath = join(this.databasePath, tableName);
 
 		if (!(await File.isExists(tablePath)))
@@ -562,7 +578,7 @@ export default class Inibase {
 				(await File.getFileDate(join(tablePath, "schema.json")))
 		)
 			globalConfig[this.databasePath].tables.set(tableName, {
-				schema: await this.getTableSchema(tableName, encodeIDs),
+				schema: await this.getTableSchema(tableName),
 				config: {
 					compression: await File.isExists(
 						join(tablePath, ".compression.config"),
@@ -576,19 +592,59 @@ export default class Inibase {
 		return globalConfig[this.databasePath].tables.get(tableName);
 	}
 
-	public async getTableSchema(tableName: string, encodeIDs = true) {
+	public async getTableSchema(tableName: string) {
 		const tablePath = join(this.databasePath, tableName);
+		let schemaFile: string | undefined;
+		let schema: Schema | undefined;
 
-		if (!(await File.isExists(join(tablePath, "schema.json"))))
-			return undefined;
+		if (
+			!(await File.isExists(
+				join(tablePath, `schema.${this.schemaFileExtension}`),
+			))
+		) {
+			const otherSchemaFileExtension =
+				this.schemaFileExtension === "json" ? "inis" : "json";
+			if (
+				!(await File.isExists(
+					join(tablePath, `schema.${otherSchemaFileExtension}`),
+				))
+			)
+				return undefined;
 
-		const schemaFile = await readFile(join(tablePath, "schema.json"), "utf8");
+			schemaFile = await readFile(
+				join(tablePath, `schema.${otherSchemaFileExtension}`),
+				"utf8",
+			);
+
+			if (!schemaFile) return undefined;
+
+			schema =
+				otherSchemaFileExtension === "json"
+					? JSON.parse(schemaFile)
+					: Inison.unstringify(schemaFile);
+
+			await writeFile(
+				join(tablePath, `schema.${this.schemaFileExtension}`),
+				this.schemaFileExtension === "json"
+					? JSON.stringify(schema, null, 2)
+					: Inison.stringify(schema),
+			);
+			await unlink(join(tablePath, `schema.${otherSchemaFileExtension}`));
+		} else
+			schemaFile = await readFile(
+				join(tablePath, `schema.${this.schemaFileExtension}`),
+				"utf8",
+			);
 
 		if (!schemaFile) return undefined;
 
-		let schema: Schema = JSON.parse(schemaFile);
+		if (!schema)
+			schema =
+				this.schemaFileExtension === "json"
+					? JSON.parse(schemaFile)
+					: Inison.unstringify(schemaFile);
 
-		schema = [
+		return [
 			{
 				id: 0,
 				key: "id",
@@ -607,14 +663,11 @@ export default class Inibase {
 				key: "updatedAt",
 				type: "date",
 			},
-		];
-
-		if (!encodeIDs) return schema;
-		return UtilsServer.encodeSchemaID(schema);
+		] as Schema;
 	}
 
 	private async throwErrorIfTableEmpty(tableName: string): Promise<void> {
-		const table = await this.getTable(tableName, false);
+		const table = await this.getTable(tableName);
 
 		if (!table.schema) throw this.createError("NO_SCHEMA", tableName);
 
@@ -630,14 +683,14 @@ export default class Inibase {
 			throw this.createError("TABLE_EMPTY", tableName);
 	}
 
-	private _validateData(
+	public validateData(
 		data: Data | Data[],
 		schema: Schema,
 		skipRequiredField = false,
 	): void {
 		if (Utils.isArrayOfObjects(data)) {
 			for (const single_data of data as Data[])
-				this._validateData(single_data, schema, skipRequiredField);
+				this.validateData(single_data, schema, skipRequiredField);
 			return;
 		}
 		if (Utils.isObject(data)) {
@@ -671,11 +724,7 @@ export default class Inibase {
 					field.children &&
 					Utils.isArrayOfObjects(field.children)
 				)
-					this._validateData(
-						data[field.key],
-						field.children,
-						skipRequiredField,
-					);
+					this.validateData(data[field.key], field.children, skipRequiredField);
 				else {
 					if (
 						field.table &&
@@ -699,35 +748,30 @@ export default class Inibase {
 								columnsValues: new Map(),
 							});
 
-						if (
-							!this.uniqueMap
-								.get(uniqueKey)
-								.columnsValues.has(field.id as number)
-						)
+						if (!this.uniqueMap.get(uniqueKey).columnsValues.has(field.id))
 							this.uniqueMap
 								.get(uniqueKey)
-								.columnsValues.set(field.id as number, new Set());
+								.columnsValues.set(field.id, new Set());
 
-						if (data.id)
-							this.uniqueMap.get(uniqueKey).exclude.add(-data.id as number);
+						if (data.id) this.uniqueMap.get(uniqueKey).exclude.add(-data.id);
 
 						this.uniqueMap
 							.get(uniqueKey)
-							.columnsValues.get(field.id as number)
+							.columnsValues.get(field.id)
 							.add(data[field.key]);
 					}
 				}
 			}
 		}
 	}
-	private async validateData(
+	private async validateTableData(
 		tableName: string,
 		data: Data | Data[],
 		skipRequiredField = false,
 	): Promise<void> {
 		const clonedData = structuredClone(data);
 		// Skip ID and (created|updated)At
-		this._validateData(
+		this.validateData(
 			clonedData,
 			globalConfig[this.databasePath].tables.get(tableName).schema.slice(1, -2),
 			skipRequiredField,
@@ -2289,7 +2333,7 @@ export default class Inibase {
 			),
 		);
 
-		await this.validateData(tableName, clonedData);
+		await this.validateTableData(tableName, clonedData);
 
 		const renameList: string[][] = [];
 		try {
@@ -2489,7 +2533,7 @@ export default class Inibase {
 				);
 			}
 
-			await this.validateData(tableName, clonedData, true);
+			await this.validateTableData(tableName, clonedData, true);
 
 			clonedData = this.formatData<TData>(
 				clonedData,
@@ -2551,7 +2595,7 @@ export default class Inibase {
 		) {
 			// "where" in this case, is the line(s) number(s) and not id(s)
 
-			await this.validateData(tableName, clonedData, true);
+			await this.validateTableData(tableName, clonedData, true);
 
 			clonedData = this.formatData<TData>(
 				clonedData,

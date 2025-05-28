@@ -3,6 +3,7 @@ import { existsSync, rmSync } from "node:fs";
 import { test } from "node:test";
 
 import Inibase, { type Schema } from "../src/index.js";
+import { encodeID } from "../src/utils.server.js";
 
 // Test database directory
 const dbPath = "test-db";
@@ -670,14 +671,237 @@ await test("Multiple Optional Recursive Arrays with Prepend Config", async (t) =
 							(detail) =>
 								detail.description === "Detail 1 Updated" &&
 								detail.value === 100,
+						) &&
+						item.details?.some(
+							(detail) =>
+								detail.description === "Detail 12 Updated" &&
+								detail.value === 120,
 						),
 				),
 			),
 			"Put function should update the specified record",
 		);
 	});
-})
+});
 
-await test("Cleanup Database", async (t) => {
-	removeDatabase();
-})
+await test("Data Validation and Schema Enforcement", async (t) => {
+	initializeDatabase();
+
+	const tableName = "validation_test";
+	const tableSchema: Schema = [
+		{ key: "id", type: "string", required: true, unique: true },
+		{ key: "count", type: "number", required: true },
+		{
+			key: "nested",
+			type: "object",
+			required: true,
+			children: [
+				{ key: "value", type: "string", required: true },
+				{ key: "optionalValue", type: "number", required: false },
+			],
+		},
+		{
+			key: "list",
+			type: "array",
+			required: false,
+			children: "string",
+		},
+	];
+
+	await t.test("Create Table for Validation", async () => {
+		await inibase.createTable(tableName, tableSchema);
+		assert.ok(true, "Table for validation created successfully");
+	});
+
+	await t.test("Reject Data with Missing Required Field", async () => {
+		await assert.rejects(
+			inibase.post(tableName, { id: "test1" }), // Missing 'count' and 'nested'
+			/FIELD_REQUIRED/,
+			"Should reject data with missing required field 'count'",
+		);
+	});
+
+	await t.test("Reject Data with Incorrect Data Type", async () => {
+		await assert.rejects(
+			inibase.post(tableName, {
+				id: "test2",
+				count: "not a number", // Incorrect type for 'count'
+				nested: { value: "nestedValue" },
+			}),
+			/INVALID_TYPE/,
+			"Should reject data with incorrect type for 'count'",
+		);
+	});
+
+	await t.test(
+		"Reject Data with Missing Required Field in Nested Object",
+		async () => {
+			await assert.rejects(
+				inibase.post(tableName, {
+					id: "test3",
+					count: 10,
+					nested: {}, // Missing 'value' in 'nested' object
+				}),
+				/FIELD_REQUIRED/,
+				"Should reject data with missing required field 'value' in nested object",
+			);
+		},
+	);
+
+	await t.test(
+		"Reject Data with Incorrect Data Type in Nested Object",
+		async () => {
+			await assert.rejects(
+				inibase.post(tableName, {
+					id: "test4",
+					count: 20,
+					nested: { value: 123 }, // Incorrect type for 'value' in 'nested'
+				}),
+				/INVALID_TYPE/,
+				"Should reject data with incorrect type for 'value' in nested object",
+			);
+		},
+	);
+
+	await t.test("Reject Data with Incorrect Array Child Type", async () => {
+		await assert.rejects(
+			inibase.post(tableName, {
+				id: "test5",
+				count: 30,
+				nested: { value: "anotherNestedValue" },
+				list: [123], // Incorrect type for array child, expected string
+			}),
+			/INVALID_TYPE/,
+			"Should reject data with incorrect array child type",
+		);
+	});
+
+	await t.test("Accept Valid Data", async () => {
+		const validData = {
+			id: "valid1",
+			count: 100,
+			nested: { value: "correctValue", optionalValue: 42 },
+			list: ["item1", "item2"],
+		};
+		const insertedData = await inibase.post(
+			tableName,
+			validData,
+			undefined,
+			true,
+		);
+		assert.ok(insertedData?.id, "Should accept and insert valid data");
+	});
+
+	await t.test("Accept Valid Data with Optional Fields Missing", async () => {
+		const validDataOptionalMissing = {
+			id: "valid2",
+			count: 200,
+			nested: { value: "correctValueMissingOptional" },
+			// 'list' is also optional and missing
+		};
+		const insertedData = await inibase.post(
+			tableName,
+			validDataOptionalMissing,
+			undefined,
+			true,
+		);
+		assert.ok(
+			insertedData?.id,
+			"Should accept valid data with optional fields missing",
+		);
+	});
+});
+
+await test("Table Relationships", async (t) => {
+	initializeDatabase();
+
+	const usersTable = "users_relation";
+	const postsTable = "posts_relation";
+
+	const usersSchema: Schema = [
+		{ key: "first_name", type: "string", required: true },
+		{ key: "last_name", type: "string", required: true },
+	];
+
+	const postsSchema: Schema = [
+		{ key: "title", type: "string", required: true },
+		{ key: "content", type: "string", required: true },
+		{
+			key: "user",
+			type: "table",
+			required: true,
+			table: usersTable, // Specifies the referenced table
+		},
+	];
+
+	await t.test("Create Tables with Relationship", async () => {
+		await inibase.createTable(usersTable, usersSchema);
+		await inibase.createTable(postsTable, postsSchema);
+		assert.ok(true, "Tables with relationship created successfully");
+	});
+
+	let userId: string;
+	await t.test("Insert Related Data", async () => {
+		const user = await inibase.post(
+			usersTable,
+			{ first_name: "John", last_name: "Doe" },
+			undefined,
+			true,
+		);
+		assert.ok(user?.id, "User inserted successfully");
+		if (!user || !user.id) {
+			assert.fail("User creation failed, cannot proceed with post creation.");
+			return;
+		}
+		userId = user.id as string;
+
+		const post = await inibase.post(
+			postsTable,
+			{ title: "My First Post", content: "Hello world!", user: { id: userId } },
+			undefined,
+			true,
+		);
+		assert.ok(post?.id, "Post inserted successfully");
+		assert.equal(post?.user?.id, userId, "Post should be linked to the user");
+	});
+
+	await t.test(
+		"Check Post with Non-Existent User results in null user field",
+		async () => {
+			const postWithNonExistentUser = await inibase.post(
+				postsTable,
+				{
+					title: "Another Post",
+					content: "Content",
+					user: { id: encodeID(9999) },
+				},
+				undefined,
+				true,
+			);
+			assert.ok(
+				postWithNonExistentUser?.id,
+				"Post should be created even with non-existent user ID",
+			);
+			assert.equal(
+				postWithNonExistentUser?.user,
+				undefined,
+				"User field should be undefined for non-existent user ID",
+			);
+		},
+	);
+
+	await t.test("Cascade Delete Related Data", async () => {
+		await inibase.delete(usersTable, { id: userId });
+		const userAfterDelete = await inibase.get(usersTable, { id: userId });
+		assert.equal(userAfterDelete, null, "User should be deleted");
+
+		const postsAfterDelete = await inibase.get(postsTable, { userId });
+		assert.equal(
+			postsAfterDelete,
+			null,
+			"Related posts should be deleted due to cascade",
+		);
+	});
+});
+
+await test("Cleanup Database", removeDatabase);

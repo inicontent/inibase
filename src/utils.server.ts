@@ -11,15 +11,9 @@ import { promisify } from "node:util";
 import { gunzip as gunzipSync, gzip as gzipSync } from "node:zlib";
 
 import RE2 from "re2";
-import type { ComparisonOperator, Field, FieldType, Schema } from "./index.js";
+import type { ComparisonOperator, FieldType } from "./index.js";
 import { globalConfig } from "./index.js";
-import {
-	detectFieldType,
-	isArrayOfObjects,
-	isNumber,
-	isPassword,
-	isValidID,
-} from "./utils.js";
+import { detectFieldType, isNumber, isPassword } from "./utils.js";
 
 export const exec = promisify(execSync);
 
@@ -103,72 +97,6 @@ export function decodeID(
 		return null;
 	}
 }
-
-// Function to recursively flatten an array of objects and their nested children
-export const extractIdsFromSchema = (schema: Schema): number[] => {
-	const result: number[] = [];
-
-	for (const field of schema) {
-		if (field.id)
-			result.push(typeof field.id === "number" ? field.id : decodeID(field.id));
-
-		if (field.children && isArrayOfObjects(field.children))
-			result.push(...extractIdsFromSchema(field.children));
-	}
-
-	return result;
-};
-
-/**
- * Finds the last ID number in a schema, potentially decoding it if encrypted.
- *
- * @param schema - The schema to search, defined as an array of schema objects.
- * @returns The last ID number in the schema, decoded if necessary.
- */
-export const findLastIdNumber = (schema: Schema): number =>
-	Math.max(...extractIdsFromSchema(schema));
-
-/**
- * Adds or updates IDs in a schema, encoding them using a provided secret key or salt.
- *
- * @param schema - The schema to update, defined as an array of schema objects.
- * @param startWithID - An object containing the starting ID for generating new IDs.
- * @returns The updated schema with encoded IDs.
- */
-export const addIdToSchema = (
-	schema: Schema,
-	startWithID: { value: number },
-) => {
-	function _addIdToField(field: Field) {
-		if (!field.id) {
-			startWithID.value++;
-			field.id = startWithID.value;
-		} else if (isValidID(field.id)) field.id = decodeID(field.id);
-
-		if (
-			(field.type === "array" || field.type === "object") &&
-			isArrayOfObjects(field.children)
-		)
-			field.children = _addIdToSchema(field.children);
-		return field;
-	}
-	const _addIdToSchema = (schema: Schema) => schema.map(_addIdToField);
-
-	return _addIdToSchema(schema);
-};
-
-export const encodeSchemaID = (schema: Schema): Schema =>
-	schema.map((field) => ({
-		...field,
-		id: isNumber(field.id) ? encodeID(field.id) : field.id,
-		...(field.children
-			? isArrayOfObjects(field.children)
-				? {
-						children: encodeSchemaID(field.children as Schema),
-					}
-				: { children: field.children }
-			: {}),
-	}));
 
 export const hashString = (str: string): string =>
 	createHash("sha256").update(str).digest("hex");

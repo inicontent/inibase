@@ -278,9 +278,11 @@ export const findChangedProperties = (
 ): Record<string, string> | null => {
 	const result: Record<string, string> = {};
 
-	for (const key1 in obj1)
-		if (Object.hasOwn(obj2, key1) && obj1[key1] !== obj2[key1])
-			result[obj1[key1]] = obj2[key1];
+	for (const key1 in obj1) {
+		if (Object.hasOwn(obj2, key1)) {
+			if (obj1[key1] !== obj2[key1]) result[obj1[key1]] = obj2[key1];
+		} else result[obj1[key1]] = null;
+	}
 
 	return Object.keys(result).length ? result : null;
 };
@@ -678,4 +680,54 @@ export function toDotNotation(
 	}
 
 	return result;
+}
+
+// Function to recursively flatten an array of objects and their nested children
+export const extractIdsFromSchema = (schema: Schema): number[] => {
+	const result: number[] = [];
+
+	for (const field of schema) {
+		if (field.id) result.push(field.id);
+
+		if (field.children && isArrayOfObjects(field.children))
+			result.push(...extractIdsFromSchema(field.children));
+	}
+
+	return result;
+};
+
+/**
+ * Finds the last ID number in a schema, potentially decoding it if encrypted.
+ *
+ * @param schema - The schema to search, defined as an array of schema objects.
+ * @returns The last ID number in the schema, decoded if necessary.
+ */
+export const findLastIdNumber = (schema: Schema): number =>
+	Math.max(...extractIdsFromSchema(schema));
+
+/**
+ * Adds or updates IDs in a schema, encoding them using a provided secret key or salt.
+ *
+ * @param schema - The schema to update, defined as an array of schema objects.
+ * @param startWithID - An object containing the starting ID for generating new IDs.
+ * @returns The updated schema with encoded IDs.
+ */
+export function addIdToSchema(schema: Schema, startWithID: { value: number }) {
+	const clonedSchema = structuredClone(schema);
+	function addIdToField(field: Field) {
+		if (!field.id) {
+			startWithID.value++;
+			field.id = startWithID.value;
+		}
+
+		if (
+			(field.type === "array" || field.type === "object") &&
+			isArrayOfObjects(field.children)
+		)
+			field.children = addIdToSchemaHelper(field.children);
+		return field;
+	}
+	const addIdToSchemaHelper = (schema: Schema) => schema.map(addIdToField);
+
+	return addIdToSchemaHelper(clonedSchema);
 }
