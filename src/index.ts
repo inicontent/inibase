@@ -735,7 +735,11 @@ export default class Inibase {
 
 					if (field.regex) {
 						const regex = UtilsServer.getCachedRegex(field.regex);
-						if (!regex.test(data[field.key]))
+						if (
+							(Array.isArray(data[field.key]) &&
+								!data[field.key].every((v) => regex.test(String(v)))) ||
+							!regex.test(String(data[field.key]))
+						)
 							throw this.createError("INVALID_REGEX_MATCH", [field.key]);
 					}
 					if (field.unique) {
@@ -1720,12 +1724,14 @@ export default class Inibase {
 						Object.entries(searchResult).filter(
 							([_k, v], _i) =>
 								Object.keys(v).filter((key) =>
-									Object.keys(criteriaAND).find((criteriaKey) => criteriaKey === key || criteriaKey.startsWith(`${key}.`)),
+									Object.keys(criteriaAND).find(
+										(criteriaKey) =>
+											criteriaKey === key || criteriaKey.startsWith(`${key}.`),
+									),
 								).length,
 						),
 					),
 				);
-				
 			} else return null;
 		}
 
