@@ -737,7 +737,7 @@ export default class Inibase {
 						const regex = UtilsServer.getCachedRegex(field.regex);
 						if (
 							(Array.isArray(data[field.key]) &&
-								!data[field.key].every((v) => regex.test(String(v)))) ||
+								data[field.key].some((v) => !regex.test(String(v)))) ||
 							!regex.test(String(data[field.key]))
 						)
 							throw this.createError("INVALID_REGEX_MATCH", [field.key]);
