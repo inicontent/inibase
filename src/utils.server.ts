@@ -135,12 +135,12 @@ export const compare = (
 
 	// Handle comparisons involving arrays.
 	if (
-		Array.isArray(comparedValue) &&
-		!Array.isArray(originalValue) &&
+		Array.isArray(originalValue) &&
+		!Array.isArray(comparedValue) &&
 		!["[]", "![]"].includes(operator)
 	)
-		return comparedValue.some((value) =>
-			compare(operator, originalValue, value, fieldType),
+		return originalValue.some((value) =>
+			compare(operator, value, comparedValue, fieldType),
 		);
 
 	// Switch statement for different comparison operators.
