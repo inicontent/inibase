@@ -133,11 +133,22 @@ export const compare = (
 	if (Array.isArray(fieldType))
 		fieldType = detectFieldType(String(originalValue), fieldType);
 
-	// Handle comparisons involving arrays.
+	// Special handling when the compared value is an array.
+	if (
+		Array.isArray(comparedValue) &&
+		!Array.isArray(originalValue) &&
+		!["[]", "![]"].includes(operator)
+	)
+		return comparedValue.some((value) =>
+			compare(operator, originalValue, value, fieldType),
+		);
+
+	// Special handling when the original value is an array.
 	if (
 		Array.isArray(originalValue) &&
 		!Array.isArray(comparedValue) &&
-		!["[]", "![]"].includes(operator)
+		!["[]", "![]"].includes(operator) &&
+		fieldType !== "array"
 	)
 		return originalValue.some((value) =>
 			compare(operator, value, comparedValue, fieldType),
