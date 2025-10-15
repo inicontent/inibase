@@ -805,6 +805,7 @@ export const search = async (
 			// Check if the line meets the specified conditions based on comparison and logical operators.
 			const doesMeetCondition =
 				(Array.isArray(decodedLine) &&
+					operator !== "=" &&
 					decodedLine.flat().some(meetsConditions)) ||
 				meetsConditions(decodedLine);
 

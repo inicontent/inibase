@@ -14,6 +14,7 @@ import RE2 from "re2";
 import type { ComparisonOperator, FieldType } from "./index.js";
 import { globalConfig } from "./index.js";
 import { detectFieldType, isNumber, isPassword } from "./utils.js";
+import Inison from "inison";
 
 export const exec = promisify(execSync);
 
@@ -266,8 +267,13 @@ export const isEqual = (
 			if (isOriginalNullLike && isComparedNullLike) return true;
 
 			// If both are arrays
-			if (Array.isArray(originalValue) && Array.isArray(comparedValue))
-				return JSON.stringify(originalValue) === JSON.stringify(comparedValue);
+			if (Array.isArray(originalValue)) {
+				if (Array.isArray(comparedValue))
+					return (
+						JSON.stringify(originalValue) === JSON.stringify(comparedValue)
+					);
+				return Inison.stringify(originalValue) === comparedValue;
+			}
 
 			// If both are number-like
 			if (isNumber(originalValue) && isNumber(comparedValue))
