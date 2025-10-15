@@ -133,7 +133,11 @@ export const compare = (
 		fieldType = detectFieldType(String(originalValue), fieldType);
 
 	// Handle comparisons involving arrays.
-	if (Array.isArray(comparedValue) && !["[]", "![]"].includes(operator))
+	if (
+		Array.isArray(comparedValue) &&
+		!Array.isArray(originalValue) &&
+		!["[]", "![]"].includes(operator)
+	)
 		return comparedValue.some((value) =>
 			compare(operator, originalValue, value, fieldType),
 		);
@@ -260,6 +264,10 @@ export const isEqual = (
 
 			// If both are null-like, treat as equivalent
 			if (isOriginalNullLike && isComparedNullLike) return true;
+
+			// If both are arrays
+			if (Array.isArray(originalValue) && Array.isArray(comparedValue))
+				return JSON.stringify(originalValue) === JSON.stringify(comparedValue);
 
 			// If both are number-like
 			if (isNumber(originalValue) && isNumber(comparedValue))
