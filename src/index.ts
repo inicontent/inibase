@@ -1710,7 +1710,7 @@ export default class Inibase {
 		if (criteriaAND && Utils.isObject(criteriaAND)) {
 			const searchResult = await this.applyCriteria(
 				tableName,
-				options,
+				criteriaOR ? { ...(options ?? {}), perPage: -1 } : options,
 				criteriaAND as Criteria,
 				true,
 				searchIn,
