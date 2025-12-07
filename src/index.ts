@@ -2922,7 +2922,7 @@ export default class Inibase {
 				} else RETURN[column] = await File.sum(columnPath);
 			}
 		}
-		return Array.isArray(columns) ? RETURN : Object.values(RETURN)[0];
+		return columns.length > 1 ? RETURN : Object.values(RETURN)[0];
 	}
 
 	/**
