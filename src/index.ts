@@ -436,7 +436,7 @@ export default class Inibase {
 					this.schemaToIdsPath(tableName, schema),
 				);
 				if (replaceOldPathes)
-					await Promise.all(
+					await Promise.allSettled(
 						Object.entries(replaceOldPathes).map(async ([oldPath, newPath]) => {
 							if (await File.isExists(join(tablePath, oldPath))) {
 								// if newPath is null, it means the field was removed
@@ -2744,7 +2744,7 @@ export default class Inibase {
 						.map(Number) as [number, number];
 				}
 
-				await Promise.all(
+				await Promise.allSettled(
 					(await readdir(tablePath))
 						?.filter((fileName: string) =>
 							fileName.endsWith(this.getFileExtension(tableName)),
@@ -2796,7 +2796,7 @@ export default class Inibase {
 						pagination[1] &&
 						pagination[1] - (Array.isArray(where) ? where.length : 1) > 0
 					) {
-						await Promise.all(
+						await Promise.allSettled(
 							files.map(async (file) =>
 								renameList.push(
 									await File.remove(join(tablePath, file), where),
@@ -2804,7 +2804,7 @@ export default class Inibase {
 							),
 						);
 
-						await Promise.all(
+						await Promise.allSettled(
 							renameList
 								.filter(([_, filePath]) => filePath)
 								.map(async ([tempPath, filePath]) =>
@@ -2812,7 +2812,7 @@ export default class Inibase {
 								),
 						);
 					} else
-						await Promise.all(
+						await Promise.allSettled(
 							(await readdir(tablePath))
 								?.filter((fileName: string) =>
 									fileName.endsWith(this.getFileExtension(tableName)),
