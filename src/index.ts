@@ -884,7 +884,7 @@ export default class Inibase {
 				return null;
 			}
 			default:
-				return typeof value === 'string' ? value.trim() : value;
+				return typeof value === "string" ? value.trim() : value;
 		}
 		return null;
 	}
@@ -2443,7 +2443,9 @@ export default class Inibase {
 		} finally {
 			if (renameList.length)
 				await Promise.allSettled(
-					renameList.map(async ([tempPath, _]) => unlink(tempPath)),
+					renameList
+						.filter(([_, filePath]) => filePath)
+						.map(async ([tempPath, _]) => unlink(tempPath)),
 				);
 			await File.unlock(join(tablePath, ".tmp"), keys);
 		}
@@ -2587,7 +2589,9 @@ export default class Inibase {
 			} finally {
 				if (renameList.length)
 					await Promise.allSettled(
-						renameList.map(async ([tempPath, _]) => unlink(tempPath)),
+						renameList
+							.filter(([_, filePath]) => filePath)
+							.map(async ([tempPath, _]) => unlink(tempPath)),
 					);
 				await File.unlock(join(tablePath, ".tmp"));
 			}
@@ -2666,7 +2670,9 @@ export default class Inibase {
 			} finally {
 				if (renameList.length)
 					await Promise.allSettled(
-						renameList.map(async ([tempPath, _]) => unlink(tempPath)),
+						renameList
+							.filter(([_, filePath]) => filePath)
+							.map(async ([tempPath, _]) => unlink(tempPath)),
 					);
 				await File.unlock(join(tablePath, ".tmp"), keys);
 			}
@@ -2837,7 +2843,9 @@ export default class Inibase {
 				} finally {
 					if (renameList.length)
 						await Promise.allSettled(
-							renameList.map(async ([tempPath, _]) => unlink(tempPath)),
+							renameList
+								.filter(([_, filePath]) => filePath)
+								.map(async ([tempPath, _]) => unlink(tempPath)),
 						);
 					await File.unlock(join(tablePath, ".tmp"));
 				}
