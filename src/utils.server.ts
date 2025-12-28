@@ -328,6 +328,7 @@ export const isArrayEqual = (
 	if (Array.isArray(comparedValue))
 		return comparedValue.includes(originalValue);
 
+	// biome-ignore lint/suspicious/noDoubleEquals: intended loose comparison
 	return originalValue == comparedValue;
 };
 

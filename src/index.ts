@@ -60,9 +60,9 @@ export interface Options {
 	perPage?: number;
 	columns?: string[] | string;
 	sort?:
-	| Record<string, 1 | -1 | "asc" | "ASC" | "desc" | "DESC">
-	| string[]
-	| string;
+		| Record<string, 1 | -1 | "asc" | "ASC" | "desc" | "DESC">
+		| string[]
+		| string;
 }
 
 export interface TableConfig {
@@ -96,16 +96,16 @@ export type pageInfo = {
 
 export type Criteria =
 	| ({
-		[logic in "and" | "or"]?: Criteria | (string | number | boolean | null)[];
-	} & {
-		[key: string]:
-		| string
-		| number
-		| boolean
-		| undefined
-		| Criteria
-		| (string | number | boolean)[];
-	})
+			[logic in "and" | "or"]?: Criteria | (string | number | boolean | null)[];
+	  } & {
+			[key: string]:
+				| string
+				| number
+				| boolean
+				| undefined
+				| Criteria
+				| (string | number | boolean)[];
+	  })
 	| null;
 
 type Entries<T> = {
@@ -284,9 +284,9 @@ export default class Inibase {
 			variable
 				? Array.isArray(variable)
 					? errorMessage.replace(
-						/\{variable\}/g,
-						() => variable.shift()?.toString() ?? "",
-					)
+							/\{variable\}/g,
+							() => variable.shift()?.toString() ?? "",
+						)
 					: errorMessage.replaceAll("{variable}", `'${variable.toString()}'`)
 				: errorMessage.replaceAll("{variable}", ""),
 		);
@@ -352,7 +352,7 @@ export default class Inibase {
 		// if config not set => load default global env config
 		if (!config)
 			config = {
-				compression: process.env.INIBASE_COMPRESSION == "true",
+				compression: process.env.INIBASE_COMPRESSION === "true",
 				cache: process.env.INIBASE_CACHE === "true",
 				prepend: process.env.INIBASE_PREPEND === "true",
 				decodeID: process.env.INIBASE_ENCODEID === "true",
@@ -520,9 +520,10 @@ export default class Inibase {
 						"-exec",
 						"sh",
 						"-c",
-						`for file; do ${config.compression
-							? 'zcat "$file" | tac | gzip > "$file.reversed" && mv "$file.reversed" "$file"'
-							: 'tac "$file" > "$file.reversed" && mv "$file.reversed" "$file"'
+						`for file; do ${
+							config.compression
+								? 'zcat "$file" | tac | gzip > "$file.reversed" && mv "$file.reversed" "$file"'
+								: 'tac "$file" > "$file.reversed" && mv "$file.reversed" "$file"'
 						}; done`,
 						"_",
 						"{}",
@@ -574,7 +575,7 @@ export default class Inibase {
 		if (
 			!globalConfig[this.databasePath].tables.has(tableName) ||
 			globalConfig[this.databasePath].tables.get(tableName).timestamp !==
-			(await File.getFileDate(join(tablePath, "schema.json")))
+				(await File.getFileDate(join(tablePath, "schema.json")))
 		)
 			globalConfig[this.databasePath].tables.set(tableName, {
 				schema: await this.getTableSchema(tableName),
@@ -709,13 +710,13 @@ export default class Inibase {
 					throw this.createError("INVALID_TYPE", [
 						field.key,
 						(Array.isArray(field.type) ? field.type.join(", ") : field.type) +
-						(field.children
-							? Array.isArray(field.children)
-								? Utils.isArrayOfObjects(field.children)
-									? "[object]"
-									: `[${field.children.join("|")}]`
-								: `[${field.children}]`
-							: ""),
+							(field.children
+								? Array.isArray(field.children)
+									? Utils.isArrayOfObjects(field.children)
+										? "[object]"
+										: `[${field.children.join("|")}]`
+									: `[${field.children}]`
+								: ""),
 						data[field.key],
 					]);
 				if (
@@ -1085,10 +1086,10 @@ export default class Inibase {
 				RETURN[(prefix ?? "") + key] = File.encode(
 					Array.isArray(value)
 						? value.map((_value) =>
-							typeof _value === "string" && _value === "undefined"
-								? ""
-								: _value,
-						)
+								typeof _value === "string" && _value === "undefined"
+									? ""
+									: _value,
+							)
 						: value,
 				);
 		}
@@ -1255,7 +1256,7 @@ export default class Inibase {
 				...field,
 				type:
 					field.key === "id" &&
-						globalConfig[this.databasePath].tables.get(tableName).config.decodeID
+					globalConfig[this.databasePath].tables.get(tableName).config.decodeID
 						? "number"
 						: field.type,
 				databasePath: this.databasePath,
@@ -1534,12 +1535,12 @@ export default class Inibase {
 						) =>
 							Array.isArray(lineContent)
 								? lineContent.map((singleContent) =>
-									singleContent
-										? Array.isArray(singleContent)
-											? singleContent.map(formatLineContent)
-											: items?.find(({ id }) => singleContent === id)
-										: singleContent,
-								)
+										singleContent
+											? Array.isArray(singleContent)
+												? singleContent.map(formatLineContent)
+												: items?.find(({ id }) => singleContent === id)
+											: singleContent,
+									)
 								: items?.find(({ id }) => lineContent === id);
 						for (const [lineNumber, lineContent] of searchableIDs.entries()) {
 							if (!lineContent) continue;
@@ -1679,10 +1680,9 @@ export default class Inibase {
 					options.perPage < 0
 						? undefined
 						: ((options.page as number) - 1) * (options.perPage as number) +
-						(options.page > 1 ? 1 : 0),
+								(options.page > 1 ? 1 : 0),
 					true,
 				);
-
 				if (!searchResult) {
 					if (allTrue) return null;
 					continue;
@@ -1982,8 +1982,9 @@ export default class Inibase {
 				.map(([key, ascending], i) => {
 					const field = Utils.getField(key, schema);
 					if (field)
-						return `-k${i + index},${i + index}${Utils.isFieldType(field, ["id", "number", "date"]) ? "n" : ""
-							}${!ascending ? "r" : ""}`;
+						return `-k${i + index},${i + index}${
+							Utils.isFieldType(field, ["id", "number", "date"]) ? "n" : ""
+						}${!ascending ? "r" : ""}`;
 					return "";
 				})
 				.join(" ");
@@ -1996,22 +1997,22 @@ export default class Inibase {
 					await UtilsServer.exec(
 						globalConfig[this.databasePath].tables.get(tableName).config.cache
 							? (await File.isExists(
-								join(tablePath, ".cache", `${cacheKey}${this.fileExtension}`),
-							))
+									join(tablePath, ".cache", `${cacheKey}${this.fileExtension}`),
+								))
 								? `${awkCommand} '${join(
-									tablePath,
-									".cache",
-									`${cacheKey}${this.fileExtension}`,
-								)}'`
+										tablePath,
+										".cache",
+										`${cacheKey}${this.fileExtension}`,
+									)}'`
 								: `${pasteCommand} | ${sortCommand} -o '${join(
-									tablePath,
-									".cache",
-									`${cacheKey}${this.fileExtension}`,
-								)}' && ${awkCommand} '${join(
-									tablePath,
-									".cache",
-									`${cacheKey}${this.fileExtension}`,
-								)}'`
+										tablePath,
+										".cache",
+										`${cacheKey}${this.fileExtension}`,
+									)}' && ${awkCommand} '${join(
+										tablePath,
+										".cache",
+										`${cacheKey}${this.fileExtension}`,
+									)}'`
 							: `${pasteCommand} | ${sortCommand} | ${awkCommand}`,
 						{
 							encoding: "utf-8",
@@ -2064,12 +2065,12 @@ export default class Inibase {
 
 				return restOfColumns
 					? outputArray.map((item) => ({
-						...item,
-						...restOfColumns.find(
-							({ id }) =>
-								id === (Utils.isNumber(item.id) ? Number(item.id) : item.id),
-						),
-					}))
+							...item,
+							...restOfColumns.find(
+								({ id }) =>
+									id === (Utils.isNumber(item.id) ? Number(item.id) : item.id),
+							),
+						}))
 					: outputArray;
 			} finally {
 				if (cacheKey) await File.unlock(join(tablePath, ".tmp"), cacheKey);
@@ -2085,12 +2086,12 @@ export default class Inibase {
 					options.perPage < 0
 						? undefined
 						: Array.from(
-							{ length: options.perPage },
-							(_, index) =>
-								((options.page as number) - 1) * (options.perPage as number) +
-								index +
-								1,
-						),
+								{ length: options.perPage },
+								(_, index) =>
+									((options.page as number) - 1) * (options.perPage as number) +
+									index +
+									1,
+							),
 					options,
 				),
 			);
@@ -2179,7 +2180,8 @@ export default class Inibase {
 				cachedFilePath = join(
 					tablePath,
 					".cache",
-					`${UtilsServer.hashString(inspect(where, { sorted: true }))}${this.fileExtension
+					`${UtilsServer.hashString(inspect(where, { sorted: true }))}${
+						this.fileExtension
 					}`,
 				);
 
@@ -2261,10 +2263,10 @@ export default class Inibase {
 		const greatestTotalItems = this.totalItems.has(`${tableName}-*`)
 			? this.totalItems.get(`${tableName}-*`)
 			: Math.max(
-				...[...this.totalItems.entries()]
-					.filter(([k]) => k.startsWith(`${tableName}-`))
-					.map(([, v]) => v),
-			);
+					...[...this.totalItems.entries()]
+						.filter(([k]) => k.startsWith(`${tableName}-`))
+						.map(([, v]) => v),
+				);
 		this.pageInfo[tableName] = {
 			...(({ columns, ...restOfOptions }) => restOfOptions)(options),
 			perPage: Array.isArray(RETURN) ? RETURN.length : 1,
@@ -2423,10 +2425,10 @@ export default class Inibase {
 							: 1
 						: Array.isArray(clonedData)
 							? clonedData
-								.map(
-									(_, index) => this.totalItems.get(`${tableName}-*`) - index,
-								)
-								.toReversed()
+									.map(
+										(_, index) => this.totalItems.get(`${tableName}-*`) - index,
+									)
+									.toReversed()
 							: this.totalItems.get(`${tableName}-*`),
 					options,
 					!Utils.isArrayOfObjects(clonedData), // return only one item if data is not array of objects
@@ -2436,9 +2438,9 @@ export default class Inibase {
 
 			return Array.isArray(clonedData)
 				? (globalConfig[this.databasePath].tables.get(tableName).config.prepend
-					? clonedData.toReversed()
-					: clonedData
-				).map(({ id }) => UtilsServer.encodeID(id))
+						? clonedData.toReversed()
+						: clonedData
+					).map(({ id }) => UtilsServer.encodeID(id))
 				: UtilsServer.encodeID((clonedData as Data & TData).id);
 		} finally {
 			if (renameList.length)
@@ -2617,9 +2619,9 @@ export default class Inibase {
 						tableName,
 						Array.isArray(clonedData)
 							? clonedData.map((item) => ({
-								...item,
-								updatedAt: Date.now(),
-							}))
+									...item,
+									updatedAt: Date.now(),
+								}))
 							: { ...(clonedData as TData & Data), updatedAt: Date.now() },
 					),
 				).map(([path, content]) => [

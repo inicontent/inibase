@@ -248,9 +248,6 @@ export const decode = (
 	if (input === null || input === "") return undefined;
 
 	// Detect the fieldType based on the input and the provided array of possible types.
-	if (Array.isArray(field.type))
-		field.type = detectFieldType(String(input), field.type);
-
 	// Decode the input using the decodeHelper function.
 	return decodeHelper(
 		typeof input === "string"
@@ -258,7 +255,9 @@ export const decode = (
 				? Inison.unstringify(input)
 				: unSecureString(input)
 			: input,
-		field,
+		Array.isArray(field.type)
+			? { ...field, type: detectFieldType(String(input), field.type) }
+			: field,
 	);
 };
 
@@ -377,7 +376,7 @@ export async function get(
 				linesCount++;
 				lines[linesCount] = decode(line, field);
 			}
-		} else if (lineNumbers == -1) {
+		} else if (lineNumbers === -1) {
 			const escapedFilePath = escapeShellPath(filePath);
 			const command = filePath.endsWith(".gz")
 				? `zcat ${escapedFilePath} | sed -n '$p'`

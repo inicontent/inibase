@@ -63,7 +63,7 @@ rl.on("line", async (input) => {
 			break;
 		case "exit":
 			return process.exit();
-		// biome-ignore format:
+		// biome-ignore format: keep help text aligned for readability
 		case "help": {
 			if(!table)
 				console.log(` ${textBlue("table")} | ${textBlue("t")} ${textRed("<")}tableName${textRed(">*")}`)
