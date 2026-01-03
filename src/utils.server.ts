@@ -147,8 +147,7 @@ export const compare = (
 	if (
 		Array.isArray(originalValue) &&
 		!Array.isArray(comparedValue) &&
-		!["[]", "![]"].includes(operator) &&
-		fieldType !== "array"
+		!["[]", "![]"].includes(operator)
 	)
 		return originalValue.some((value) =>
 			compare(operator, value, comparedValue, fieldType),
