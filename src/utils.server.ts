@@ -220,17 +220,26 @@ export const compare = (
 /**
  * Helper function to handle non-null comparisons.
  */
+const isComparablePrimitive = (
+	value: unknown,
+): value is string | number | boolean =>
+	typeof value === "string" ||
+	typeof value === "number" ||
+	typeof value === "boolean";
+
 const compareNonNullValues = (
-	originalValue: any,
-	comparedValue: any,
-	comparator: (a: any, b: any) => boolean,
-): boolean => {
-	return (
-		originalValue !== null &&
-		comparedValue !== null &&
-		comparator(originalValue, comparedValue)
-	);
-};
+	originalValue: unknown,
+	comparedValue: unknown,
+	comparator: (
+		a: string | number | boolean,
+		b: string | number | boolean,
+	) => boolean,
+): boolean =>
+	originalValue !== null &&
+	comparedValue !== null &&
+	isComparablePrimitive(originalValue) &&
+	isComparablePrimitive(comparedValue) &&
+	comparator(originalValue, comparedValue);
 
 /**
  * Helper function to check equality based on the field type.
@@ -240,6 +249,40 @@ const compareNonNullValues = (
  * @param field - Field object config.
  * @returns boolean - Result of the equality check.
  */
+type ComparableValue =
+	| string
+	| number
+	| boolean
+	| null
+	| (string | number | boolean | null)[];
+
+const serializeArrayItem = (value: ComparableValue): string => {
+	if (Array.isArray(value)) return `array:${Inison.stringify(value)}`;
+	const type = value === null ? "null" : typeof value;
+	const valueStr = value === null ? "null" : String(value);
+	return `${type}:${valueStr}`;
+};
+
+const haveSameArrayValues = (
+	first: (string | number | boolean | null)[],
+	second: (string | number | boolean | null)[],
+): boolean => {
+	if (first.length !== second.length) return false;
+	const counts = new Map<string, number>();
+	for (const value of first) {
+		const key = serializeArrayItem(value);
+		counts.set(key, (counts.get(key) ?? 0) + 1);
+	}
+	for (const value of second) {
+		const key = serializeArrayItem(value);
+		const remaining = (counts.get(key) ?? 0) - 1;
+		if (remaining < 0) return false;
+		if (remaining === 0) counts.delete(key);
+		else counts.set(key, remaining);
+	}
+	return counts.size === 0;
+};
+
 export const isEqual = (
 	originalValue:
 		| string
@@ -277,13 +320,8 @@ export const isEqual = (
 			if (isOriginalNullLike && isComparedNullLike) return true;
 
 			// If both are arrays
-			if (Array.isArray(originalValue)) {
-				if (Array.isArray(comparedValue))
-					return (
-						JSON.stringify(originalValue) === JSON.stringify(comparedValue)
-					);
-				return Inison.stringify(originalValue) === comparedValue;
-			}
+			if (Array.isArray(originalValue) && Array.isArray(comparedValue))
+				return haveSameArrayValues(originalValue, comparedValue);
 
 			// If both are number-like
 			if (isNumber(originalValue) && isNumber(comparedValue))
@@ -388,6 +426,6 @@ export const getCachedRegex = (pattern: string): RE2 => {
 		regexCache.set(pattern, compiledRegex);
 		return compiledRegex;
 	} catch {
-		return { test: (_str: string) => false } as any;
+		return { test: (_str: string) => false } as unknown as RE2;
 	}
 };

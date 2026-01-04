@@ -1645,25 +1645,13 @@ export default class Inibase {
 
 						delete (value as Criteria)[logic];
 					}
-				} else if (Array.isArray(value)) {
-					const crit = value
-						.map((v) =>
-							typeof v === "string"
-								? Utils.FormatObjectCriteriaValue(v)
-								: ["=", v],
-						)
-						.filter(Boolean) as [ComparisonOperator, any][];
-					searchOperator = crit.map((c) => c[0]);
-					if (searchOperator.length === 1) searchOperator = searchOperator[0];
-					searchComparedAtValue = crit.map((c) => c[1]);
-					searchLogicalOperator = "or";
 				} else if (typeof value === "string") {
 					const [op, val] = Utils.FormatObjectCriteriaValue(value);
 					searchOperator = op;
 					searchComparedAtValue = val;
 				} else {
 					searchOperator = "=";
-					searchComparedAtValue = value as number | boolean;
+					searchComparedAtValue = value;
 				}
 
 				const [searchResult, totalLines, linesNumbers] = await File.search(
