@@ -1654,6 +1654,7 @@ export default class Inibase {
 						)
 						.filter(Boolean) as [ComparisonOperator, any][];
 					searchOperator = crit.map((c) => c[0]);
+					if (searchOperator.length === 1) searchOperator = searchOperator[0];
 					searchComparedAtValue = crit.map((c) => c[1]);
 					searchLogicalOperator = "or";
 				} else if (typeof value === "string") {
