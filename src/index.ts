@@ -1538,13 +1538,15 @@ export default class Inibase {
 							lineContent?: string | number | (string | number)[],
 						) =>
 							Array.isArray(lineContent)
-								? lineContent.map((singleContent) =>
-										singleContent
-											? Array.isArray(singleContent)
-												? singleContent.map(formatLineContent)
-												: items?.find(({ id }) => singleContent === id)
-											: singleContent,
-									)
+								? lineContent
+										.map((singleContent) =>
+											singleContent
+												? Array.isArray(singleContent)
+													? singleContent.map(formatLineContent)
+													: items?.find(({ id }) => singleContent === id)
+												: singleContent,
+										)
+										.filter((item) => item !== undefined)
 								: items?.find(({ id }) => lineContent === id);
 						for (const [lineNumber, lineContent] of searchableIDs.entries()) {
 							if (!lineContent) continue;
