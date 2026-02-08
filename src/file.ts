@@ -1,9 +1,9 @@
 import type { WriteStream } from "node:fs";
 import {
-	type FileHandle,
 	access,
 	appendFile,
 	copyFile,
+	type FileHandle,
 	constants as fsConstants,
 	open,
 	readFile,
@@ -12,7 +12,7 @@ import {
 	writeFile,
 } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { type Interface, createInterface } from "node:readline";
+import { createInterface, type Interface } from "node:readline";
 import { Transform, type Transform as TransformType } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createGunzip, createGzip } from "node:zlib";

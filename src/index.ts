@@ -4,8 +4,8 @@ import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import {
 	glob,
 	mkdir,
-	readFile,
 	readdir,
+	readFile,
 	rename,
 	rm,
 	unlink,
@@ -1838,7 +1838,7 @@ export default class Inibase {
 		onlyLinesNumbers?: false,
 		_whereIsLinesNumbers?: boolean,
 	): Promise<(Data & TData)[] | null>;
-	get<TData extends Record<string, any> & Partial<Data>>(
+	get<_TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
 		where: string | number | (string | number)[] | Criteria | undefined,
 		options: Options | undefined,
@@ -1846,7 +1846,7 @@ export default class Inibase {
 		onlyLinesNumbers: true,
 		_whereIsLinesNumbers?: boolean,
 	): Promise<number[] | null>;
-	get<TData extends Record<string, any> & Partial<Data>>(
+	get<_TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
 		where: string | number | (string | number)[] | Criteria | undefined,
 		options: Options | undefined,

@@ -86,7 +86,7 @@ export const isNumber = (input: unknown): input is number => {
 
 // As a literal (no double-escaping).
 const emailPattern =
-	/^[A-Za-z0-9!#%&'*+\/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#%&'*+\/=?^_`{|}~-]+)*@(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/;
+	/^[A-Za-z0-9!#%&'*+/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#%&'*+/=?^_`{|}~-]+)*@(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/;
 /**
  * Checks if the input is a valid email format.
  *
@@ -657,7 +657,7 @@ export function toDotNotation(
 	const result: Record<string, any> = {};
 
 	for (const key in obj) {
-		if (Object.prototype.hasOwnProperty.call(obj, key)) {
+		if (Object.hasOwn(obj, key)) {
 			const value = obj[key];
 			const newKey = currentPath ? `${currentPath}.${key}` : key;
 

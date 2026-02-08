@@ -7,7 +7,7 @@ import { parseArgs } from "node:util";
 import Inison from "inison";
 
 import { isExists } from "./file.js";
-import Inibase, { type Options, type Criteria, type Data } from "./index.js";
+import Inibase, { type Criteria, type Data, type Options } from "./index.js";
 import { isNumber, isStringified, setField, unsetField } from "./utils.js";
 
 const textGreen = (input: string) => `\u001b[1;32m${input}\u001b[0m`;
@@ -224,13 +224,12 @@ console.log(`   ${textGreen("config")} | ${textGreen("c")}
 				break;
 			}
 
-			let where: undefined | string | number | Criteria | (string | number)[] =
-				undefined;
-			let page: undefined | Options["page"] = undefined;
-			let perPage: undefined | Options["perPage"] = undefined;
-			let columns: undefined | Options["columns"] = undefined;
-			let sort: undefined | Options["sort"] = undefined;
-			let data: undefined | Data = undefined;
+			let where: undefined | string | number | Criteria | (string | number)[];
+			let page: undefined | Options["page"];
+			let perPage: undefined | Options["perPage"];
+			let columns: undefined | Options["columns"];
+			let sort: undefined | Options["sort"];
+			let data: undefined | Data;
 
 			if (splitedInput.toSpliced(0, 1).length) {
 				const parsedArgs = parseArgs({

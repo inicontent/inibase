@@ -9,12 +9,11 @@ import {
 } from "node:crypto";
 import { promisify } from "node:util";
 import { gunzip as gunzipSync, gzip as gzipSync } from "node:zlib";
-
+import Inison from "inison";
 import RE2 from "re2";
 import type { ComparisonOperator, FieldType } from "./index.js";
 import { globalConfig } from "./index.js";
 import { detectFieldType, isNumber, isPassword } from "./utils.js";
-import Inison from "inison";
 
 export const exec = promisify(execSync);
 
