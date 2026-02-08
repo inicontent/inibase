@@ -379,7 +379,7 @@ export default class Inibase {
 		await writeFile(join(tablePath, "0-0.pagination"), "");
 	}
 
-	// Function to replace the string in one schema.json file
+	// Function to replace the string in one schema file
 	private async replaceStringInFile(
 		filePath: string,
 		targetString: string,
@@ -424,7 +424,7 @@ export default class Inibase {
 
 			schema = Utils.addIdToSchema(schema, lastSchemaID);
 
-			// if schema.json exists, update columns files names based on field id
+			// if schema file exists, update columns files names based on field id
 			if (
 				(await File.isExists(
 					join(tablePath, `schema.${this.schemaFileExtension}`),
@@ -575,7 +575,9 @@ export default class Inibase {
 		if (
 			!globalConfig[this.databasePath].tables.has(tableName) ||
 			globalConfig[this.databasePath].tables.get(tableName).timestamp !==
-				(await File.getFileDate(join(tablePath, "schema.json")))
+				(await File.getFileDate(
+					join(tablePath, `schema.${this.schemaFileExtension}`),
+				))
 		)
 			globalConfig[this.databasePath].tables.set(tableName, {
 				schema: await this.getTableSchema(tableName),
@@ -587,7 +589,9 @@ export default class Inibase {
 					prepend: await File.isExists(join(tablePath, ".prepend.config")),
 					decodeID: await File.isExists(join(tablePath, ".decodeID.config")),
 				},
-				timestamp: await File.getFileDate(join(tablePath, "schema.json")),
+				timestamp: await File.getFileDate(
+					join(tablePath, `schema.${this.schemaFileExtension}`),
+				),
 			});
 		return globalConfig[this.databasePath].tables.get(tableName);
 	}
@@ -1611,15 +1615,15 @@ export default class Inibase {
 				let searchOperator:
 					| ComparisonOperator
 					| ComparisonOperator[]
-					| undefined = undefined;
+					| undefined;
 				let searchComparedAtValue:
 					| string
 					| number
 					| boolean
 					| null
 					| (string | number | boolean | null)[]
-					| undefined = undefined;
-				let searchLogicalOperator: "and" | "or" | undefined = undefined;
+					| undefined;
+				let searchLogicalOperator: "and" | "or" | undefined;
 
 				if (Utils.isObject(value)) {
 					/* nested object with .and / .or inside */
@@ -2248,22 +2252,26 @@ export default class Inibase {
 			(Array.isArray(RETURN) && !RETURN.length)
 		)
 			return null;
-
-		const greatestTotalItems = this.totalItems.has(`${tableName}-*`)
-			? this.totalItems.get(`${tableName}-*`)
-			: Math.max(
-					...[...this.totalItems.entries()]
-						.filter(([k]) => k.startsWith(`${tableName}-`))
-						.map(([, v]) => v),
-				);
+		let total: number;
+		if (Utils.isObject(where))
+			total = Math.min(
+				...[...this.totalItems.entries()]
+					.filter(([k]) => k.startsWith(`${tableName}-`))
+					.map(([, v]) => v),
+			);
+		else
+			total = this.totalItems.has(`${tableName}-*`)
+				? this.totalItems.get(`${tableName}-*`)
+				: Math.max(
+						...[...this.totalItems.entries()]
+							.filter(([k]) => k.startsWith(`${tableName}-`))
+							.map(([, v]) => v),
+					);
 		this.pageInfo[tableName] = {
 			...(({ columns, ...restOfOptions }) => restOfOptions)(options),
 			perPage: Array.isArray(RETURN) ? RETURN.length : 1,
-			totalPages:
-				options.perPage < 0
-					? 1
-					: Math.ceil(greatestTotalItems / options.perPage),
-			total: greatestTotalItems,
+			totalPages: options.perPage < 0 ? 1 : Math.ceil(total / options.perPage),
+			total: total,
 		};
 		return onlyOne && Array.isArray(RETURN) ? RETURN[0] : RETURN;
 	}
@@ -2494,7 +2502,7 @@ export default class Inibase {
 		},
 		returnUpdatedData?: boolean,
 		_whereIsLinesNumbers?: boolean,
-	): Promise<(Data & TData) | (Data & TData)[] | null | undefined | void> {
+	): Promise<(Data & TData) | (Data & TData)[] | null | undefined | undefined> {
 		const renameList: string[][] = [];
 		const tablePath = join(this.databasePath, tableName);
 		await this.throwErrorIfTableEmpty(tableName);
