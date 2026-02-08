@@ -1881,6 +1881,8 @@ export default class Inibase {
 		options.columns = options.columns || [];
 		options.page = options.page || 1;
 		options.perPage = options.perPage || 15;
+
+		let total: number;
 		let RETURN!: (Data & TData) | (Data & TData)[] | null;
 
 		let schema = structuredClone((await this.getTable(tableName)).schema);
@@ -2238,6 +2240,16 @@ export default class Inibase {
 						),
 					),
 				);
+				total = Math.min(
+					...[...this.totalItems.entries()]
+						.filter(([k]) => k.startsWith(`${tableName}-`))
+						.map(([, v]) => v),
+				);
+
+				for (const [key] of this.totalItems)
+					if (key.startsWith(`${tableName}-`) && key !== `${tableName}-id`)
+						this.totalItems.delete(key);
+
 				if (globalConfig[this.databasePath].tables.get(tableName).config.cache)
 					await writeFile(
 						cachedFilePath,
@@ -2252,14 +2264,8 @@ export default class Inibase {
 			(Array.isArray(RETURN) && !RETURN.length)
 		)
 			return null;
-		let total: number;
-		if (Utils.isObject(where))
-			total = Math.min(
-				...[...this.totalItems.entries()]
-					.filter(([k]) => k.startsWith(`${tableName}-`))
-					.map(([, v]) => v),
-			);
-		else
+
+		if (total === undefined)
 			total = this.totalItems.has(`${tableName}-*`)
 				? this.totalItems.get(`${tableName}-*`)
 				: Math.max(
@@ -2271,7 +2277,7 @@ export default class Inibase {
 			...(({ columns, ...restOfOptions }) => restOfOptions)(options),
 			perPage: Array.isArray(RETURN) ? RETURN.length : 1,
 			totalPages: options.perPage < 0 ? 1 : Math.ceil(total / options.perPage),
-			total: total,
+			total,
 		};
 		return onlyOne && Array.isArray(RETURN) ? RETURN[0] : RETURN;
 	}
