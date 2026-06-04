@@ -523,8 +523,8 @@ export default class Inibase {
 						"-c",
 						`for file; do ${
 							config.compression
-								? 'zcat "$file" | tac | gzip > "$file.reversed" && mv "$file.reversed" "$file"'
-								: 'tac "$file" > "$file.reversed" && mv "$file.reversed" "$file"'
+								? `zcat "$file" | ${process.platform === "darwin" ? "tail -r" : "tac"} | gzip > "$file.reversed" && mv "$file.reversed" "$file"`
+								: `${process.platform === "darwin" ? "tail -r" : "tac"} "$file" > "$file.reversed" && mv "$file.reversed" "$file"`
 						}; done`,
 						"_",
 						"{}",

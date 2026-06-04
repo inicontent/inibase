@@ -379,7 +379,7 @@ export async function get(
 		} else if (lineNumbers === -1) {
 			const escapedFilePath = escapeShellPath(filePath);
 			const command = filePath.endsWith(".gz")
-				? `zcat ${escapedFilePath} | sed -n '$p'`
+				? `gunzip -c ${escapedFilePath} | sed -n '$p'`
 				: `sed -n '$p' ${escapedFilePath}`;
 			const foundedLine = (await exec(command)).stdout.trimEnd();
 			if (foundedLine) lines[linesCount] = decode(foundedLine, field);
@@ -400,7 +400,7 @@ export async function get(
 
 			const escapedFilePath = escapeShellPath(filePath);
 			const command = filePath.endsWith(".gz")
-				? `zcat ${escapedFilePath} | sed -n '${_groupIntoRanges(lineNumbers)}'`
+				? `gunzip -c ${escapedFilePath} | sed -n '${_groupIntoRanges(lineNumbers)}'`
 				: `sed -n '${_groupIntoRanges(lineNumbers)}' ${escapedFilePath}`;
 			const foundedLines = (await exec(command)).stdout.trimEnd().split("\n");
 
@@ -511,7 +511,7 @@ export const replace = async (
 			const escapedFileTempPath = escapeShellPath(fileTempPath);
 			const sedCommand = `sed -e s/.*/${replacements}/ -e /^$/s/^/${replacements}/ ${escapedFilePath}`;
 			const command = filePath.endsWith(".gz")
-				? `zcat ${escapedFilePath} | ${sedCommand} | gzip > ${escapedFileTempPath}`
+				? `gunzip -c ${escapedFilePath} | ${sedCommand} | gzip > ${escapedFileTempPath}`
 				: `${sedCommand} > ${escapedFileTempPath}`;
 			try {
 				await exec(command);
@@ -703,7 +703,7 @@ export const remove = async (
 		const escapedFileTempPath = escapeShellPath(fileTempPath);
 
 		const command = filePath.endsWith(".gz")
-			? `zcat ${escapedFilePath} | sed '${_groupIntoRanges(linesToDelete, "d")}' | gzip > ${escapedFileTempPath}`
+			? `gunzip -c ${escapedFilePath} | sed '${_groupIntoRanges(linesToDelete, "d")}' | gzip > ${escapedFileTempPath}`
 			: `sed '${_groupIntoRanges(linesToDelete, "d")}' ${escapedFilePath} > ${escapedFileTempPath}`;
 		await exec(command);
 
