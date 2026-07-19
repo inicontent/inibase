@@ -433,7 +433,12 @@ export default class Inibase {
 				table.schema?.length
 			) {
 				const replaceOldPathes = Utils.findChangedProperties(
-					this.schemaToIdsPath(tableName, table.schema),
+					this.schemaToIdsPath(
+						tableName,
+						table.schema.filter(
+							({ key }) => !["createdAt", "updatedAt"].includes(key),
+						),
+					),
 					this.schemaToIdsPath(tableName, schema),
 				);
 				if (replaceOldPathes)
