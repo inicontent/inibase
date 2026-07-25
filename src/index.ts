@@ -1661,6 +1661,22 @@ export default class Inibase {
 								searchComparedAtValue = crit.map((c) => c[1]);
 								searchLogicalOperator = logic;
 							}
+						} else if (Array.isArray(logicalChild)) {
+							const crit = (
+								logicalChild as (string | number | boolean | null)[]
+							)
+								.map((item) =>
+									typeof item === "string"
+										? Utils.FormatObjectCriteriaValue(item)
+										: ["=", item],
+								)
+								.filter(Boolean) as [ComparisonOperator, any][];
+
+							if (crit.length) {
+								searchOperator = crit.map((c) => c[0]);
+								searchComparedAtValue = crit.map((c) => c[1]);
+								searchLogicalOperator = logic;
+							}
 						}
 
 						delete (value as NonNullable<Criteria>)[logic];
