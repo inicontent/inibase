@@ -33,6 +33,9 @@ import {
 } from "./utils.js";
 import { compare, encodeID, exec, gunzip, gzip } from "./utils.server.js";
 
+// Locks older than this are assumed abandoned by a crashed/killed process, not a slow operation.
+const STALE_LOCK_MS = 30_000;
+
 export const lock = async (
 	folderPath: string,
 	prefix?: string,
@@ -43,10 +46,14 @@ export const lock = async (
 		lockFile = await open(lockFilePath, "wx");
 		return;
 	} catch ({ message }: any) {
-		if (message.split(":")[0] === "EEXIST")
+		if (message.split(":")[0] === "EEXIST") {
+			const lockStat = await stat(lockFilePath).catch(() => null);
+			if (lockStat && Date.now() - lockStat.mtimeMs > STALE_LOCK_MS)
+				await unlink(lockFilePath).catch(() => {});
 			return await new Promise<void>((resolve) =>
 				setTimeout(() => resolve(lock(folderPath, prefix)), 13),
 			);
+		}
 	} finally {
 		await lockFile?.close();
 	}
