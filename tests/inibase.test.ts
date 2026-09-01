@@ -904,4 +904,125 @@ await test("Table Relationships", async (t) => {
 	});
 });
 
+await test("Name Validation (Security)", async (t) => {
+	initializeDatabase();
+
+	const maliciousNames = [
+		"../etc/passwd",
+		"..\\..\\etc",
+		"users; rm -rf /",
+		"users`rm -rf /`",
+		"users$(rm -rf /)",
+		"users|id",
+		"users && cat /etc/passwd",
+		"my table",
+		"table.name",
+		"table/name",
+		"table\\name",
+		"table\0admin",
+		".",
+		"..",
+		"",
+		"a".repeat(256),
+		"-leading-hyphen",
+	];
+
+	const validNames = [
+		"users",
+		"my_table",
+		"table-1",
+		"Users123",
+		"a",
+		"a".repeat(255),
+	];
+
+	await t.test("Reject Malicious Database Names", async () => {
+		for (const name of maliciousNames)
+			assert.throws(
+				() => new Inibase(name),
+				/Invalid name/,
+				`Should reject database name '${name}'`,
+			);
+	});
+
+	await t.test("Accept Valid Database Names", async () => {
+		for (const name of validNames) {
+			removeDatabase();
+			assert.doesNotThrow(
+				() => new Inibase(name),
+				`Should accept database name '${name}'`,
+			);
+		}
+	});
+
+	await t.test("Reject Malicious Table Names", async () => {
+		for (const name of maliciousNames)
+			await assert.rejects(
+				inibase.createTable(name),
+				/Invalid name/,
+				`Should reject table name '${name}'`,
+			);
+	});
+
+	await t.test("Reject Malicious Column Names in Schema", async () => {
+		for (const key of maliciousNames) {
+			removeDatabase();
+			inibase = new Inibase(dbPath);
+			await assert.rejects(
+				inibase.createTable("t", [{ key, type: "string" }]),
+				/Invalid name/,
+				`Should reject column name '${key}'`,
+			);
+		}
+	});
+
+	await t.test("Reject Malicious Column Names via columns option", async () => {
+		const tableName = "secure_table";
+		await inibase.createTable(tableName, [{ key: "name", type: "string" }]);
+		for (const column of maliciousNames)
+			await assert.rejects(
+				inibase.get(tableName, undefined, { columns: [column] }),
+				/Invalid name/,
+				`Should reject column '${column}' in columns option`,
+			);
+	});
+
+	await t.test("Reject Malicious Column Names via sum/max/min", async () => {
+		const tableName = "secure_table";
+		for (const column of maliciousNames) {
+			await assert.rejects(
+				inibase.sum(tableName, column),
+				/Invalid name/,
+				`Should reject column '${column}' in sum`,
+			);
+			await assert.rejects(
+				inibase.max(tableName, column),
+				/Invalid name/,
+				`Should reject column '${column}' in max`,
+			);
+			await assert.rejects(
+				inibase.min(tableName, column),
+				/Invalid name/,
+				`Should reject column '${column}' in min`,
+			);
+		}
+	});
+
+	await t.test("Accept Valid Names End to End", async () => {
+		removeDatabase();
+		inibase = new Inibase(dbPath);
+		const tableName = "secure_table";
+		await inibase.createTable(tableName, [
+			{ key: "name", type: "string" },
+			{ key: "age", type: "number" },
+		]);
+		await inibase.post(tableName, { name: "John", age: 30 });
+		const data = await inibase.get(tableName, undefined, {
+			columns: ["name"],
+		});
+		assert.equal(data?.[0].name, "John", "Valid names should work end to end");
+		assert.equal(await inibase.sum(tableName, "age"), 30);
+	});
+});
+
 await test("Cleanup Database", removeDatabase);

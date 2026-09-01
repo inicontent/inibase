@@ -731,3 +731,52 @@ export function addIdToSchema(schema: Schema, startWithID: { value: number }) {
 
 	return addIdToSchemaHelper(clonedSchema);
 }
+
+/**
+ * Validates that a string is a safe name for a table, database or column.
+ *
+ * Names must match `^[a-zA-Z0-9][a-zA-Z0-9_-]*$` (starts with an alphanumeric
+ * character, followed by alphanumerics, underscores or hyphens) and be at most
+ * 255 characters long.
+ *
+ * This prevents path traversal (`../`, `..\\`), null-byte injection (`\0`),
+ * shell injection (`;`, `|`, backticks, `$()`, spaces, slashes) and other
+ * reserved-name issues.
+ *
+ * @param input - The value to be checked.
+ * @returns boolean - True if the name is safe to use, false otherwise.
+ */
+export const isValidName = (input: unknown): input is string =>
+	typeof input === "string" &&
+	input.length > 0 &&
+	input.length <= 255 &&
+	/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(input);
+
+/**
+ * Validates that a string is a safe name for a table, database or column and
+ * throws an error if it is not.
+ *
+ * @param name - The name to validate.
+ * @throws {Error} If the name is not a safe name.
+ */
+export const validateName = (name: string): void => {
+	if (!isValidName(name))
+		throw new Error(
+			`Invalid name: '${name}'. Names must contain only alphanumeric characters, underscores or hyphens, must start with an alphanumeric character and must be at most 255 characters long.`,
+		);
+};
+
+/**
+ * Recursively validates every field key of a schema.
+ *
+ * @param schema - The schema to validate.
+ * @throws {Error} If any field key is not a safe name.
+ */
+export const validateSchema = (schema: Schema): void => {
+	for (const field of schema) {
+		validateName(field.key);
+		if (field.table) validateName(field.table);
+		if (field.children && isArrayOfObjects(field.children))
+			validateSchema(field.children);
+	}
+};

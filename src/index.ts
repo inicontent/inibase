@@ -131,6 +131,7 @@ export const ERROR_CODES = [
 	"TABLE_EXISTS",
 	"TABLE_NOT_EXISTS",
 	"INVALID_REGEX_MATCH",
+	"INVALID_NAME",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 export type ErrorLang = "en" | "ar" | "fr" | "es";
@@ -162,6 +163,8 @@ export default class Inibase {
 	private schemaFileExtension = process.env.INIBASE_SCHEMA_EXTENSION ?? "json";
 
 	constructor(database: string, mainFolder = ".", language: ErrorLang = "en") {
+		Utils.validateName(database);
+
 		this.databasePath = join(mainFolder, database);
 
 		this.language = language;
@@ -205,6 +208,7 @@ export default class Inibase {
 			INVALID_PARAMETERS: "The given parameters are not valid",
 			INVALID_REGEX_MATCH:
 				"Field {variable} does not match the expected pattern",
+			INVALID_NAME: "Name {variable} is not valid",
 			NO_ENV:
 				Number(process.versions.node.split(".").reduce((a, b) => a + b)) >= 26
 					? "please run with '--env-file=.env'"
@@ -225,6 +229,7 @@ export default class Inibase {
 				"من المتوقع أن يكون {variable} من النوع {variable}، لكن تم العثور على {variable} بدلاً من ذلك",
 			INVALID_PARAMETERS: "المعلمات المقدمة غير صالحة",
 			INVALID_REGEX_MATCH: "الحقل {variable} لا يتطابق مع النمط المتوقع",
+			INVALID_NAME: "الاسم {variable} غير صالح",
 			NO_ENV:
 				Number(process.versions.node.split(".").reduce((a, b) => a + b)) >= 26
 					? "يرجى التشغيل باستخدام '--env-file=.env'"
@@ -246,6 +251,7 @@ export default class Inibase {
 			INVALID_PARAMETERS: "Les paramètres donnés ne sont pas valides",
 			INVALID_REGEX_MATCH:
 				"Le champ {variable} ne correspond pas au modèle attendu",
+			INVALID_NAME: "Le nom {variable} n'est pas valide",
 			NO_ENV:
 				Number(process.versions.node.split(".").reduce((a, b) => a + b)) >= 26
 					? "veuillez exécuter avec '--env-file=.env'"
@@ -267,6 +273,7 @@ export default class Inibase {
 			INVALID_PARAMETERS: "Los parámetros proporcionados no son válidos",
 			INVALID_REGEX_MATCH:
 				"El campo {variable} no coincide con el patrón esperado",
+			INVALID_NAME: "El nombre {variable} no es válido",
 			NO_ENV:
 				Number(process.versions.node.split(".").reduce((a, b) => a + b)) >= 26
 					? "por favor ejecute con '--env-file=.env'"
@@ -341,6 +348,10 @@ export default class Inibase {
 		schema?: Schema,
 		config?: TableConfig,
 	) {
+		Utils.validateName(tableName);
+
+		if (schema) Utils.validateSchema(schema);
+
 		const tablePath = join(this.databasePath, tableName);
 
 		if (await File.isExists(tablePath))
@@ -405,11 +416,16 @@ export default class Inibase {
 		schema?: Schema,
 		config?: TableConfig & { name?: string },
 	) {
+		Utils.validateName(tableName);
+
+		if (config?.name) Utils.validateName(config.name);
+
 		const table = await this.getTable(tableName);
 		if (!table) return;
 		const tablePath = join(this.databasePath, tableName);
 
 		if (schema) {
+			Utils.validateSchema(schema);
 			// remove id from schema
 			schema = schema.filter(
 				({ key }) => !["id", "createdAt", "updatedAt"].includes(key),
@@ -573,6 +589,8 @@ export default class Inibase {
 	 * @return {*}  {Promise<TableObject | undefined>}
 	 */
 	public async getTable(tableName: string): Promise<TableObject | undefined> {
+		Utils.validateName(tableName);
+
 		const tablePath = join(this.databasePath, tableName);
 
 		if (!(await File.isExists(tablePath)))
@@ -603,6 +621,8 @@ export default class Inibase {
 	}
 
 	public async getTableSchema(tableName: string) {
+		Utils.validateName(tableName);
+
 		const tablePath = join(this.databasePath, tableName);
 		let schemaFile: string | undefined;
 		let schema: Schema | undefined;
@@ -1831,6 +1851,8 @@ export default class Inibase {
 	 * @param {string} tableName
 	 */
 	public async clearCache(tableName: string) {
+		Utils.validateName(tableName);
+
 		const cacheFolderPath = join(this.databasePath, tableName, ".cache");
 		await rm(cacheFolderPath, { recursive: true, force: true });
 		await mkdir(cacheFolderPath);
@@ -1898,12 +1920,15 @@ export default class Inibase {
 		_whereIsLinesNumbers?: boolean,
 	): Promise<(Data & TData) | number | ((Data & TData) | number)[] | null> {
 		const tablePath = join(this.databasePath, tableName);
-
+		
 		// Ensure options.columns is an array
 		if (options.columns) {
 			options.columns = Array.isArray(options.columns)
 				? options.columns
 				: [options.columns];
+
+			for (const column of options.columns)
+				Utils.validateName(column);
 
 			if (options.columns.length && !options.columns.includes("id"))
 				options.columns.push("id");
@@ -2790,8 +2815,8 @@ export default class Inibase {
 		where?: number | string | (number | string)[] | Criteria,
 		_whereIsLinesNumbers?: boolean,
 	): Promise<boolean | null> {
-		const tablePath = join(this.databasePath, tableName);
 		await this.throwErrorIfTableEmpty(tableName);
+		const tablePath = join(this.databasePath, tableName);
 
 		if (!where) {
 			try {
@@ -2966,12 +2991,13 @@ export default class Inibase {
 		columns: string | string[],
 		where?: number | string | (number | string)[] | Criteria,
 	): Promise<number | Record<string, number>> {
+		await this.throwErrorIfTableEmpty(tableName);
 		const RETURN: Record<string, number> = {};
 		const tablePath = join(this.databasePath, tableName);
-		await this.throwErrorIfTableEmpty(tableName);
 
 		if (!Array.isArray(columns)) columns = [columns];
 		for await (const column of columns) {
+			Utils.validateName(column);
 			const columnPath = join(
 				tablePath,
 				`${column}${this.getFileExtension(tableName)}`,
@@ -3024,6 +3050,7 @@ export default class Inibase {
 
 		if (!Array.isArray(columns)) columns = [columns];
 		for await (const column of columns) {
+			Utils.validateName(column);
 			const columnPath = join(
 				tablePath,
 				`${column}${this.getFileExtension(tableName)}`,
@@ -3075,6 +3102,7 @@ export default class Inibase {
 
 		if (!Array.isArray(columns)) columns = [columns];
 		for await (const column of columns) {
+			Utils.validateName(column);
 			const columnPath = join(
 				tablePath,
 				`${column}${this.getFileExtension(tableName)}`,
