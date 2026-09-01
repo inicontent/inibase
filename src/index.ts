@@ -1919,16 +1919,17 @@ export default class Inibase {
 		onlyLinesNumbers?: boolean,
 		_whereIsLinesNumbers?: boolean,
 	): Promise<(Data & TData) | number | ((Data & TData) | number)[] | null> {
+		Utils.validateName(tableName);
+
 		const tablePath = join(this.databasePath, tableName);
-		
+
 		// Ensure options.columns is an array
 		if (options.columns) {
 			options.columns = Array.isArray(options.columns)
 				? options.columns
 				: [options.columns];
 
-			for (const column of options.columns)
-				Utils.validateName(column);
+			for (const column of options.columns) Utils.validateName(column);
 
 			if (options.columns.length && !options.columns.includes("id"))
 				options.columns.push("id");
@@ -2391,6 +2392,14 @@ export default class Inibase {
 				page: 1,
 				perPage: 15,
 			};
+		Utils.validateName(tableName);
+
+		if (options.columns)
+			for (const column of (Array.isArray(options.columns)
+				? options.columns
+				: [options.columns]) as string[])
+				Utils.validateName(column);
+
 		const tablePath = join(this.databasePath, tableName);
 		await this.getTable(tableName);
 
@@ -2580,6 +2589,14 @@ export default class Inibase {
 		_whereIsLinesNumbers?: boolean,
 	): Promise<(Data & TData) | (Data & TData)[] | null | undefined | undefined> {
 		const renameList: string[][] = [];
+		Utils.validateName(tableName);
+
+		if (options.columns)
+			for (const column of (Array.isArray(options.columns)
+				? options.columns
+				: [options.columns]) as string[])
+				Utils.validateName(column);
+
 		const tablePath = join(this.databasePath, tableName);
 		await this.throwErrorIfTableEmpty(tableName);
 
@@ -2815,8 +2832,10 @@ export default class Inibase {
 		where?: number | string | (number | string)[] | Criteria,
 		_whereIsLinesNumbers?: boolean,
 	): Promise<boolean | null> {
-		await this.throwErrorIfTableEmpty(tableName);
+		Utils.validateName(tableName);
+
 		const tablePath = join(this.databasePath, tableName);
+		await this.throwErrorIfTableEmpty(tableName);
 
 		if (!where) {
 			try {
@@ -2991,13 +3010,16 @@ export default class Inibase {
 		columns: string | string[],
 		where?: number | string | (number | string)[] | Criteria,
 	): Promise<number | Record<string, number>> {
+		Utils.validateName(tableName);
+
+		if (!Array.isArray(columns)) columns = [columns];
+		for (const column of columns) Utils.validateName(column);
+
 		await this.throwErrorIfTableEmpty(tableName);
 		const RETURN: Record<string, number> = {};
 		const tablePath = join(this.databasePath, tableName);
 
-		if (!Array.isArray(columns)) columns = [columns];
 		for await (const column of columns) {
-			Utils.validateName(column);
 			const columnPath = join(
 				tablePath,
 				`${column}${this.getFileExtension(tableName)}`,
@@ -3044,13 +3066,16 @@ export default class Inibase {
 		columns: string | string[],
 		where?: number | string | (number | string)[] | Criteria,
 	): Promise<number | Record<string, number>> {
+		Utils.validateName(tableName);
+
+		if (!Array.isArray(columns)) columns = [columns];
+		for (const column of columns) Utils.validateName(column);
+
 		const RETURN: Record<string, number> = {};
 		const tablePath = join(this.databasePath, tableName);
 		await this.throwErrorIfTableEmpty(tableName);
 
-		if (!Array.isArray(columns)) columns = [columns];
 		for await (const column of columns) {
-			Utils.validateName(column);
 			const columnPath = join(
 				tablePath,
 				`${column}${this.getFileExtension(tableName)}`,
@@ -3096,13 +3121,16 @@ export default class Inibase {
 		columns: string | string[],
 		where?: number | string | (number | string)[] | Criteria,
 	): Promise<number | Record<string, number>> {
+		Utils.validateName(tableName);
+
+		if (!Array.isArray(columns)) columns = [columns];
+		for (const column of columns) Utils.validateName(column);
+
 		const RETURN: Record<string, number> = {};
 		const tablePath = join(this.databasePath, tableName);
 		await this.throwErrorIfTableEmpty(tableName);
 
-		if (!Array.isArray(columns)) columns = [columns];
 		for await (const column of columns) {
-			Utils.validateName(column);
 			const columnPath = join(
 				tablePath,
 				`${column}${this.getFileExtension(tableName)}`,
