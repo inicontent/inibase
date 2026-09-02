@@ -1835,7 +1835,8 @@ export default class Inibase {
 				? options.columns
 				: [options.columns];
 
-			for (const column of options.columns) this.validateName(column);
+			for (const column of options.columns)
+				if (column !== "*") this.validateName(column);
 
 			if (options.columns.length && !options.columns.includes("id"))
 				options.columns.push("id");
@@ -2304,7 +2305,7 @@ export default class Inibase {
 			for (const column of (Array.isArray(options.columns)
 				? options.columns
 				: [options.columns]) as string[])
-				this.validateName(column);
+				if (column !== "*") this.validateName(column);
 
 		const tablePath = join(this.databasePath, tableName);
 		await this.getTable(tableName);
@@ -2501,7 +2502,7 @@ export default class Inibase {
 			for (const column of (Array.isArray(options.columns)
 				? options.columns
 				: [options.columns]) as string[])
-				this.validateName(column);
+				if (column !== "*") this.validateName(column);
 
 		const tablePath = join(this.databasePath, tableName);
 		await this.throwErrorIfTableEmpty(tableName);

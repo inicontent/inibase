@@ -633,6 +633,11 @@ const db = new Inibase("/databaseName");
 const users = await db.get("user", undefined, {
   columns: ["!username", "!address.street"],
 });
+
+// Get all columns explicitly with the "*" wildcard
+const all = await db.get("user", undefined, {
+  columns: ["*"],
+});
 ```
 
 </blockquote>

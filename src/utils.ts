@@ -874,7 +874,6 @@ export const isValidName = (input: unknown): input is string =>
 	typeof input === "string" &&
 	input.length > 0 &&
 	input.length <= 255 &&
-	input !== "*" &&
 	validNamePattern.test(input);
 
 // Word characters: Latin alphanumerics, underscores, hyphens and Arabic blocks.

@@ -998,6 +998,22 @@ await test("Name Validation (Security)", async (t) => {
 			);
 	});
 
+	await t.test("Accept '*' wildcard column returns all columns", async () => {
+		removeDatabase();
+		inibase = new Inibase(dbPath);
+		const tableName = "wildcard_table";
+		await inibase.createTable(tableName, [
+			{ key: "name", type: "string" },
+			{ key: "age", type: "number" },
+		]);
+		await inibase.post(tableName, { name: "Sara", age: 28 });
+		const data = await inibase.get(tableName, undefined, {
+			columns: ["*"],
+		});
+		assert.equal(data?.[0].name, "Sara", "'*' should allow all columns");
+		assert.equal(data?.[0].age, 28, "'*' should include all columns data");
+	});
+
 	await t.test("Reject Malicious Column Names via sum/max/min", async () => {
 		const tableName = "secure_table";
 		for (const column of maliciousNames) {
