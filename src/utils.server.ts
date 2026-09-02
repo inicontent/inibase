@@ -63,7 +63,10 @@ const getKeyAndIv = (): { key: Buffer; iv: Buffer } => {
 	if (Buffer.isBuffer(globalConfig.salt)) {
 		return { key: globalConfig.salt, iv: globalConfig.salt.subarray(0, 16) };
 	}
-	const cacheKey = globalConfig.salt.toString();
+	const cacheKey = globalConfig.salt?.toString();
+	
+	if (!cacheKey) throw new Error("Invalid salt configuration");
+
 	let key = derivedKeyCache.get(cacheKey);
 
 	if (!key) {
@@ -91,7 +94,7 @@ export function decodeID(
 	const decipher = createDecipheriv("aes-256-cbc", key, iv);
 	try {
 		const rawData =
-			decipher.update(input, "hex", "utf8") + decipher.final("utf8");
+			decipher.update(input as string, "hex", "utf8") + decipher.final("utf8");
 		return raw ? rawData : Number(rawData);
 	} catch {
 		return null;

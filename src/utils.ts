@@ -277,8 +277,8 @@ export const deepMerge = (target: any, source: any): any => {
 export const findChangedProperties = (
 	obj1: Record<string, string>,
 	obj2: Record<string, string>,
-): Record<string, string> | null => {
-	const result: Record<string, string> = {};
+): Record<string, string|null> | null => {
+	const result: Record<string, string|null> = {};
 
 	for (const key1 in obj1) {
 		if (Object.hasOwn(obj2, key1)) {
@@ -874,6 +874,7 @@ export const isValidName = (input: unknown): input is string =>
 	typeof input === "string" &&
 	input.length > 0 &&
 	input.length <= 255 &&
+	input !== "*" &&
 	validNamePattern.test(input);
 
 // Word characters: Latin alphanumerics, underscores, hyphens and Arabic blocks.
