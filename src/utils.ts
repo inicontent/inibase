@@ -1,6 +1,8 @@
 import type {
 	ComparisonOperator,
 	Data,
+	ErrorCode,
+	ErrorLang,
 	Field,
 	FieldType,
 	Schema,
@@ -733,15 +735,137 @@ export function addIdToSchema(schema: Schema, startWithID: { value: number }) {
 }
 
 /**
+ * Translated error messages for every supported language and error code.
+ * The `{variable}` placeholder is replaced with the relevant value by
+ * {@link createError}.
+ */
+export const ERROR_MESSAGES: Record<ErrorLang, Record<ErrorCode, string>> = {
+	en: {
+		TABLE_EMPTY: "Table {variable} is empty",
+		TABLE_EXISTS: "Table {variable} already exists",
+		TABLE_NOT_EXISTS: "Table {variable} doesn't exist",
+		NO_SCHEMA: "Table {variable} does't have a schema",
+		GROUP_UNIQUE:
+			"Group {variable} should be unique, got duplicated content in {variable}",
+		FIELD_UNIQUE: "Field {variable} should be unique, got {variable} instead",
+		FIELD_REQUIRED: "Field {variable} is required",
+		INVALID_ID: "The given ID(s) is/are not valid(s)",
+		INVALID_TYPE: "Expect {variable} to be {variable}, got {variable} instead",
+		INVALID_PARAMETERS: "The given parameters are not valid",
+		INVALID_REGEX_MATCH:
+			"Field {variable} does not match the expected pattern",
+		INVALID_NAME: "Name {variable} is not valid",
+		NO_ENV:
+			Number(process.versions.node.split(".").reduce((a, b) => a + b)) >= 26
+				? "please run with '--env-file=.env'"
+				: "please use dotenv",
+	},
+	ar: {
+		TABLE_EMPTY: "الجدول {variable} فارغ",
+		TABLE_EXISTS: "الجدول {variable} موجود بالفعل",
+		TABLE_NOT_EXISTS: "الجدول {variable} غير موجود",
+		NO_SCHEMA: "الجدول {variable} ليس لديه مخطط",
+		GROUP_UNIQUE:
+			"المجموعة {variable} يجب أن تكون فريدة، تم العثور على محتوى مكرر في {variable}",
+		FIELD_UNIQUE:
+			"الحقل {variable} يجب أن يكون فريدًا، تم العثور على {variable} بدلاً من ذلك",
+		FIELD_REQUIRED: "الحقل {variable} مطلوب",
+		INVALID_ID: "المعرف أو المعرفات المقدمة غير صالحة",
+		INVALID_TYPE:
+			"من المتوقع أن يكون {variable} من النوع {variable}، لكن تم العثور على {variable} بدلاً من ذلك",
+		INVALID_PARAMETERS: "المعلمات المقدمة غير صالحة",
+		INVALID_REGEX_MATCH: "الحقل {variable} لا يتطابق مع النمط المتوقع",
+		INVALID_NAME: "الاسم {variable} غير صالح",
+		NO_ENV:
+			Number(process.versions.node.split(".").reduce((a, b) => a + b)) >= 26
+				? "يرجى التشغيل باستخدام '--env-file=.env'"
+				: "يرجى استخدام dotenv",
+	},
+	fr: {
+		TABLE_EMPTY: "La table {variable} est vide",
+		TABLE_EXISTS: "La table {variable} existe déjà",
+		TABLE_NOT_EXISTS: "La table {variable} n'existe pas",
+		NO_SCHEMA: "La table {variable} n'a pas de schéma",
+		GROUP_UNIQUE:
+			"Le groupe {variable} doit être unique, contenu dupliqué trouvé dans {variable}",
+		FIELD_UNIQUE:
+			"Le champ {variable} doit être unique, trouvé {variable} à la place",
+		FIELD_REQUIRED: "Le champ {variable} est obligatoire",
+		INVALID_ID: "Le(s) ID donné(s) n'est/ne sont pas valide(s)",
+		INVALID_TYPE:
+			"Attendu que {variable} soit de type {variable}, mais trouvé {variable} à la place",
+		INVALID_PARAMETERS: "Les paramètres donnés ne sont pas valides",
+		INVALID_REGEX_MATCH:
+			"Le champ {variable} ne correspond pas au modèle attendu",
+		INVALID_NAME: "Le nom {variable} n'est pas valide",
+		NO_ENV:
+			Number(process.versions.node.split(".").reduce((a, b) => a + b)) >= 26
+				? "veuillez exécuter avec '--env-file=.env'"
+				: "veuillez utiliser dotenv",
+	},
+	es: {
+		TABLE_EMPTY: "La tabla {variable} está vacía",
+		TABLE_EXISTS: "La tabla {variable} ya existe",
+		TABLE_NOT_EXISTS: "La tabla {variable} no existe",
+		NO_SCHEMA: "La tabla {variable} no tiene un esquema",
+		GROUP_UNIQUE:
+			"El grupo {variable} debe ser único, se encontró contenido duplicado en {variable}",
+		FIELD_UNIQUE:
+			"El campo {variable} debe ser único, se encontró {variable} en su lugar",
+		FIELD_REQUIRED: "El campo {variable} es obligatorio",
+		INVALID_ID: "El/los ID proporcionado(s) no es/son válido(s)",
+		INVALID_TYPE:
+			"Se espera que {variable} sea {variable}, pero se encontró {variable} en su lugar",
+		INVALID_PARAMETERS: "Los parámetros proporcionados no son válidos",
+		INVALID_REGEX_MATCH:
+			"El campo {variable} no coincide con el patrón esperado",
+		INVALID_NAME: "El nombre {variable} no es válido",
+		NO_ENV:
+			Number(process.versions.node.split(".").reduce((a, b) => a + b)) >= 26
+				? "por favor ejecute con '--env-file=.env'"
+				: "por favor use dotenv",
+	},
+};
+
+/**
+ * Creates a translated error exactly like the ones thrown by Inibase methods.
+ *
+ * @param language - The language to render the error message in.
+ * @param name - The error code, also used as the error `name`.
+ * @param variable - Optional value(s) used to fill the `{variable}` placeholders.
+ * @returns An `Error` whose `name` is the error code and `message` is translated.
+ */
+export const createError = (
+	language: ErrorLang,
+	name: ErrorCode,
+	variable?: string | number | (string | number)[],
+): Error => {
+	const errorMessage = ERROR_MESSAGES[language]?.[name];
+	if (!errorMessage) return new Error("ERR");
+	const error = new Error(
+		variable
+			? Array.isArray(variable)
+				? errorMessage.replace(
+						/\{variable\}/g,
+						() => variable.shift()?.toString() ?? "",
+					)
+				: errorMessage.replaceAll("{variable}", `'${variable.toString()}'`)
+			: errorMessage.replaceAll("{variable}", ""),
+	);
+	error.name = name;
+	return error;
+};
+
+/**
  * Validates that a string is a safe name for a table, database or column.
  *
- * Names must match `^[a-zA-Z0-9][a-zA-Z0-9_-]*$` (starts with an alphanumeric
- * character, followed by alphanumerics, underscores or hyphens) and be at most
- * 255 characters long.
+ * Names must start with an alphanumeric character (Latin or Arabic), followed
+ * by alphanumerics (Latin or Arabic), underscores, hyphens or spaces, and be
+ * at most 255 characters long. Leading or trailing spaces are not allowed.
  *
  * This prevents path traversal (`../`, `..\\`), null-byte injection (`\0`),
- * shell injection (`;`, `|`, backticks, `$()`, spaces, slashes) and other
- * reserved-name issues.
+ * shell injection (`;`, `|`, backticks, `$()`, tabs, newlines, slashes) and
+ * other reserved-name issues.
  *
  * @param input - The value to be checked.
  * @returns boolean - True if the name is safe to use, false otherwise.
@@ -750,33 +874,45 @@ export const isValidName = (input: unknown): input is string =>
 	typeof input === "string" &&
 	input.length > 0 &&
 	input.length <= 255 &&
-	/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(input);
+	validNamePattern.test(input);
+
+// Word characters: Latin alphanumerics, underscores, hyphens and Arabic blocks.
+const nameWordCharClass =
+	"a-zA-Z0-9_\\u0600-\\u06FF\\u0750-\\u077F\\u08A0-\\u08FF-";
+
+// Leading characters: same as word chars minus underscore and hyphen.
+const nameFirstCharClass =
+	"a-zA-Z0-9\\u0600-\\u06FF\\u0750-\\u077F\\u08A0-\\u08FF";
+
+// eslint-disable-next-line no-misleading-character-class
+const validNamePattern = new RegExp(
+	`^[${nameFirstCharClass}](?:[${nameWordCharClass} ]*[${nameWordCharClass}])?$`,
+);
 
 /**
  * Validates that a string is a safe name for a table, database or column and
- * throws an error if it is not.
+ * throws a translated `INVALID_NAME` error if it is not.
  *
  * @param name - The name to validate.
+ * @param language - The language to render the error message in.
  * @throws {Error} If the name is not a safe name.
  */
-export const validateName = (name: string): void => {
-	if (!isValidName(name))
-		throw new Error(
-			`Invalid name: '${name}'. Names must contain only alphanumeric characters, underscores or hyphens, must start with an alphanumeric character and must be at most 255 characters long.`,
-		);
+export const validateName = (name: string, language: ErrorLang = "en"): void => {
+	if (!isValidName(name)) throw createError(language, "INVALID_NAME", name);
 };
 
 /**
  * Recursively validates every field key of a schema.
  *
  * @param schema - The schema to validate.
+ * @param language - The language to render the error message in.
  * @throws {Error} If any field key is not a safe name.
  */
-export const validateSchema = (schema: Schema): void => {
+export const validateSchema = (schema: Schema, language: ErrorLang = "en"): void => {
 	for (const field of schema) {
-		validateName(field.key);
-		if (field.table) validateName(field.table);
+		validateName(field.key, language);
+		if (field.table) validateName(field.table, language);
 		if (field.children && isArrayOfObjects(field.children))
-			validateSchema(field.children);
+			validateSchema(field.children, language);
 	}
 };

@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import { existsSync, rmSync } from "node:fs";
 import { test } from "node:test";
 
-import Inibase, { type Schema } from "../src/index.js";
+import Inibase, { type ErrorLang, type Schema } from "../src/index.js";
 import { encodeID } from "../src/utils.server.js";
 
 // Test database directory
@@ -915,7 +915,11 @@ await test("Name Validation (Security)", async (t) => {
 		"users$(rm -rf /)",
 		"users|id",
 		"users && cat /etc/passwd",
-		"my table",
+		" my table",
+		"my table ",
+		"users\tadmin",
+		"users\nadmin",
+		"users\u200Badmin",
 		"table.name",
 		"table/name",
 		"table\\name",
@@ -934,13 +938,20 @@ await test("Name Validation (Security)", async (t) => {
 		"Users123",
 		"a",
 		"a".repeat(255),
+		"my table",
+		"a b c",
+		"بيانات",
+		"جدول بيانات",
+		"الأساتذة والطلاب",
+		"المستخدم 1_بيانات-2",
+		"table بيانات ١٢٣",
 	];
 
 	await t.test("Reject Malicious Database Names", async () => {
 		for (const name of maliciousNames)
 			assert.throws(
 				() => new Inibase(name),
-				/Invalid name/,
+				{ name: "INVALID_NAME" },
 				`Should reject database name '${name}'`,
 			);
 	});
@@ -959,7 +970,7 @@ await test("Name Validation (Security)", async (t) => {
 		for (const name of maliciousNames)
 			await assert.rejects(
 				inibase.createTable(name),
-				/Invalid name/,
+				{ name: "INVALID_NAME" },
 				`Should reject table name '${name}'`,
 			);
 	});
@@ -970,7 +981,7 @@ await test("Name Validation (Security)", async (t) => {
 			inibase = new Inibase(dbPath);
 			await assert.rejects(
 				inibase.createTable("t", [{ key, type: "string" }]),
-				/Invalid name/,
+				{ name: "INVALID_NAME" },
 				`Should reject column name '${key}'`,
 			);
 		}
@@ -982,7 +993,7 @@ await test("Name Validation (Security)", async (t) => {
 		for (const column of maliciousNames)
 			await assert.rejects(
 				inibase.get(tableName, undefined, { columns: [column] }),
-				/Invalid name/,
+				{ name: "INVALID_NAME" },
 				`Should reject column '${column}' in columns option`,
 			);
 	});
@@ -992,17 +1003,17 @@ await test("Name Validation (Security)", async (t) => {
 		for (const column of maliciousNames) {
 			await assert.rejects(
 				inibase.sum(tableName, column),
-				/Invalid name/,
+				{ name: "INVALID_NAME" },
 				`Should reject column '${column}' in sum`,
 			);
 			await assert.rejects(
 				inibase.max(tableName, column),
-				/Invalid name/,
+				{ name: "INVALID_NAME" },
 				`Should reject column '${column}' in max`,
 			);
 			await assert.rejects(
 				inibase.min(tableName, column),
-				/Invalid name/,
+				{ name: "INVALID_NAME" },
 				`Should reject column '${column}' in min`,
 			);
 		}
@@ -1022,6 +1033,81 @@ await test("Name Validation (Security)", async (t) => {
 		});
 		assert.equal(data?.[0].name, "John", "Valid names should work end to end");
 		assert.equal(await inibase.sum(tableName, "age"), 30);
+	});
+
+	await t.test("Arabic and Space Names Work End to End", async () => {
+		removeDatabase();
+		inibase = new Inibase(dbPath);
+		const tableName = "جدول بيانات";
+		await inibase.createTable(tableName, [
+			{ key: "اسم المستخدم", type: "string" },
+			{ key: "السن", type: "number" },
+		]);
+		await inibase.post(tableName, {
+			"اسم المستخدم": "أحمد",
+			السن: 25,
+		});
+		const data = await inibase.get(tableName, undefined, {
+			columns: ["السن"],
+		});
+		assert.equal(data?.[0].السن, 25, "Arabic column name should work");
+		assert.equal(await inibase.sum(tableName, "السن"), 25);
+		const maxResult = await inibase.max(tableName, "السن");
+		assert.equal(maxResult.السن, 25, "max with Arabic column should work");
+		const minResult = await inibase.min(tableName, "السن");
+		assert.equal(minResult.السن, 25, "min with Arabic column should work");
+	});
+
+	await t.test("Mixed Arabic and Space Column Names in Criteria", async () => {
+		removeDatabase();
+		inibase = new Inibase(dbPath);
+		const tableName = "users data";
+		await inibase.createTable(tableName, [
+			{ key: "full name", type: "string", unique: true },
+			{ key: "score total", type: "number" },
+		]);
+		await inibase.post(tableName, {
+			"full name": "مريم أحمد",
+			"score total": 90,
+		});
+		await inibase.post(tableName, {
+			"full name": "Omar Ben",
+			"score total": 80,
+		});
+		const found = await inibase.get(tableName, { "full name": "مريم أحمد" });
+		assert.equal(found?.length, 1, "Criteria search with spaced column works");
+		assert.equal(found?.[0]["score total"], 90);
+		await inibase.put(
+			tableName,
+			{ "score total": 95 },
+			{ "full name": "Omar Ben" },
+		);
+		const updated = await inibase.get(tableName, { "full name": "Omar Ben" });
+		assert.equal(
+			updated?.[0]["score total"],
+			95,
+			"Put with spaced column works",
+		);
+	});
+
+	await t.test("Invalid Name Errors Are Translated", async () => {
+		const name = "bad-name!";
+		const expected = {
+			en: "Name 'bad-name!' is not valid",
+			ar: "الاسم 'bad-name!' غير صالح",
+			fr: "Le nom 'bad-name!' n'est pas valide",
+			es: "El nombre 'bad-name!' no es válido",
+		};
+		for (const [lang, message] of Object.entries(expected)) {
+			assert.throws(
+				() => new Inibase(name, ".", lang as ErrorLang),
+				(error: unknown) =>
+					error instanceof Error &&
+					error.name === "INVALID_NAME" &&
+					error.message === message,
+				`Should render INVALID_NAME in ${lang}`,
+			);
+		}
 	});
 });
 
