@@ -214,7 +214,7 @@ console.log(`   ${textGreen("config")} | ${textGreen("c")}
 			}
 			if (!isSafeName(splitedInput[1]))
 				console.log(
-					`${textRed("  Err:")} Invalid table name, only alphanumeric characters, underscores and hyphens are allowed`,
+					`${textRed("  Err:")} Invalid table name`,
 				);
 			else if (!(await isExists(join(path as string, splitedInput[1]))))
 				console.log(`${textRed("  Err:")} Table doesn't exist`);

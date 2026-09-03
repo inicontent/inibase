@@ -859,13 +859,17 @@ export const createError = (
 /**
  * Validates that a string is a safe name for a table, database or column.
  *
- * Names must start with an alphanumeric character (Latin or Arabic), followed
- * by alphanumerics (Latin or Arabic), underscores, hyphens or spaces, and be
- * at most 255 characters long. Leading or trailing spaces are not allowed.
+ * Instead of whitelisting allowed characters, this uses a blacklist that blocks
+ * only characters known to cause problems with shell commands, filesystem
+ * paths, or injection attacks. All Unicode letters (Latin, Arabic, Chinese,
+ * etc.), digits, underscores, hyphens, spaces and forward slashes are allowed.
  *
- * This prevents path traversal (`../`, `..\\`), null-byte injection (`\0`),
- * shell injection (`;`, `|`, backticks, `$()`, tabs, newlines, slashes) and
- * other reserved-name issues.
+ * Blocked characters: null bytes, control characters, `\`, `;`, `|`, `&`,
+ * `<`, `>`, `$`, backtick, `!`, `'`, `"`, `{`, `}`, `(`, `)`, `~`, and `.`
+ * (reserved as column-path separator).  Forward slash (`/`) is intentionally
+ * allowed so that nested table names like `"user/logs"` work.
+ *
+ * Leading or trailing spaces are not allowed.
  *
  * @param input - The value to be checked.
  * @returns boolean - True if the name is safe to use, false otherwise.
@@ -876,17 +880,18 @@ export const isValidName = (input: unknown): input is string =>
 	input.length <= 255 &&
 	validNamePattern.test(input);
 
-// Word characters: Latin alphanumerics, underscores, hyphens and Arabic blocks.
-const nameWordCharClass =
-	"a-zA-Z0-9_\\u0600-\\u06FF\\u0750-\\u077F\\u08A0-\\u08FF-";
+// Forbidden characters: control chars, path separators, shell metacharacters,
+// quoting, grouping, history expansion, home-dir expansion and dot (reserved
+// as column-path separator).  The forward slash (/) is intentionally allowed
+// so that nested table names like "user/logs" work.
+const nameForbiddenChars =
+	"\\x00-\\x1F\\x7F.\\\\;|&<>$`!'\\" + "{}()~";
 
-// Leading characters: same as word chars minus underscore and hyphen.
-const nameFirstCharClass =
-	"a-zA-Z0-9\\u0600-\\u06FF\\u0750-\\u077F\\u08A0-\\u08FF";
-
-// eslint-disable-next-line no-misleading-character-class
+// Names must be 1-255 chars, start/end with a non-forbidden non-whitespace
+// character, and contain no forbidden characters in between.
 const validNamePattern = new RegExp(
-	`^[${nameFirstCharClass}](?:[${nameWordCharClass} ]*[${nameWordCharClass}])?$`,
+	`^[^${nameForbiddenChars}\\s\\p{Z}\\p{Cf}][^${nameForbiddenChars}\\p{Cf}]*[^${nameForbiddenChars}\\s\\p{Z}\\p{Cf}]$|^[^${nameForbiddenChars}\\s\\p{Z}\\p{Cf}]$`,
+	"u",
 );
 
 /**

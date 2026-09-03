@@ -921,14 +921,12 @@ await test("Name Validation (Security)", async (t) => {
 		"users\nadmin",
 		"users\u200Badmin",
 		"table.name",
-		"table/name",
 		"table\\name",
 		"table\0admin",
 		".",
 		"..",
 		"",
 		"a".repeat(256),
-		"-leading-hyphen",
 	];
 
 	const validNames = [
@@ -945,6 +943,27 @@ await test("Name Validation (Security)", async (t) => {
 		"الأساتذة والطلاب",
 		"المستخدم 1_بيانات-2",
 		"table بيانات ١٢٣",
+		// Nested table names
+		"user/logs",
+		"données/logs",
+		"Ünlü/Profil",
+		"niño/datos",
+		"用户/日志",
+		// French
+		"données",
+		"café",
+		"data résumé",
+		// Spanish
+		"niño",
+		"pequeño",
+		"señales",
+		"acción",
+		// Chinese
+		"数据",
+		"用户日志",
+		"你好",
+		// Leading hyphen (safe, just a normal character)
+		"-leading-hyphen",
 	];
 
 	await t.test("Reject Malicious Database Names", async () => {
