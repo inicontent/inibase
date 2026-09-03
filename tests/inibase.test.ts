@@ -990,7 +990,12 @@ await test("Name Validation (Security)", async (t) => {
 	await t.test("Reject Malicious Column Names via columns option", async () => {
 		const tableName = "secure_table";
 		await inibase.createTable(tableName, [{ key: "name", type: "string" }]);
-		for (const column of maliciousNames)
+		// Dotted strings (e.g. "table.name") are valid nested column paths in the
+		// columns option, so they are excluded from this malicious-name check.
+		const singleSegmentNames = maliciousNames.filter(
+			(name) => !name.includes("."),
+		);
+		for (const column of singleSegmentNames)
 			await assert.rejects(
 				inibase.get(tableName, undefined, { columns: [column] }),
 				{ name: "INVALID_NAME" },
@@ -1012,6 +1017,34 @@ await test("Name Validation (Security)", async (t) => {
 		});
 		assert.equal(data?.[0].name, "Sara", "'*' should allow all columns");
 		assert.equal(data?.[0].age, 28, "'*' should include all columns data");
+	});
+
+	await t.test("Accept nested Arabic route column paths", async () => {
+		removeDatabase();
+		inibase = new Inibase(dbPath);
+		const tableName = "nested_table";
+		await inibase.createTable(tableName, [
+			{
+				key: "العميل",
+				type: "object",
+				children: [{ key: "اسم المنشأة", type: "string" }],
+			},
+			{ key: "المنتجات", type: "string" },
+		]);
+		await inibase.post(tableName, {
+			"العميل": { "اسم المنشأة": "شركة النور" },
+			"المنتجات": "أ",
+		});
+		const data = await inibase.get(tableName, undefined, {
+			columns: ["العميل.اسم المنشأة"],
+		});
+		assert.equal(
+			(data as Array<Record<string, unknown>>)?.[0]?.["العميل"]?.[
+				"اسم المنشأة"
+			],
+			"شركة النور",
+			"Nested Arabic dotted column path should be accepted and filtered",
+		);
 	});
 
 	await t.test("Reject Malicious Column Names via sum/max/min", async () => {

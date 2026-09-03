@@ -634,6 +634,11 @@ const users = await db.get("user", undefined, {
   columns: ["!username", "!address.street"],
 });
 
+// Columns accept dotted nested paths (e.g. "address.street" => nested field)
+const nested = await db.get("user", undefined, {
+  columns: ["address.street", "hobbies.name"],
+});
+
 // Get all columns explicitly with the "*" wildcard
 const all = await db.get("user", undefined, {
   columns: ["*"],

@@ -203,6 +203,27 @@ export default class Inibase {
 		Utils.validateName(name, this.language);
 	}
 
+	/**
+	 * Validates column paths used in the `columns` option.
+	 *
+	 * Each column may be a nested path of dot-separated names
+	 * (e.g. "address.street", "hobbies.name") and may optionally
+	 * start with "!" for exclusion. The "*" wildcard (select all)
+	 * and its "!*" counterpart are special values and are skipped.
+	 * Every segment of a path is validated individually.
+	 */
+	private validateColumns(columns: string[]): void {
+		for (const column of columns) {
+			if (column === "*" || column === "!*") continue;
+
+			const path = column.startsWith("!") ? column.slice(1) : column;
+			for (const segment of path.split(".")) {
+				if (!segment) this.validateName(column);
+				else this.validateName(segment);
+			}
+		}
+	}
+
 	private validateSchema(schema: Schema): void {
 		Utils.validateSchema(schema, this.language);
 	}
@@ -1835,8 +1856,7 @@ export default class Inibase {
 				? options.columns
 				: [options.columns];
 
-			for (const column of options.columns)
-				if (column !== "*") this.validateName(column);
+			this.validateColumns(options.columns);
 
 			if (options.columns.length && !options.columns.includes("id"))
 				options.columns.push("id");
@@ -2302,10 +2322,11 @@ export default class Inibase {
 		this.validateName(tableName);
 
 		if (options.columns)
-			for (const column of (Array.isArray(options.columns)
-				? options.columns
-				: [options.columns]) as string[])
-				if (column !== "*") this.validateName(column);
+			this.validateColumns(
+				(Array.isArray(options.columns)
+					? options.columns
+					: [options.columns]) as string[],
+			);
 
 		const tablePath = join(this.databasePath, tableName);
 		await this.getTable(tableName);
@@ -2499,10 +2520,11 @@ export default class Inibase {
 		this.validateName(tableName);
 
 		if (options.columns)
-			for (const column of (Array.isArray(options.columns)
-				? options.columns
-				: [options.columns]) as string[])
-				if (column !== "*") this.validateName(column);
+			this.validateColumns(
+				(Array.isArray(options.columns)
+					? options.columns
+					: [options.columns]) as string[],
+			);
 
 		const tablePath = join(this.databasePath, tableName);
 		await this.throwErrorIfTableEmpty(tableName);
