@@ -30,8 +30,16 @@ import {
 	isNumber,
 	isObject,
 	isStringified,
+	isValidID,
 } from "./utils.js";
-import { compare, encodeID, exec, gunzip, gzip } from "./utils.server.js";
+import {
+	compare,
+	decodeID,
+	encodeID,
+	exec,
+	gunzip,
+	gzip,
+} from "./utils.server.js";
 
 // Locks older than this are assumed abandoned by a crashed/killed process, not a slow operation.
 const STALE_LOCK_MS = 30_000;
@@ -721,6 +729,250 @@ export const remove = async (
 };
 
 /**
+ * Field types whose on-disk bytes equal the encoded query value (identity or
+ * canonical numeric/id transforms), making a native whole-line equality search safe.
+ */
+const EQUALS_FAST_TYPES = new Set([
+	"string",
+	"text",
+	"textarea",
+	"html",
+	"url",
+	"email",
+	"number",
+	"date",
+	"timestamp",
+	"time",
+	"id",
+	"table",
+]);
+
+/**
+ * True when the query value is, or looks like, a number. Such values alias across
+ * several raw byte forms under `decode` (e.g. "123", "0123", "1e3"), so the exact
+ * native match would silently drop legitimate lines -> fall back to the JS reader.
+ */
+const looksNumeric = (value: string | number | boolean | null): boolean =>
+	typeof value === "number" ||
+	(typeof value === "string" && value !== "" && isNumber(value));
+
+const shellQuote = (str: unknown): string =>
+	`'${String(str).replace(/'/g, `'\\''`)}'`;
+
+/**
+ * Computes the exact on-disk byte strings a native `grep -x -F` must match for a
+ * `=` (equality) search so that every matched line decodes to one of the compared
+ * values. Returns the pattern array, or null when the search cannot be handled by
+ * the fast path (caller then falls back to the JS readline scan).
+ */
+function buildEqualsPatterns(
+	comparedAtValue:
+		| string
+		| number
+		| boolean
+		| null
+		| (string | number | boolean | null)[],
+	field: Field,
+): string[] | null {
+	const values = Array.isArray(comparedAtValue)
+		? comparedAtValue
+		: [comparedAtValue];
+	if (!values.length) return null;
+
+	const patterns: string[] = [];
+	for (const value of values) {
+		if (value === null || value === undefined || value === "") return null; // null-like values -> readline path
+
+		const type = field.type as string;
+		if (type === "id" || type === "table") {
+			let forms: string[];
+			if (isValidID(value)) forms = [value, String(decodeID(value) ?? value)];
+			else if (
+				typeof value === "number" ||
+				(typeof value === "string" && isNumber(value))
+			)
+				forms = [String(Number(value))];
+			else forms = [value as unknown as string];
+
+			for (const form of [...new Set(forms)]) {
+				let valid = false;
+				try {
+					valid = compare("=", decode(form, field), value, type as FieldType);
+				} catch {
+					valid = false;
+				}
+				if (!valid) return null;
+				patterns.push(form);
+			}
+		} else if (
+			type === "number" ||
+			type === "date" ||
+			type === "timestamp" ||
+			type === "time"
+		) {
+			const form = String(Number(value));
+			let valid = false;
+			try {
+				valid = compare("=", decode(form, field), value, type as FieldType);
+			} catch {
+				valid = false;
+			}
+			if (!valid) return null;
+			patterns.push(form);
+		} else {
+			// scalar string-like field types
+			if (looksNumeric(value)) return null; // numeric aliasing -> readline path
+
+			const raw = String(value);
+			if (
+				raw === "null" ||
+				raw === "undefined" ||
+				raw.startsWith("{") ||
+				raw.startsWith("[")
+			)
+				return null;
+
+			let encoded: string | number | boolean | null;
+			try {
+				encoded = encode(value);
+			} catch {
+				return null;
+			}
+			const form = String(encoded);
+			let valid = false;
+			try {
+				valid = compare("=", decode(form, field), value, type as FieldType);
+			} catch {
+				valid = false;
+			}
+			if (!valid) return null;
+			patterns.push(form);
+		}
+	}
+	return [...new Set(patterns)];
+}
+
+/**
+ * Native whole-line equality search (`grep -a -n -x -F`). Returns the same tuple
+ * shape as `search`, or null when the fast path could not be used/verified safely
+ * (in which case the caller should fall back to the JS readline scan).
+ */
+async function searchEqualsNative(
+	filePath: string,
+	patterns: string[],
+	field: Field,
+	searchIn: Set<number> | undefined,
+	comparedAtValue:
+		| string
+		| number
+		| boolean
+		| null
+		| (string | number | boolean | null)[],
+	limit?: number,
+	offset?: number,
+	readWholeFile?: boolean,
+): Promise<
+	| [
+			Record<
+				number,
+				string | number | boolean | null | (string | number | boolean | null)[]
+			> | null,
+			number,
+			Set<number> | null,
+	  ]
+	| null
+> {
+	const totalPatternSize =
+		patterns.reduce((acc, pattern) => acc + String(pattern).length, 0) +
+		patterns.length * 8;
+	if (totalPatternSize > 32_768 || patterns.length > 1024) return null;
+
+	if (searchIn?.size) {
+		for (const lineNumber of searchIn) {
+			if (lineNumber < 0) return null; // exclusion ranges -> readline path
+		}
+	}
+
+	const source = filePath.endsWith(".gz")
+		? `gunzip -c ${escapeShellPath(filePath)}`
+		: `cat ${escapeShellPath(filePath)}`;
+
+	// Column files whose lines start with "[" or "{" are array/object-encoded
+	// (decode() eagerly unstringifies them), so a native whole-line grep could
+	// silently miss matches that live inside those containers. Detect such lines
+	// up front; when any are present, fall back to the JS reader.
+	let probe: string;
+	try {
+		({ stdout: probe } = await exec(
+			`LC_ALL=C ${source} | LC_ALL=C grep -a -m 1 -E '^[[{]'`,
+			{ maxBuffer: 1024 * 1024 * 4 },
+		));
+	} catch (err) {
+		if (Number(err?.code) !== 1) return null; // probe failure -> readline fallback
+	}
+	if (probe) return null;
+
+	const command = `LC_ALL=C ${source} | LC_ALL=C grep -a -n -x -F ${patterns
+		.map((pattern) => `-e ${shellQuote(pattern)}`)
+		.join(" ")}`;
+
+	let stdout: string;
+	try {
+		({ stdout } = await exec(command, { maxBuffer: 1024 * 1024 * 256 }));
+	} catch (err) {
+		if (Number(err?.code) === 1) return [null, 0, null]; // grep: no matches
+		return null; // native failure -> readline fallback
+	}
+
+	const rawLines = stdout ? stdout.trimEnd().split("\n") : [];
+	let matched: [number, string][] = [];
+	for (const line of rawLines) {
+		const colonIndex = line.indexOf(":");
+		if (colonIndex === -1) continue;
+		const lineNumber = Number(line.slice(0, colonIndex));
+		if (!Number.isInteger(lineNumber) || lineNumber < 1) continue;
+		matched.push([lineNumber, line.slice(colonIndex + 1)]);
+	}
+
+	if (searchIn?.size)
+		matched = matched.filter(([lineNumber]) => searchIn.has(lineNumber));
+
+	const linesNumbers: Set<number> = new Set();
+	const matchingLines: Record<
+		number,
+		string | number | boolean | null | (string | number | boolean | null)[]
+	> = {};
+	let processed = 0;
+	let finalTotal: number | null = null;
+	for (const [lineNumber, raw] of matched) {
+		processed++;
+		linesNumbers.add(lineNumber);
+
+		if (offset && processed < offset) continue;
+		if (limit && processed > limit + (offset ? offset - 1 : 0)) {
+			if (readWholeFile) continue;
+			finalTotal = processed;
+			break;
+		}
+
+		const decodedLine = decode(raw, field);
+		// Defensive verification: the raw line must decode to one of the compared
+		// values (guaranteed by construction, kept as a safety net).
+		const verifies = Array.isArray(comparedAtValue)
+			? comparedAtValue.some((value) =>
+					compare("=", decodedLine, value, field.type),
+				)
+			: compare("=", decodedLine, comparedAtValue, field.type);
+		if (!verifies) return null;
+
+		matchingLines[lineNumber] = decodedLine;
+	}
+
+	const total = finalTotal ?? processed;
+	return total ? [matchingLines, total, linesNumbers] : [null, 0, null];
+}
+
+/**
  * Asynchronously searches a file for lines matching specified criteria, using comparison and logical operators.
  *
  * @param filePath - Path of the file to search.
@@ -762,6 +1014,33 @@ export const search = async (
 		Set<number> | null,
 	]
 > => {
+	// Native fast path for exact-equality searches (whole-line `grep -x -F`).
+	const fieldType = field?.type;
+	if (
+		operator === "=" &&
+		!Array.isArray(operator) &&
+		!logicalOperator &&
+		comparedAtValue !== null &&
+		comparedAtValue !== undefined &&
+		typeof fieldType === "string" &&
+		EQUALS_FAST_TYPES.has(fieldType)
+	) {
+		const patterns = buildEqualsPatterns(comparedAtValue, field);
+		if (patterns) {
+			const fastResult = await searchEqualsNative(
+				filePath,
+				patterns,
+				field,
+				searchIn,
+				comparedAtValue,
+				limit,
+				offset,
+				readWholeFile,
+			);
+			if (fastResult) return fastResult;
+		}
+	}
+
 	// Initialize a Map to store the matching lines with their line numbers.
 	const matchingLines: Record<
 		number,
