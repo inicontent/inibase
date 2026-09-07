@@ -277,8 +277,8 @@ export const deepMerge = (target: any, source: any): any => {
 export const findChangedProperties = (
 	obj1: Record<string, string>,
 	obj2: Record<string, string>,
-): Record<string, string|null> | null => {
-	const result: Record<string, string|null> = {};
+): Record<string, string | null> | null => {
+	const result: Record<string, string | null> = {};
 
 	for (const key1 in obj1) {
 		if (Object.hasOwn(obj2, key1)) {
@@ -775,8 +775,7 @@ export const ERROR_MESSAGES: Record<ErrorLang, Record<ErrorCode, string>> = {
 		INVALID_ID: "The given ID(s) is/are not valid(s)",
 		INVALID_TYPE: "Expect {variable} to be {variable}, got {variable} instead",
 		INVALID_PARAMETERS: "The given parameters are not valid",
-		INVALID_REGEX_MATCH:
-			"Field {variable} does not match the expected pattern",
+		INVALID_REGEX_MATCH: "Field {variable} does not match the expected pattern",
 		INVALID_NAME: "Name {variable} is not valid",
 		NO_ENV: "",
 	},
@@ -898,8 +897,7 @@ export const isValidName = (input: unknown): input is string =>
 // quoting, grouping, history expansion, home-dir expansion and dot (reserved
 // as column-path separator).  The forward slash (/) is intentionally allowed
 // so that nested table names like "user/logs" work.
-const nameForbiddenChars =
-	"\\x00-\\x1F\\x7F.\\\\;|&<>$`!'\\" + "{}()~";
+const nameForbiddenChars = "\\x00-\\x1F\\x7F.\\\\;|&<>$`!'\\" + "{}()~";
 
 // Names must be 1-255 chars, start/end with a non-forbidden non-whitespace
 // character, and contain no forbidden characters in between.
@@ -916,7 +914,10 @@ const validNamePattern = new RegExp(
  * @param language - The language to render the error message in.
  * @throws {Error} If the name is not a safe name.
  */
-export const validateName = (name: string, language: ErrorLang = "en"): void => {
+export const validateName = (
+	name: string,
+	language: ErrorLang = "en",
+): void => {
 	if (!isValidName(name)) throw createError(language, "INVALID_NAME", name);
 };
 
@@ -927,7 +928,10 @@ export const validateName = (name: string, language: ErrorLang = "en"): void => 
  * @param language - The language to render the error message in.
  * @throws {Error} If any field key is not a safe name.
  */
-export const validateSchema = (schema: Schema, language: ErrorLang = "en"): void => {
+export const validateSchema = (
+	schema: Schema,
+	language: ErrorLang = "en",
+): void => {
 	for (const field of schema) {
 		validateName(field.key, language);
 		if (field.table) validateName(field.table, language);

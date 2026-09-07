@@ -64,7 +64,7 @@ const getKeyAndIv = (): { key: Buffer; iv: Buffer } => {
 		return { key: globalConfig.salt, iv: globalConfig.salt.subarray(0, 16) };
 	}
 	const cacheKey = globalConfig.salt?.toString();
-	
+
 	if (!cacheKey) throw new Error("Invalid salt configuration");
 
 	let key = derivedKeyCache.get(cacheKey);
