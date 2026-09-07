@@ -735,9 +735,32 @@ export function addIdToSchema(schema: Schema, startWithID: { value: number }) {
 }
 
 /**
+ * Whether the current Node.js runtime supports the `--env-file` CLI flag
+ * (added in Node 20.6, stabilized in later versions). Safe to call outside
+ * of Node (e.g. in a browser bundle), where it simply returns `false`.
+ */
+const supportsEnvFileFlag = (): boolean => {
+	if (typeof process === "undefined" || !process.versions?.node) return false;
+	const [major] = process.versions.node.split(".").map(Number);
+	return major >= 20;
+};
+
+const NO_ENV_MESSAGES: Record<
+	ErrorLang,
+	[withFlag: string, withoutFlag: string]
+> = {
+	en: ["please run with '--env-file=.env'", "please use dotenv"],
+	ar: ["يرجى التشغيل باستخدام '--env-file=.env'", "يرجى استخدام dotenv"],
+	fr: ["veuillez exécuter avec '--env-file=.env'", "veuillez utiliser dotenv"],
+	es: ["por favor ejecute con '--env-file=.env'", "por favor use dotenv"],
+};
+
+/**
  * Translated error messages for every supported language and error code.
  * The `{variable}` placeholder is replaced with the relevant value by
- * {@link createError}.
+ * {@link createError}. `NO_ENV` is resolved lazily by {@link createError}
+ * via {@link NO_ENV_MESSAGES} since it depends on the Node.js version and
+ * must stay safe to evaluate outside of Node (e.g. in a browser bundle).
  */
 export const ERROR_MESSAGES: Record<ErrorLang, Record<ErrorCode, string>> = {
 	en: {
@@ -755,10 +778,7 @@ export const ERROR_MESSAGES: Record<ErrorLang, Record<ErrorCode, string>> = {
 		INVALID_REGEX_MATCH:
 			"Field {variable} does not match the expected pattern",
 		INVALID_NAME: "Name {variable} is not valid",
-		NO_ENV:
-			Number(process.versions.node.split(".").reduce((a, b) => a + b)) >= 26
-				? "please run with '--env-file=.env'"
-				: "please use dotenv",
+		NO_ENV: "",
 	},
 	ar: {
 		TABLE_EMPTY: "الجدول {variable} فارغ",
@@ -776,10 +796,7 @@ export const ERROR_MESSAGES: Record<ErrorLang, Record<ErrorCode, string>> = {
 		INVALID_PARAMETERS: "المعلمات المقدمة غير صالحة",
 		INVALID_REGEX_MATCH: "الحقل {variable} لا يتطابق مع النمط المتوقع",
 		INVALID_NAME: "الاسم {variable} غير صالح",
-		NO_ENV:
-			Number(process.versions.node.split(".").reduce((a, b) => a + b)) >= 26
-				? "يرجى التشغيل باستخدام '--env-file=.env'"
-				: "يرجى استخدام dotenv",
+		NO_ENV: "",
 	},
 	fr: {
 		TABLE_EMPTY: "La table {variable} est vide",
@@ -798,10 +815,7 @@ export const ERROR_MESSAGES: Record<ErrorLang, Record<ErrorCode, string>> = {
 		INVALID_REGEX_MATCH:
 			"Le champ {variable} ne correspond pas au modèle attendu",
 		INVALID_NAME: "Le nom {variable} n'est pas valide",
-		NO_ENV:
-			Number(process.versions.node.split(".").reduce((a, b) => a + b)) >= 26
-				? "veuillez exécuter avec '--env-file=.env'"
-				: "veuillez utiliser dotenv",
+		NO_ENV: "",
 	},
 	es: {
 		TABLE_EMPTY: "La tabla {variable} está vacía",
@@ -820,10 +834,7 @@ export const ERROR_MESSAGES: Record<ErrorLang, Record<ErrorCode, string>> = {
 		INVALID_REGEX_MATCH:
 			"El campo {variable} no coincide con el patrón esperado",
 		INVALID_NAME: "El nombre {variable} no es válido",
-		NO_ENV:
-			Number(process.versions.node.split(".").reduce((a, b) => a + b)) >= 26
-				? "por favor ejecute con '--env-file=.env'"
-				: "por favor use dotenv",
+		NO_ENV: "",
 	},
 };
 
@@ -840,7 +851,10 @@ export const createError = (
 	name: ErrorCode,
 	variable?: string | number | (string | number)[],
 ): Error => {
-	const errorMessage = ERROR_MESSAGES[language]?.[name];
+	const errorMessage =
+		name === "NO_ENV"
+			? NO_ENV_MESSAGES[language]?.[supportsEnvFileFlag() ? 0 : 1]
+			: ERROR_MESSAGES[language]?.[name];
 	if (!errorMessage) return new Error("ERR");
 	const error = new Error(
 		variable
