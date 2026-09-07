@@ -178,7 +178,7 @@ export default class Inibase {
 		if (!globalConfig[this.databasePath])
 			globalConfig[this.databasePath] = { tables: new Map() };
 
-		if (!process.env.INIBASE_SECRET) {
+		if (!process?.env.INIBASE_SECRET) {
 			if (
 				existsSync(".env") &&
 				readFileSync(".env").includes("INIBASE_SECRET=")
