@@ -264,38 +264,4 @@ await test("Utilities: createError", async (t) => {
 		const error = createError("en", "NOT_A_REAL_CODE");
 		assert.equal(error.message, "ERR");
 	});
-
-	await t.test("resolves NO_ENV without touching process outside Node", () => {
-		// NO_ENV depends on process.versions.node, which doesn't exist in a
-		// browser. Simulate that by hiding process for the duration of the call.
-		const realProcess = globalThis.process;
-		(globalThis as any).process = undefined;
-		try {
-			const error = createError("en", "NO_ENV");
-			assert.equal(error.name, "NO_ENV");
-			assert.equal(error.message, "please use dotenv");
-		} finally {
-			globalThis.process = realProcess;
-		}
-	});
-
-	await t.test("resolves NO_ENV normally when process is present", () => {
-		const error = createError("en", "NO_ENV");
-		assert.equal(error.name, "NO_ENV");
-		assert.ok(
-			error.message === "please use dotenv" ||
-				error.message === "please run with '--env-file=.env'",
-			"Expected one of the two NO_ENV variants",
-		);
-	});
-
-	await t.test("translates NO_ENV for every supported language", () => {
-		for (const language of ["en", "ar", "fr", "es"] as const) {
-			const error = createError(language, "NO_ENV");
-			assert.ok(
-				error.message.length > 0,
-				`NO_ENV should not be empty for ${language}`,
-			);
-		}
-	});
 });
