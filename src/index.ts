@@ -137,7 +137,13 @@ export type ErrorCode = (typeof ERROR_CODES)[number];
 export type ErrorLang = "en" | "ar" | "fr" | "es";
 
 // hide ExperimentalWarning glob()
-process.removeAllListeners("warning");
+// Guard against non-Node environments (e.g. accidental import in a browser bundle)
+if (
+	typeof process !== "undefined" &&
+	typeof process.removeAllListeners === "function"
+) {
+	process.removeAllListeners("warning");
+}
 
 export const globalConfig: {
 	[database: string]: {
