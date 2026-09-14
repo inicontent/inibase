@@ -161,6 +161,11 @@ export default class Inibase {
 	public language: ErrorLang;
 	public fileExtension = ".txt";
 	public totalItems: Map<string, number>;
+	/** Tracks whether a decodeID table's stored ids are the dense sequence
+	 *  1..rowCount (no rows ever deleted). When true, `get`/`put`/`delete` can
+	 *  resolve numeric ids to line numbers arithmetically instead of scanning
+	 *  the id file. Set false by any partial row deletion. */
+	private idDensity = new Map<string, boolean>();
 	private databasePath: string;
 	private uniqueMap: Map<
 		string | number,
@@ -308,6 +313,8 @@ export default class Inibase {
 			if (config.cache) await writeFile(join(tablePath, ".cache.config"), "");
 			if (config.prepend)
 				await writeFile(join(tablePath, ".prepend.config"), "");
+			if (config.decodeID)
+				await writeFile(join(tablePath, ".decodeID.config"), "");
 		}
 		if (schema) {
 			const lastSchemaID = { value: 0 };
@@ -321,6 +328,8 @@ export default class Inibase {
 		} else await writeFile(join(tablePath, "0.schema"), "");
 
 		await writeFile(join(tablePath, "0-0.pagination"), "");
+
+		this.idDensity.set(tableName, true);
 	}
 
 	// Function to replace the string in one schema file
@@ -418,6 +427,30 @@ export default class Inibase {
 					join(tablePath, `${lastSchemaID.value}.schema`),
 				);
 			else await writeFile(join(tablePath, `${lastSchemaID.value}.schema`), "");
+
+			// Fields added by this migration have no backing file yet. If the
+			// first post after the migration writes such a file from scratch it
+			// starts at line 1 and every existing row becomes misaligned (the
+			// new value lands on the wrong record). Materialize missing column
+			// files padded with one empty line per existing row so appends keep
+			// line-aligned with the other column files (decode("") is
+			// undefined/null, matching the "no value yet" semantics).
+			let totalLines = 0;
+			for await (const paginationFileName of glob("*.pagination", {
+				cwd: tablePath,
+			}))
+				totalLines = parse(paginationFileName).name.split("-").map(Number)[1];
+
+			await Promise.allSettled(
+				schema.map(async ({ key }) => {
+					const filePath = join(
+						tablePath,
+						`${key}${this.getFileExtension(tableName)}`,
+					);
+					if (!(await File.isExists(filePath)))
+						await File.write(filePath, "\n".repeat(totalLines));
+				}),
+			);
 		}
 
 		if (config) {
@@ -736,10 +769,12 @@ export default class Inibase {
 		data: Data | Data[],
 		skipRequiredField = false,
 	): Promise<void> {
-		const clonedData = structuredClone(data);
+		// `data` is always a private clone owned by the caller (post/put already
+		// cloned it once), so validate in place instead of re-cloning — otherwise
+		// every bulk write holds several full copies of the payload in memory.
 		// Skip ID and (created|updated)At
 		this.validateData(
-			clonedData,
+			data,
 			globalConfig[this.databasePath].tables
 				?.get(tableName)
 				?.schema?.slice(1, -2) ?? [],
@@ -931,7 +966,11 @@ export default class Inibase {
 		schema: Schema,
 		formatOnlyAvailiableKeys?: boolean,
 	): (TData & Data) | (TData & Data)[] {
-		const clonedData: (TData & Data) | (TData & Data)[] = structuredClone(data);
+		// formatData only reads its input (all transformations produce new
+		// values), so no defensive clone is needed. Callers pass data they no
+		// longer need, and skipping the copy halves the payload footprint of
+		// every bulk post/put.
+		const clonedData: (TData & Data) | (TData & Data)[] = data;
 		if (Utils.isArrayOfObjects(clonedData))
 			return clonedData.map((singleData) =>
 				this.formatData(singleData, schema, formatOnlyAvailiableKeys),
@@ -1148,7 +1187,35 @@ export default class Inibase {
 		prefix?: string,
 	): Promise<Record<number, TData & Data>> {
 		const RETURN: Record<number, TData & Data> = {};
+
+		// Fast path: read every top-level simple column in one `paste | sed`
+		// child process instead of spawning one child process per column.
+		// Nested (prefixed) schemas keep the per-column path.
+		let batchedKeys: Set<string> | null = null;
+		if (!prefix && linesNumber?.length) {
+			const simpleFields = schema.filter((field) =>
+				this.isSimpleField(field.type),
+			);
+			const batched = await this.processSimpleFieldsBatch(
+				tableName,
+				simpleFields,
+				linesNumber,
+			);
+			if (batched) {
+				batchedKeys = new Set(
+					simpleFields.map((field) => field.key),
+				);
+				for (const [line, row] of Object.entries(batched)) {
+					if (!RETURN[line]) RETURN[line] = {} as TData & Data;
+					Object.assign(RETURN[line], row);
+				}
+			}
+		}
+
 		for (const field of schema) {
+			// Batch-read fields were already merged into RETURN.
+			if (batchedKeys?.has(field.key)) continue;
+
 			// If the field is of simple type (non-recursive), process it directly
 			if (this.isSimpleField(field.type)) {
 				await this.processSimpleField(
@@ -1239,6 +1306,98 @@ export default class Inibase {
 		}
 	}
 
+	/**
+	 * Batched read for top-level simple columns: a single `paste | sed` child
+	 * process returns every requested line of every column at once instead of
+	 * spawning one `sed`/`gunzip|sed` child process per column. Returning null
+	 * (e.g. when any column file is missing, or the shell command fails) makes
+	 * the caller fall back to the existing per-column reads.
+	 */
+	private async processSimpleFieldsBatch(
+		tableName: string,
+		fields: Field[],
+		linesNumber: number[],
+	): Promise<Record<number, Record<string, any>> | null> {
+		if (!fields.length || !linesNumber.length) return null;
+
+		const decodeID =
+			globalConfig[this.databasePath].tables?.get(tableName)?.config
+				.decodeID === true;
+		// Decode configs are computed once per column (the per-column read path
+		// builds one config per file too), not once per cell.
+		const cols: {
+			path: string;
+			key: string;
+			config: Field & { databasePath: string };
+		}[] = [];
+		for (const field of fields) {
+			const path = join(
+				this.databasePath,
+				tableName,
+				`${field.key}${this.getFileExtension(tableName)}`,
+			);
+			if (!(await File.isExists(path))) return null;
+			cols.push({
+				path,
+				key: field.key,
+				config: {
+					...field,
+					type:
+						field.key === "id" && decodeID
+							? "number"
+							: field.type,
+					databasePath: this.databasePath,
+				},
+			});
+		}
+
+		const sortedLines = [...linesNumber].sort((a, b) => a - b);
+		const range = File._groupIntoRanges(sortedLines);
+		const files = cols.map(({ path }) => File.escapeShellPath(path)).join(" ");
+		const isGz = this.getFileExtension(tableName).endsWith(".gz");
+		// Each compressed column needs its own process substitution so the
+		// streams stay aligned column-by-column inside `paste`.
+		const pasteInputs = isGz
+			? cols
+					.map(
+						({ path }) => `<(gunzip -c ${File.escapeShellPath(path)})`,
+					)
+					.join(" ")
+			: files;
+		const command = isGz
+			? `bash -c 'paste -d "\\t" ${pasteInputs} | sed -n "${range}"'`
+			: `paste -d'\\t' ${files} | sed -n '${range}'`;
+
+		let output: string;
+		try {
+			output = (
+				(await UtilsServer.exec(command)) as { stdout: string }
+			).stdout;
+		} catch {
+			return null;
+		}
+
+		const outLines = output.trimEnd().split("\n");
+		const RETURN: Record<number, Record<string, any>> = {};
+		for (let i = 0; i < outLines.length && i < sortedLines.length; i++) {
+			const lineNo = sortedLines[i];
+			const cells = outLines[i].split("\t");
+			const row: Record<string, any> = {};
+			let added = false;
+			for (let c = 0; c < cols.length; c++) {
+				const raw = cells[c];
+				if (raw === undefined) continue;
+				const value = File.decode(raw, cols[c].config);
+				if (value !== undefined) {
+					row[cols[c].key] = value;
+					added = true;
+				}
+			}
+			if (added) RETURN[lineNo] = row;
+		}
+		return Object.keys(RETURN).length ? RETURN : null;
+	}
+
 	// Helper function to check if the field type is array
 	private isArrayField(fieldType: FieldType | FieldType[] | Schema): boolean {
 		return (
@@ -1321,7 +1480,8 @@ export default class Inibase {
 						if (!RETURN[index]) RETURN[index] = {};
 						if (Utils.isObject(item)) {
 							const itemEntries = Object.entries(item);
-							const itemValues = itemEntries.map(([_key, value]) => value);
+							// Values without a second per-row tuple array.
+							const itemValues = Object.values(item);
 							if (!Utils.isArrayOfNulls(itemValues)) {
 								if (RETURN[index][field.key])
 									for (let _index = 0; _index < itemEntries.length; _index++) {
@@ -1666,13 +1826,19 @@ export default class Inibase {
 					continue;
 				}
 
-				const formatedSearchResult = Object.fromEntries(
-					Object.entries(searchResult).map(([id, value]) => {
-						const nestedObj = {};
-						this._setNestedKey(nestedObj, key, value);
-						return [id, nestedObj];
-					}),
-				);
+				// Merge matched lines into RETURN. The old code round-tripped through
+				// Object.entries(...).map(...) + Object.fromEntries, allocating two
+				// tuple arrays + a map array per matched row; building the nested
+				// result object directly keeps the exact same semantics with less
+				// garbage. Note: in `allTrue` mode RETURN is *replaced* per key
+				// (searchIn narrowing is what enforces the AND), so the assignment
+				// below intentionally mirrors the original replace/merge behavior.
+				const formatedSearchResult: Record<string, Data> = {};
+				for (const id of Object.keys(searchResult)) {
+					const nestedObj: Record<string, any> = {};
+					this._setNestedKey(nestedObj, key, searchResult[id]);
+					formatedSearchResult[id] = nestedObj;
+				}
 
 				RETURN = allTrue
 					? formatedSearchResult
@@ -1724,19 +1890,21 @@ export default class Inibase {
 			if (searchResult) {
 				RETURN = Utils.deepMerge(RETURN, searchResult);
 
-				if (!Object.keys(RETURN).length) RETURN = {};
-				RETURN = Object.fromEntries(
-					Object.entries(RETURN).filter(
-						([_index, item]) =>
-							Object.keys(item).filter(
-								(key) =>
-									Object.keys(criteriaOR).includes(key) ||
-									Object.keys(criteriaOR).some((criteriaKey) =>
-										criteriaKey.startsWith(`${key}.`),
-									),
-							).length,
-					),
-				);
+				// Filter RETURN in place instead of rebuilding it through
+				// Object.entries/fromEntries on every OR iteration. The key list of
+				// criteriaOR is hoisted out of the per-row check as well.
+				const orKeys = Object.keys(criteriaOR);
+				for (const id of Object.keys(RETURN)) {
+					const item = RETURN[id];
+					const matches = Object.keys(item).some(
+						(key) =>
+							orKeys.includes(key) ||
+							orKeys.some((criteriaKey) =>
+								criteriaKey.startsWith(`${key}.`),
+							),
+					);
+					if (!matches) delete RETURN[id];
+				}
 				if (!Object.keys(RETURN).length) RETURN = {};
 			} else RETURN = {};
 		}
@@ -1939,15 +2107,23 @@ export default class Inibase {
 				).map(Number);
 				awkCommand = `awk '${itemsIDs.map((id) => `$1 == ${id}`).join(" || ")}'`;
 			} else
-				awkCommand = `awk '${Array.from(
-					{ length: options.perPage },
-					(_, index) =>
-						((options.page as number) - 1) * (options.perPage as number) +
-						index +
-						1,
-				)
-					.map((lineNumber) => `NR==${lineNumber}`)
-					.join(" || ")}'`;
+				// perPage < 0 means "no limit": select every line instead of
+				// generating an empty awk window (with perPage -1 the old code
+				// produced `awk ''`, which prints nothing and the empty stdout
+				// decoded into a single hollow row).
+				awkCommand =
+					options.perPage < 0
+						? "awk '1'"
+						: `awk '${Array.from(
+								{ length: options.perPage },
+								(_, index) =>
+									((options.page as number) - 1) *
+										(options.perPage as number) +
+									index +
+									1,
+							)
+								.map((lineNumber) => `NR==${lineNumber}`)
+								.join(" || ")}'`;
 
 			const filesPathes = (
 				sortArray.find(([key]) => key === "id")
@@ -1962,18 +2138,18 @@ export default class Inibase {
 			// Construct the paste command to merge files and filter lines by IDs
 			const pasteCommand = `paste '${filesPathes.join("' '")}'`;
 
-			// Construct the sort command dynamically based on the number of files for sorting
-			const index = 1;
+			const _idPrepended = !sortArray.find(([key]) => key === "id");
 			const sortColumns = sortArray
 				.map(([key, ascending], i) => {
 					const field = Utils.getField(key, schema);
-					if (field)
-						return `-k${i + index},${i + index}${
-							Utils.isFieldType(field, ["id", "number", "date"]) ? "n" : ""
-						}${!ascending ? "r" : ""}`;
-					return "";
+					if (!field) return "";
+					const colIndex = _idPrepended ? i + 2 : i + 1;
+					return `-k${colIndex},${colIndex}${
+						Utils.isFieldType(field, ["id", "number", "date"]) ? "n" : ""
+					}${!ascending ? "r" : ""}`;
 				})
 				.join(" ");
+
 			const sortCommand = `sort ${sortColumns} -T='${join(tablePath, ".tmp")}'`;
 
 			try {
@@ -2123,19 +2299,72 @@ export default class Inibase {
 		) {
 			let Ids = where as string | number | (string | number)[];
 			if (!Array.isArray(Ids)) Ids = [Ids];
-			const [lineNumbers, countItems] = await File.search(
-				join(tablePath, `id${this.getFileExtension(tableName)}`),
-				"[]",
-				Ids.map((id) =>
-					Utils.isNumber(id) ? Number(id) : UtilsServer.decodeID(id),
-				),
-				undefined,
-				undefined,
-				{ key: "BLABLA", type: "number" },
-				Ids.length,
-				0,
-				!this.totalItems.has(`${tableName}-id`),
-			);
+
+			// Fast path for decodeID tables whose ids are the dense sequence
+			// 1..N: when the requested numeric ids form a duplicate-free
+			// consecutive range [min..max] with max within the row count, the
+			// line numbers ARE the ids — no id-file scan required.
+			let lineNumbers: Record<
+				number,
+				| number
+				| string
+				| boolean
+				| null
+				| undefined
+				| (string | number | boolean | null)[]
+			> | null = null;
+			let countItems = 0;
+			const isDecodeID =
+				globalConfig[this.databasePath].tables?.get(tableName)?.config
+					.decodeID === true &&
+				!globalConfig[this.databasePath].tables?.get(tableName)?.config
+					.prepend;
+			if (
+				isDecodeID &&
+				this.idDensity.get(tableName) &&
+				Ids.every(Utils.isNumber)
+			) {
+				const seen = new Set<number>();
+				let min = Number.POSITIVE_INFINITY;
+				let max = Number.NEGATIVE_INFINITY;
+				let distinct = true;
+				for (const raw of Ids) {
+					const n = Number(raw);
+					if (seen.has(n)) {
+						distinct = false;
+						break;
+					}
+					seen.add(n);
+					if (n < min) min = n;
+					if (n > max) max = n;
+				}
+				if (
+					distinct &&
+					min >= 1 &&
+					max <= pagination[1] &&
+					max - min + 1 === Ids.length
+				) {
+					lineNumbers = {};
+					for (let line = min; line <= max; line++)
+						lineNumbers[line] = line;
+					countItems = Ids.length;
+				}
+			}
+			if (!lineNumbers) {
+				[lineNumbers, countItems] = await File.search(
+					join(tablePath, `id${this.getFileExtension(tableName)}`),
+					"[]",
+					Ids.map((id) =>
+						Utils.isNumber(id) ? Number(id) : UtilsServer.decodeID(id),
+					),
+					undefined,
+					undefined,
+					{ key: "BLABLA", type: "number" },
+					Ids.length,
+					0,
+					!this.totalItems.has(`${tableName}-id`),
+				);
+			}
 			if (!lineNumbers) return null;
 
 			this.totalItems.set(`${tableName}-id`, countItems);
@@ -2352,7 +2581,7 @@ export default class Inibase {
 
 		await this.validateTableData(tableName, clonedData);
 
-		const renameList: string[][] = [];
+		const renameList: (string | null)[][] = [];
 		try {
 			await File.lock(join(tablePath, ".tmp"), keys);
 
@@ -2407,7 +2636,7 @@ export default class Inibase {
 
 			await Promise.allSettled(
 				renameList
-					.filter(([_, filePath]) => filePath)
+					.filter((pair): pair is [string, string] => Boolean(pair[1]))
 					.map(async ([tempPath, filePath]) => rename(tempPath, filePath)),
 			);
 
@@ -2462,7 +2691,7 @@ export default class Inibase {
 			if (renameList.length)
 				await Promise.allSettled(
 					renameList
-						.filter(([_, filePath]) => filePath)
+						.filter((pair): pair is [string, string] => Boolean(pair[1]))
 						.map(async ([tempPath, _]) => unlink(tempPath)),
 				);
 			await File.unlock(join(tablePath, ".tmp"), keys);
@@ -2522,7 +2751,7 @@ export default class Inibase {
 		returnUpdatedData?: boolean,
 		_whereIsLinesNumbers?: boolean,
 	): Promise<(Data & TData) | (Data & TData)[] | null | undefined | undefined> {
-		const renameList: string[][] = [];
+		const renameList: (string | null)[][] = [];
 		this.validateName(tableName);
 
 		if (options.columns)
@@ -2606,7 +2835,7 @@ export default class Inibase {
 
 				await Promise.allSettled(
 					renameList
-						.filter(([_, filePath]) => filePath)
+						.filter((pair): pair is [string, string] => Boolean(pair[1]))
 						.map(async ([tempPath, filePath]) => rename(tempPath, filePath)),
 				);
 
@@ -2621,7 +2850,7 @@ export default class Inibase {
 				if (renameList.length)
 					await Promise.allSettled(
 						renameList
-							.filter(([_, filePath]) => filePath)
+							.filter((pair): pair is [string, string] => Boolean(pair[1]))
 							.map(async ([tempPath, _]) => unlink(tempPath)),
 					);
 				await File.unlock(join(tablePath, ".tmp"));
@@ -2683,7 +2912,7 @@ export default class Inibase {
 
 				await Promise.allSettled(
 					renameList
-						.filter(([_, filePath]) => filePath)
+						.filter((pair): pair is [string, string] => Boolean(pair[1]))
 						.map(async ([tempPath, filePath]) => rename(tempPath, filePath)),
 				);
 
@@ -2705,7 +2934,7 @@ export default class Inibase {
 				if (renameList.length)
 					await Promise.allSettled(
 						renameList
-							.filter(([_, filePath]) => filePath)
+							.filter((pair): pair is [string, string] => Boolean(pair[1]))
 							.map(async ([tempPath, _]) => unlink(tempPath)),
 					);
 				await File.unlock(join(tablePath, ".tmp"), keys);
@@ -2730,7 +2959,13 @@ export default class Inibase {
 				return this.put<TData>(
 					tableName,
 					clonedData as TData & Data,
-					lineNumbers,
+					// get() with onlyLinesNumbers always returns an array; a
+					// single-id update must keep the scalar so the recursive
+					// line-numbers branch returns a single row (matching the
+					// shape of get(singleId)) instead of a one-element array.
+					!Array.isArray(where) && Array.isArray(lineNumbers)
+						? lineNumbers[0]
+						: lineNumbers,
 					options,
 					returnUpdatedData as boolean,
 					true,
@@ -2766,6 +3001,7 @@ export default class Inibase {
 		tableName: string,
 		where?: number | string | (number | string)[] | Criteria,
 		_whereIsLinesNumbers?: boolean,
+		_cascadeGuard?: Set<string>,
 	): Promise<boolean | null> {
 		this.validateName(tableName);
 
@@ -2805,6 +3041,17 @@ export default class Inibase {
 					join(tablePath, `${pagination[0]}-0.pagination`),
 				);
 
+				this.idDensity.set(tableName, true);
+
+				// Deleting every row must also delete rows that reference them.
+				if (pagination[1]) {
+					const allLines = Array.from(
+						{ length: pagination[1] },
+						(_, i) => i + 1,
+					);
+					await this.cascadeDelete(tableName, allLines, new Set());
+				}
+
 				return true;
 			} finally {
 				await File.unlock(join(tablePath, ".tmp"));
@@ -2823,7 +3070,7 @@ export default class Inibase {
 			);
 
 			if (files.length) {
-				const renameList: string[][] = [];
+				const renameList: (string | null)[][] = [];
 				try {
 					await File.lock(join(tablePath, ".tmp"));
 
@@ -2842,6 +3089,7 @@ export default class Inibase {
 						pagination[1] &&
 						pagination[1] - (Array.isArray(where) ? where.length : 1) > 0
 					) {
+						this.idDensity.set(tableName, false);
 						await Promise.allSettled(
 							files.map(async (file) =>
 								renameList.push(
@@ -2852,12 +3100,13 @@ export default class Inibase {
 
 						await Promise.allSettled(
 							renameList
-								.filter(([_, filePath]) => filePath)
+								.filter((pair): pair is [string, string] => Boolean(pair[1]))
 								.map(async ([tempPath, filePath]) =>
 									rename(tempPath, filePath),
 								),
 						);
-					} else
+					} else {
+						this.idDensity.set(tableName, true);
 						await Promise.allSettled(
 							(await readdir(tablePath))
 								?.filter((fileName: string) =>
@@ -2865,6 +3114,7 @@ export default class Inibase {
 								)
 								.map(async (file) => unlink(join(tablePath, file))),
 						);
+					}
 
 					if (
 						globalConfig[this.databasePath].tables?.get(tableName)?.config.cache
@@ -2879,12 +3129,20 @@ export default class Inibase {
 						),
 					);
 
+					// Cascade: rows in other tables referencing the deleted rows
+					// (via `table`-typed fields) are removed too.
+					await this.cascadeDelete(
+						tableName,
+						Array.isArray(where) ? where : [where],
+						_cascadeGuard ?? new Set(),
+					);
+
 					return true;
 				} finally {
 					if (renameList.length)
 						await Promise.allSettled(
 							renameList
-								.filter(([_, filePath]) => filePath)
+								.filter((pair): pair is [string, string] => Boolean(pair[1]))
 								.map(async ([tempPath, _]) => unlink(tempPath)),
 						);
 					await File.unlock(join(tablePath, ".tmp"));
@@ -2907,7 +3165,18 @@ export default class Inibase {
 				undefined,
 				true,
 			);
-			return this.delete(tableName, lineNumbers, true);
+			// Deleting a non-existent id must not fall through to the
+			// "delete all rows" branch (this.delete(_, null, _) would truncate
+			// the whole table), so resolve the id to line numbers first and
+			// only delegate when something actually matched.
+			if (lineNumbers)
+				return this.delete(
+					tableName,
+					lineNumbers,
+					true,
+					_cascadeGuard ?? new Set(),
+				);
+			return false;
 		}
 		if (Utils.isObject(where)) {
 			const lineNumbers = await this.get(
@@ -2917,9 +3186,95 @@ export default class Inibase {
 				undefined,
 				true,
 			);
-			if (lineNumbers) return this.delete(tableName, lineNumbers, true);
+			if (lineNumbers)
+				return this.delete(
+					tableName,
+					lineNumbers,
+					true,
+					_cascadeGuard ?? new Set(),
+				);
 		} else throw this.createError("INVALID_PARAMETERS");
 		return false;
+	}
+
+	/**
+	 * Cascade delete: remove rows in other tables whose `table`-typed schema
+	 * fields reference the given rows. Reference columns store the numeric
+	 * (line-number) id of the referenced row, so deleted ids are matched
+	 * against them directly. Recursion into child tables happens through
+	 * `delete` itself (which calls this method again); the `guard` set keeps
+	 * deep/cyclic reference chains from re-processing the same (table, line).
+	 */
+	private async cascadeDelete(
+		tableName: string,
+		deletedLines: number[],
+		guard: Set<string>,
+	): Promise<void> {
+		if (!deletedLines.length) return;
+
+		for (const line of deletedLines) guard.add(`${tableName}:${line}`);
+
+		const tables = globalConfig[this.databasePath]?.tables;
+		if (!tables) return;
+
+		for (const [candidateName, tableData] of tables) {
+			if (candidateName === tableName || !tableData?.schema) continue;
+
+			// Only direct `table`-typed columns hold one stored id per row;
+			// arrays/objects of table refs serialize differently and are
+			// intentionally out of scope for the cascade.
+			const refFields = Utils.flattenSchema(tableData.schema, true).filter(
+				(field) => field.table === tableName && field.type === "table",
+			);
+			if (!refFields.length) continue;
+
+			for (const field of refFields) {
+				const refPath = join(
+					this.databasePath,
+					candidateName,
+					`${field.key}${this.getFileExtension(candidateName)}`,
+				);
+				if (!(await File.isExists(refPath))) continue;
+
+				const matching = new Set<number>();
+				for (const line of deletedLines) {
+					try {
+						const [, , found] = await File.search(
+							refPath,
+							"=",
+							line,
+							undefined,
+							undefined,
+							{
+								key: field.key,
+								type: "number",
+								databasePath: this.databasePath,
+							},
+							undefined,
+							undefined,
+							false,
+						);
+						if (found) for (const l of found) matching.add(l);
+					} catch {
+						// Unreadable/unsupported column -> skip this reference.
+					}
+				}
+
+				const toDelete = [...matching].filter((line) => {
+					const key = `${candidateName}:${line}`;
+					if (guard.has(key)) return false;
+					guard.add(key);
+					return true;
+				});
+				if (!toDelete.length) continue;
+
+				try {
+					await this.delete(candidateName, toDelete, true, guard);
+				} catch {
+					// Cascade is best-effort: never break the parent delete.
+				}
+			}
+		}
 	}
 
 	/**

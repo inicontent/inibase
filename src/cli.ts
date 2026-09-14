@@ -7,7 +7,7 @@ import { parseArgs } from "node:util";
 import Inison from "inison";
 
 import { isExists } from "./file.js";
-import Inibase, { type Criteria, type Data, type Options } from "./index.js";
+import Inibase, { type Criteria, type Data, type Options, type TableObject } from "./index.js";
 import {
 	isNumber,
 	isStringified,
@@ -101,7 +101,7 @@ console.log(`   ${textGreen("config")} | ${textGreen("c")}
 				console.log(`${textRed("  Err:")} Please specify table name`);
 				break;
 			}
-			const config = (await db.getTable(table)).config;
+			const config = ((await db.getTable(table)) as TableObject).config;
 
 			if (!splitedInput[1]) {
 				console.log(JSON.stringify(config, undefined, 2));
@@ -155,7 +155,7 @@ console.log(`   ${textGreen("config")} | ${textGreen("c")}
 				console.log(`${textRed("  Err:")} Please specify table name`);
 				break;
 			}
-			const schema = (await db.getTable(table)).schema;
+			const schema = ((await db.getTable(table)) as TableObject).schema;
 
 			if (!splitedInput[1] || !splitedInput[2]) {
 				console.log(JSON.stringify(schema, undefined, 2));

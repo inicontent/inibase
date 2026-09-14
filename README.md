@@ -791,6 +791,7 @@ await db.get("user", undefined, { sort: {age: -1, username: "asc"} });
 | DELETE | 118 ms (0.59 mb)    | 113 ms (0.51 mb)   | 103 ms (3.14 mb)   |
 
 > Default testing uses a table with username, email, and password fields, ensuring password encryption is included in the process<br>
+> Results are measured on a default table plus dedicated tables with `prepend`, `compression`, and `decodeID` configs enabled<br>
 > To run benchmarks, install _typescript_ & _[tsx](https://github.com/privatenumber/tsx)_ globally and run `benchmark` by default bulk, for single use `benchmark --single|-s`
 
 ## Roadmap

@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { execFile as execFileSync, exec as execSync } from "node:child_process";
+import { execFile as execFileSync, exec as rawExec } from "node:child_process";
 import {
 	createCipheriv,
 	createDecipheriv,
@@ -15,7 +15,7 @@ import type { ComparisonOperator, FieldType } from "./index.js";
 import { globalConfig } from "./index.js";
 import { detectFieldType, isNumber, isPassword } from "./utils.js";
 
-export const exec = promisify(execSync);
+export const exec = promisify(rawExec);
 
 export const execFile = promisify(execFileSync);
 

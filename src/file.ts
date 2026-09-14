@@ -197,7 +197,10 @@ const unSecureString = (input: string): string | number | null => {
 	if (isNumber(input))
 		return String(input).at(0) === "0" ? input : Number(input);
 
-	if (typeof input === "string") return input.replace(/\\n/g, "\n") || null;
+	// Fast path: the common case has no `\n` escape sequence, so avoid
+	// allocating a replacement string (and a fresh RegExp) per cell.
+	if (typeof input === "string")
+		return input.includes("\\n") ? input.replaceAll("\\n", "\n") || null : input;
 
 	return null;
 };
@@ -211,7 +214,7 @@ const unSecureString = (input: string): string | number | null => {
  * @returns Decoded value, transformed according to the specified field type(s).
  */
 const decodeHelper = (
-	value: string | number | any[],
+	value: string | number | any[] | null | undefined,
 	field: Field & { databasePath?: string },
 ): any => {
 	if (Array.isArray(value) && field.type !== "array")
@@ -229,8 +232,9 @@ const decodeHelper = (
 					decode(v, {
 						...field,
 						type: Array.isArray(field.children)
-							? detectFieldType(v, field.children as FieldType[])
-							: field.children,
+							? (detectFieldType(v, field.children as FieldType[]) ??
+								(field.children[0] as FieldType))
+							: (field.children as FieldType),
 					}),
 				);
 			break;
@@ -259,24 +263,46 @@ const decodeHelper = (
 export const decode = (
 	input: string | null | number,
 	field: Field & { databasePath?: string },
-): string | number | boolean | null | (string | number | null | boolean)[] => {
+):
+	| string
+	| number
+	| boolean
+	| null
+	| undefined
+	| (string | number | null | boolean)[] => {
 	if (input === null || input === "") return undefined;
 
 	// Detect the fieldType based on the input and the provided array of possible types.
 	// Decode the input using the decodeHelper function.
+	let value: any = input;
+	if (typeof input === "string") {
+		if (isStringified(input)) {
+			try {
+				value = Inison.unstringify(input);
+			} catch {
+				// The stored string merely *starts with* `{` or `[`
+				// (e.g. a template binding like `{{item.username}}`
+				// or a literal like `{hello world`) but is not valid
+				// Inison. Treat it as a plain string so a single row
+				// never breaks reads of the whole file/table.
+				value = unSecureString(input);
+			}
+		} else value = unSecureString(input);
+	}
 	return decodeHelper(
-		typeof input === "string"
-			? isStringified(input)
-				? Inison.unstringify(input)
-				: unSecureString(input)
-			: input,
+		value,
 		Array.isArray(field.type)
-			? { ...field, type: detectFieldType(String(input), field.type) }
+			? {
+					...field,
+					type:
+						detectFieldType(String(input), field.type) ??
+						(field.type[0] as FieldType),
+				}
 			: field,
 	);
 };
 
-function _groupIntoRanges(arr: number[], action: "p" | "d" = "p") {
+export function _groupIntoRanges(arr: number[], action: "p" | "d" = "p") {
 	if (arr.length === 0) return [];
 
 	arr.sort((a, b) => a - b); // Ensure the array is sorted
@@ -324,6 +350,7 @@ export function get(
 	| number
 	| boolean
 	| null
+	| undefined
 	| (string | number | boolean | (string | number | boolean)[] | null)[]
 > | null>;
 export function get(
@@ -339,6 +366,7 @@ export function get(
 			| number
 			| boolean
 			| null
+			| undefined
 			| (string | number | boolean | (string | number | boolean)[] | null)[]
 		> | null,
 		number,
@@ -356,6 +384,7 @@ export async function get(
 			| number
 			| boolean
 			| null
+			| undefined
 			| (string | number | boolean | (string | number | boolean)[] | null)[]
 	  >
 	| null
@@ -366,6 +395,7 @@ export async function get(
 				| number
 				| boolean
 				| null
+				| undefined
 				| (string | number | boolean | (string | number | boolean)[] | null)[]
 			> | null,
 			number,
@@ -382,14 +412,19 @@ export async function get(
 			| number
 			| boolean
 			| null
+			| undefined
 			| (string | number | boolean | (string | number | boolean)[] | null)[]
 		> = {};
 		let linesCount = 0;
+		const config: Field & { databasePath?: string } = field ?? {
+			key: "BLABLA",
+			type: "string",
+		};
 
 		if (!lineNumbers) {
 			for await (const line of rl) {
 				linesCount++;
-				lines[linesCount] = decode(line, field);
+				lines[linesCount] = decode(line, config);
 			}
 		} else if (lineNumbers === -1) {
 			const escapedFilePath = escapeShellPath(filePath);
@@ -397,7 +432,7 @@ export async function get(
 				? `gunzip -c ${escapedFilePath} | sed -n '$p'`
 				: `sed -n '$p' ${escapedFilePath}`;
 			const foundedLine = (await exec(command)).stdout.trimEnd();
-			if (foundedLine) lines[linesCount] = decode(foundedLine, field);
+			if (foundedLine) lines[linesCount] = decode(foundedLine, config);
 		} else {
 			lineNumbers = Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers];
 			if (lineNumbers.some(Number.isNaN))
@@ -407,7 +442,7 @@ export async function get(
 				for await (const line of rl) {
 					linesCount++;
 					if (!lineNumbersArray.has(linesCount)) continue;
-					lines[linesCount] = decode(line, field);
+					lines[linesCount] = decode(line, config);
 					lineNumbersArray.delete(linesCount);
 				}
 				return [lines, linesCount];
@@ -421,7 +456,7 @@ export async function get(
 
 			let index = 0;
 			for (const line of foundedLines) {
-				lines[lineNumbers[index]] = decode(line, field);
+				lines[lineNumbers[index]] = decode(line, config);
 				index++;
 			}
 		}
@@ -455,7 +490,7 @@ export const replace = async (
 				string | boolean | number | null | (string | boolean | number | null)[]
 		  >,
 	totalItems?: number,
-): Promise<string[]> => {
+): Promise<(string | null)[]> => {
 	const fileTempPath = filePath.replace(/([^/]+)\/?$/, ".tmp/$1");
 	const isReplacementsObject = isObject(replacements);
 	const isReplacementsLineNumbered =
@@ -463,7 +498,7 @@ export const replace = async (
 	if (await isExists(filePath)) {
 		if (isReplacementsLineNumbered) {
 			let fileHandle = null;
-			let fileTempHandle: FileHandle = null;
+			let fileTempHandle: FileHandle | null = null;
 			try {
 				let linesCount = 0;
 				fileHandle = await open(filePath, "r");
@@ -583,7 +618,7 @@ export const replace = async (
 export const append = async (
 	filePath: string,
 	data: string | number | (string | number)[],
-): Promise<string[]> => {
+): Promise<(string | null)[]> => {
 	const fileTempPath = filePath.replace(/([^/]+)\/?$/, ".tmp/$1");
 	try {
 		if (await isExists(filePath)) {
@@ -623,7 +658,7 @@ export const append = async (
 export const prepend = async (
 	filePath: string,
 	data: string | number | (string | number)[],
-): Promise<string[]> => {
+): Promise<(string | null)[]> => {
 	const fileTempPath = filePath.replace(/([^/]+)\/?$/, ".tmp/$1");
 	if (await isExists(filePath)) {
 		if (!filePath.endsWith(".gz")) {
@@ -705,7 +740,7 @@ export const prepend = async (
 export const remove = async (
 	filePath: string,
 	linesToDelete: number | number[],
-): Promise<string[]> => {
+): Promise<(string | null)[]> => {
 	linesToDelete = Array.isArray(linesToDelete)
 		? linesToDelete.map(Number)
 		: [Number(linesToDelete)];
@@ -797,7 +832,12 @@ function buildEqualsPatterns(
 			for (const form of [...new Set(forms)]) {
 				let valid = false;
 				try {
-					valid = compare("=", decode(form, field), value, type as FieldType);
+					valid = compare(
+						"=",
+						decode(form, field) ?? null,
+						value,
+						type as FieldType,
+					);
 				} catch {
 					valid = false;
 				}
@@ -813,7 +853,12 @@ function buildEqualsPatterns(
 			const form = String(Number(value));
 			let valid = false;
 			try {
-				valid = compare("=", decode(form, field), value, type as FieldType);
+				valid = compare(
+					"=",
+					decode(form, field) ?? null,
+					value,
+					type as FieldType,
+				);
 			} catch {
 				valid = false;
 			}
@@ -841,7 +886,12 @@ function buildEqualsPatterns(
 			const form = String(encoded);
 			let valid = false;
 			try {
-				valid = compare("=", decode(form, field), value, type as FieldType);
+				valid = compare(
+					"=",
+					decode(form, field) ?? null,
+					value,
+					type as FieldType,
+				);
 			} catch {
 				valid = false;
 			}
@@ -875,7 +925,12 @@ async function searchEqualsNative(
 	| [
 			Record<
 				number,
-				string | number | boolean | null | (string | number | boolean | null)[]
+				| string
+				| number
+				| boolean
+				| null
+				| undefined
+				| (string | number | boolean | null)[]
 			> | null,
 			number,
 			Set<number> | null,
@@ -901,13 +956,13 @@ async function searchEqualsNative(
 	// (decode() eagerly unstringifies them), so a native whole-line grep could
 	// silently miss matches that live inside those containers. Detect such lines
 	// up front; when any are present, fall back to the JS reader.
-	let probe: string;
+	let probe = "";
 	try {
 		({ stdout: probe } = await exec(
 			`LC_ALL=C ${source} | LC_ALL=C grep -a -m 1 -E '^[[{]'`,
 			{ maxBuffer: 1024 * 1024 * 4 },
 		));
-	} catch (err) {
+	} catch (err: any) {
 		if (Number(err?.code) !== 1) return null; // probe failure -> readline fallback
 	}
 	if (probe) return null;
@@ -919,7 +974,7 @@ async function searchEqualsNative(
 	let stdout: string;
 	try {
 		({ stdout } = await exec(command, { maxBuffer: 1024 * 1024 * 256 }));
-	} catch (err) {
+	} catch (err: any) {
 		if (Number(err?.code) === 1) return [null, 0, null]; // grep: no matches
 		return null; // native failure -> readline fallback
 	}
@@ -940,7 +995,12 @@ async function searchEqualsNative(
 	const linesNumbers: Set<number> = new Set();
 	const matchingLines: Record<
 		number,
-		string | number | boolean | null | (string | number | boolean | null)[]
+		| string
+		| number
+		| boolean
+		| null
+		| undefined
+		| (string | number | boolean | null)[]
 	> = {};
 	let processed = 0;
 	let finalTotal: number | null = null;
@@ -960,9 +1020,9 @@ async function searchEqualsNative(
 		// values (guaranteed by construction, kept as a safety net).
 		const verifies = Array.isArray(comparedAtValue)
 			? comparedAtValue.some((value) =>
-					compare("=", decodedLine, value, field.type),
+					compare("=", decodedLine ?? null, value, field.type),
 				)
-			: compare("=", decodedLine, comparedAtValue, field.type);
+			: compare("=", decodedLine ?? null, comparedAtValue, field.type);
 		if (!verifies) return null;
 
 		matchingLines[lineNumber] = decodedLine;
@@ -1008,22 +1068,26 @@ export const search = async (
 	[
 		Record<
 			number,
-			string | number | boolean | null | (string | number | boolean | null)[]
+			| string
+			| number
+			| boolean
+			| null
+			| undefined
+			| (string | number | boolean | null)[]
 		> | null,
 		number,
 		Set<number> | null,
 	]
 > => {
 	// Native fast path for exact-equality searches (whole-line `grep -x -F`).
-	const fieldType = field?.type;
 	if (
 		operator === "=" &&
 		!Array.isArray(operator) &&
 		!logicalOperator &&
 		comparedAtValue !== null &&
 		comparedAtValue !== undefined &&
-		typeof fieldType === "string" &&
-		EQUALS_FAST_TYPES.has(fieldType)
+		typeof field?.type === "string" &&
+		EQUALS_FAST_TYPES.has(field.type)
 	) {
 		const patterns = buildEqualsPatterns(comparedAtValue, field);
 		if (patterns) {
@@ -1044,7 +1108,12 @@ export const search = async (
 	// Initialize a Map to store the matching lines with their line numbers.
 	const matchingLines: Record<
 		number,
-		string | number | boolean | null | (string | number | boolean | null)[]
+		| string
+		| number
+		| boolean
+		| null
+		| undefined
+		| (string | number | boolean | null)[]
 	> = {};
 
 	// Initialize counters for line number, found items, and processed items.
@@ -1053,18 +1122,23 @@ export const search = async (
 
 	let fileHandle = null;
 
+	const config: Field & { databasePath?: string } = field ?? {
+		key: "BLABLA",
+		type: "string",
+	};
+
 	const meetsConditions = (value: any) =>
 		(Array.isArray(operator) &&
 			Array.isArray(comparedAtValue) &&
 			((logicalOperator === "or" &&
 				operator.some((single_operator, index) =>
-					compare(single_operator, value, comparedAtValue[index], field.type),
+					compare(single_operator, value, comparedAtValue[index], config.type),
 				)) ||
 				operator.every((single_operator, index) =>
-					compare(single_operator, value, comparedAtValue[index], field.type),
+					compare(single_operator, value, comparedAtValue[index], config.type),
 				))) ||
 		(!Array.isArray(operator) &&
-			compare(operator, value, comparedAtValue, field.type));
+			compare(operator, value, comparedAtValue, config.type));
 
 	try {
 		// Open the file for reading.
@@ -1085,7 +1159,7 @@ export const search = async (
 				continue;
 
 			// Decode the line for comparison.
-			const decodedLine = decode(line, field);
+			const decodedLine = decode(line, config);
 
 			// Check if the line meets the specified conditions based on comparison and logical operators.
 			const doesMeetCondition =
