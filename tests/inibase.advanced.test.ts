@@ -28,6 +28,23 @@ async function seed(
 	return inibase.post(tableName, rows, undefined, true) as Promise<Row[]>;
 }
 
+await test("Date fields normalize ISO calendar dates to timestamps", async () => {
+	initializeDatabase();
+
+	await inibase.createTable("dated", [{ key: "scheduledAt", type: "date" }]);
+	const expected = Date.UTC(2026, 9, 1);
+	const posted = (await inibase.post(
+		"dated",
+		{ scheduledAt: "2026-10-01" },
+		undefined,
+		true,
+	)) as Row;
+
+	assert.equal(posted.scheduledAt, expected);
+	const rows = (await inibase.get<Row>("dated")) as Row[];
+	assert.equal(rows[0].scheduledAt, expected);
+});
+
 await test("Advanced Criteria Queries (comparison operators)", async (t) => {
 	initializeDatabase();
 
@@ -1047,7 +1064,7 @@ await test("Deeply nested array/object trees", async (t) => {
 	});
 });
 
-await test("sum / max / min with criteria and multiple columns", async (t) => {
+await test("sum / avg / max / min with criteria and multiple columns", async (t) => {
 	initializeDatabase();
 
 	const tableName = "stats";
@@ -1077,6 +1094,15 @@ await test("sum / max / min with criteria and multiple columns", async (t) => {
 	await t.test("sum respects criteria", async () => {
 		assert.equal(await inibase.sum(tableName, "score", { grp: "a" }), 30);
 		assert.equal(await inibase.sum(tableName, "level", { grp: "b" }), 7);
+	});
+
+	await t.test("avg returns numbers and respects criteria", async () => {
+		assert.equal(await inibase.avg(tableName, "score"), 25);
+		assert.deepEqual(await inibase.avg(tableName, ["score", "level"]), {
+			score: 25,
+			level: 2.5,
+		});
+		assert.equal(await inibase.avg(tableName, "score", { grp: "a" }), 15);
 	});
 
 	await t.test("max/min return records even for one column", async () => {
@@ -1183,7 +1209,7 @@ await test("Error handling coverage", async (t) => {
 		await assert.rejects(inibase.get("noschema"), { name: "NO_SCHEMA" });
 	});
 
-	await t.test("TABLE_EMPTY for put/delete/sum/max/min", async () => {
+	await t.test("TABLE_EMPTY for put/delete/sum/avg/max/min", async () => {
 		await inibase.createTable("empty", [{ key: "x", type: "string" }]);
 		await assert.rejects(inibase.put("empty", { x: "a" }), {
 			name: "TABLE_EMPTY",
@@ -1192,6 +1218,7 @@ await test("Error handling coverage", async (t) => {
 			name: "TABLE_EMPTY",
 		});
 		await assert.rejects(inibase.sum("empty", "x"), { name: "TABLE_EMPTY" });
+		await assert.rejects(inibase.avg("empty", "x"), { name: "TABLE_EMPTY" });
 		await assert.rejects(inibase.max("empty", "x"), { name: "TABLE_EMPTY" });
 		await assert.rejects(inibase.min("empty", "x"), { name: "TABLE_EMPTY" });
 	});

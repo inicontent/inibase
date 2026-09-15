@@ -872,6 +872,8 @@ export default class Inibase {
 						? value
 						: Number((value as string).trim())
 					: 0;
+			case "date":
+				return Utils.dateToTimestamp(value);
 			case "id":
 				return Utils.isNumber(value)
 					? value
@@ -1202,9 +1204,7 @@ export default class Inibase {
 				linesNumber,
 			);
 			if (batched) {
-				batchedKeys = new Set(
-					simpleFields.map((field) => field.key),
-				);
+				batchedKeys = new Set(simpleFields.map((field) => field.key));
 				for (const [line, row] of Object.entries(batched)) {
 					if (!RETURN[line]) RETURN[line] = {} as TData & Data;
 					Object.assign(RETURN[line], row);
@@ -1342,10 +1342,7 @@ export default class Inibase {
 				key: field.key,
 				config: {
 					...field,
-					type:
-						field.key === "id" && decodeID
-							? "number"
-							: field.type,
+					type: field.key === "id" && decodeID ? "number" : field.type,
 					databasePath: this.databasePath,
 				},
 			});
@@ -1359,9 +1356,7 @@ export default class Inibase {
 		// streams stay aligned column-by-column inside `paste`.
 		const pasteInputs = isGz
 			? cols
-					.map(
-						({ path }) => `<(gunzip -c ${File.escapeShellPath(path)})`,
-					)
+					.map(({ path }) => `<(gunzip -c ${File.escapeShellPath(path)})`)
 					.join(" ")
 			: files;
 		const command = isGz
@@ -1370,9 +1365,7 @@ export default class Inibase {
 
 		let output: string;
 		try {
-			output = (
-				(await UtilsServer.exec(command)) as { stdout: string }
-			).stdout;
+			output = ((await UtilsServer.exec(command)) as { stdout: string }).stdout;
 		} catch {
 			return null;
 		}
@@ -1899,9 +1892,7 @@ export default class Inibase {
 					const matches = Object.keys(item).some(
 						(key) =>
 							orKeys.includes(key) ||
-							orKeys.some((criteriaKey) =>
-								criteriaKey.startsWith(`${key}.`),
-							),
+							orKeys.some((criteriaKey) => criteriaKey.startsWith(`${key}.`)),
 					);
 					if (!matches) delete RETURN[id];
 				}
@@ -2106,19 +2097,19 @@ export default class Inibase {
 					)) ?? {},
 				).map(Number);
 				awkCommand = `awk '${itemsIDs.map((id) => `$1 == ${id}`).join(" || ")}'`;
-			} else
-				// perPage < 0 means "no limit": select every line instead of
-				// generating an empty awk window (with perPage -1 the old code
-				// produced `awk ''`, which prints nothing and the empty stdout
-				// decoded into a single hollow row).
+			}
+			// perPage < 0 means "no limit": select every line instead of
+			// generating an empty awk window (with perPage -1 the old code
+			// produced `awk ''`, which prints nothing and the empty stdout
+			// decoded into a single hollow row).
+			else
 				awkCommand =
 					options.perPage < 0
 						? "awk '1'"
 						: `awk '${Array.from(
 								{ length: options.perPage },
 								(_, index) =>
-									((options.page as number) - 1) *
-										(options.perPage as number) +
+									((options.page as number) - 1) * (options.perPage as number) +
 									index +
 									1,
 							)
@@ -2317,8 +2308,7 @@ export default class Inibase {
 			const isDecodeID =
 				globalConfig[this.databasePath].tables?.get(tableName)?.config
 					.decodeID === true &&
-				!globalConfig[this.databasePath].tables?.get(tableName)?.config
-					.prepend;
+				!globalConfig[this.databasePath].tables?.get(tableName)?.config.prepend;
 			if (
 				isDecodeID &&
 				this.idDensity.get(tableName) &&
@@ -2345,8 +2335,7 @@ export default class Inibase {
 					max - min + 1 === Ids.length
 				) {
 					lineNumbers = {};
-					for (let line = min; line <= max; line++)
-						lineNumbers[line] = line;
+					for (let line = min; line <= max; line++) lineNumbers[line] = line;
 					countItems = Ids.length;
 				}
 			}
@@ -3328,6 +3317,62 @@ export default class Inibase {
 						? await File.sum(columnPath, lineNumbers)
 						: 0;
 				} else RETURN[column] = await File.sum(columnPath);
+			}
+		}
+		return columns.length > 1 ? RETURN : Object.values(RETURN)[0];
+	}
+
+	/**
+	 * Generate average of column(s) in a table
+	 *
+	 * @param {string} tableName
+	 * @param {string} columns
+	 * @param {(number | string | (number | string)[] | Criteria)} [where]
+	 * @return {*}  {Promise<number | Record<string, number>>}
+	 */
+	avg(
+		tableName: string,
+		columns: string,
+		where?: number | string | (number | string)[] | Criteria,
+	): Promise<number>;
+	avg(
+		tableName: string,
+		columns: string[],
+		where?: number | string | (number | string)[] | Criteria,
+	): Promise<Record<string, number>>;
+	public async avg(
+		tableName: string,
+		columns: string | string[],
+		where?: number | string | (number | string)[] | Criteria,
+	): Promise<number | Record<string, number>> {
+		this.validateName(tableName);
+
+		if (!Array.isArray(columns)) columns = [columns];
+		for (const column of columns) this.validateName(column);
+
+		await this.throwErrorIfTableEmpty(tableName);
+		const RETURN: Record<string, number> = {};
+		const tablePath = join(this.databasePath, tableName);
+
+		for await (const column of columns) {
+			const columnPath = join(
+				tablePath,
+				`${column}${this.getFileExtension(tableName)}`,
+			);
+			if (await File.isExists(columnPath)) {
+				if (where) {
+					const lineNumbers = await this.get(
+						tableName,
+						where,
+						undefined,
+						undefined,
+						true,
+					);
+
+					RETURN[column] = lineNumbers
+						? await File.avg(columnPath, lineNumbers)
+						: 0;
+				} else RETURN[column] = await File.avg(columnPath);
 			}
 		}
 		return columns.length > 1 ? RETURN : Object.values(RETURN)[0];

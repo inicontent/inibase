@@ -207,21 +207,40 @@ export const isPassword = (input: unknown): input is string =>
  * @param input - The input to be checked, can be of any type.
  * @returns A boolean indicating whether the input is a valid date.
  */
-export const isDate = (input: unknown): input is Date | number => {
+export const dateToTimestamp = (input: unknown): number | null => {
 	// Check if the input is null, undefined, or an empty string
-	if (input == null || input === "") return false;
+	if (input == null || input === "") return null;
+
+	if (typeof input === "string") {
+		const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(input);
+		if (match) {
+			const year = Number(match[1]);
+			const month = Number(match[2]);
+			const day = Number(match[3]);
+			const timestamp = Date.UTC(year, month - 1, day);
+			const date = new Date(timestamp);
+			return date.getUTCFullYear() === year &&
+				date.getUTCMonth() === month - 1 &&
+				date.getUTCDate() === day
+				? timestamp
+				: null;
+		}
+	}
 
 	// Convert to number and check if it's a valid number
 	const numTimestamp = Number(input);
 	// Check if the converted number is NaN or not finite
 	if (Number.isNaN(numTimestamp) || !Number.isFinite(numTimestamp))
-		return false;
+		return null;
 
 	// Create a Date object from the timestamp
 	const date = new Date(numTimestamp);
 	// Check if the date is valid
-	return date.getTime() === numTimestamp;
+	return date.getTime() === numTimestamp ? numTimestamp : null;
 };
+
+export const isDate = (input: unknown): boolean =>
+	dateToTimestamp(input) !== null;
 
 /**
  * Checks if the input is a valid ID.

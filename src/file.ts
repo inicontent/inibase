@@ -200,7 +200,9 @@ const unSecureString = (input: string): string | number | null => {
 	// Fast path: the common case has no `\n` escape sequence, so avoid
 	// allocating a replacement string (and a fresh RegExp) per cell.
 	if (typeof input === "string")
-		return input.includes("\\n") ? input.replaceAll("\\n", "\n") || null : input;
+		return input.includes("\\n")
+			? input.replaceAll("\\n", "\n") || null
+			: input;
 
 	return null;
 };
@@ -1199,18 +1201,18 @@ export const search = async (
 	}
 };
 /**
- * Reads the file once and returns either the sum, min or max of the
+ * Reads the file once and returns either the sum, average, min or max of the
  * (optionally-selected) numeric lines.
  *
  * @param filePath   Absolute path of the column file (may be .gz-compressed).
- * @param wanted     Metric to compute: "sum" (default), "min" or "max".
+ * @param wanted     Metric to compute: "sum" (default), "avg", "min" or "max".
  * @param lineNumbers Specific line-number(s) to restrict the scan to.
  *
  * @returns Promise<number>  The requested metric, or 0 if no numeric value found.
  */
 async function reduceNumbers(
 	filePath: string,
-	wanted: "sum" | "min" | "max" = "sum",
+	wanted: "sum" | "avg" | "min" | "max" = "sum",
 	lineNumbers?: number | number[],
 ): Promise<number> {
 	/* optional subset */
@@ -1241,7 +1243,7 @@ async function reduceNumbers(
 
 			processed++;
 
-			if (wanted === "sum") {
+			if (wanted === "sum" || wanted === "avg") {
 				sum += num;
 			} else if (wanted === "min") {
 				if (num < min) min = num;
@@ -1258,12 +1260,21 @@ async function reduceNumbers(
 
 	if (processed === 0) return 0; // nothing numeric found
 
-	return wanted === "sum" ? sum : wanted === "min" ? min : max;
+	return wanted === "sum"
+		? sum
+		: wanted === "avg"
+			? sum / processed
+			: wanted === "min"
+				? min
+				: max;
 }
 
 /* Optional convenience wrappers (signatures unchanged) */
 export const sum = (fp: string, ln?: number | number[]) =>
 	reduceNumbers(fp, "sum", ln);
+
+export const avg = (fp: string, ln?: number | number[]) =>
+	reduceNumbers(fp, "avg", ln);
 
 export const min = (fp: string, ln?: number | number[]) =>
 	reduceNumbers(fp, "min", ln);

@@ -1066,13 +1066,18 @@ await test("Name Validation (Security)", async (t) => {
 		);
 	});
 
-	await t.test("Reject Malicious Column Names via sum/max/min", async () => {
+	await t.test("Reject Malicious Column Names via sum/avg/max/min", async () => {
 		const tableName = "secure_table";
 		for (const column of maliciousNames) {
 			await assert.rejects(
 				inibase.sum(tableName, column),
 				{ name: "INVALID_NAME" },
 				`Should reject column '${column}' in sum`,
+			);
+			await assert.rejects(
+				inibase.avg(tableName, column),
+				{ name: "INVALID_NAME" },
+				`Should reject column '${column}' in avg`,
 			);
 			await assert.rejects(
 				inibase.max(tableName, column),

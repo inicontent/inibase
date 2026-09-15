@@ -128,10 +128,15 @@ await test("Utilities: isDate", async (t) => {
 	});
 
 	await t.test("should return false for non-Date values", () => {
-		assert.equal(isDate("2025-01-01"), false, "String is not a Date object");
+		assert.equal(isDate("2025-02-29"), false, "Invalid calendar date");
 		assert.equal(isDate({}), false, "Plain object is not a Date");
 		assert.equal(isDate(null), false, "null is not a Date");
 		assert.equal(isDate(undefined), false, "undefined is not a Date");
+	});
+
+	await t.test("should accept strict ISO calendar dates", () => {
+		assert.ok(isDate("2025-01-01"));
+		assert.equal(isDate("2025-1-1"), false, "Requires zero-padded date");
 	});
 });
 

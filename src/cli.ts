@@ -7,7 +7,12 @@ import { parseArgs } from "node:util";
 import Inison from "inison";
 
 import { isExists } from "./file.js";
-import Inibase, { type Criteria, type Data, type Options, type TableObject } from "./index.js";
+import Inibase, {
+	type Criteria,
+	type Data,
+	type Options,
+	type TableObject,
+} from "./index.js";
 import {
 	isNumber,
 	isStringified,
