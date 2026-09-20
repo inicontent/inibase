@@ -1,6 +1,6 @@
 # Inibase :pencil:
 
-> A file-based & memory-efficient, serverless, ACID compliant, relational database management system :fire:
+> A file-based & memory-efficient, serverless relational database with **crash-atomic ACID: single-table DML + multi-table transactions** :fire: — per-table writer locks, write-ahead journal + crash recovery, fsync-backed durability, and a `begin`/`commit`/`rollback` transaction API (exact scope in [Durability & crash safety](#durability--crash-safety)).
 
 [![Inibase banner](./.github/assets/banner.jpg)](https://github.com/inicontent/inibase)
 
@@ -12,7 +12,7 @@
 - **Minimalist** :white_circle: (but powerful)
 - **100% TypeScript** :large_blue_diamond:
 - **Super-Fast** :zap: (built-in caching system)
-- **ATOMIC** :lock: File lock for writing
+- **ATOMIC** :lock: Per-table writer locks, write-ahead journal + crash recovery, fsync-backed durability, and multi-table transactions (`begin`/`commit`/`rollback`) for atomic cascades (exact scope below)
 - **Built-in** form validation (+unique values :new: ) :sunglasses:
 - **Suitable for large data** :page_with_curl: (tested with 4M records)
 - **Support Compression** :eight_spoked_asterisk: (using built-in nodejs zlib)
@@ -74,6 +74,98 @@ const users = await db.get("user", { favoriteFoods: "![]Pizza,Burger" });
 - **DELETE**: Removes lines from column files for swift deletion.
 
 This structure ensures efficient storage, retrieval, and updates, making our system scalable and high-performing for diverse datasets and applications.
+
+## Durability & crash safety
+
+> [!IMPORTANT]
+> **DML (post / put / delete / truncate) is crash-atomic per table.** A logical
+> operation spans many column files plus a pagination-metadata file; all of
+> those files are committed as one journaled unit, so a table is never observed
+> half-applied. **Multi-table atomicity** is available explicitly through the
+> transaction API (`begin` / `commit` / `rollback`, see below) — cascade
+> deletes and multi-table writes are atomic *inside* a transaction, and
+> best-effort without one.
+
+### How each property is provided
+
+| Property | Mechanism |
+|---|---|
+| **A**tomicity | Write-ahead journal: one journal per table (`.tmp/journal.jsonl`) for single-table DML, plus a database journal (`<db>/.tmp/journal.jsonl`) that transactions append `op` entries to. Intent is fsynced *before* any live file changes; a `commit` marker is fsynced after publication. On crash: no commit marker → roll back (restore backups), commit present → roll forward (complete swaps, discard backups). Recovery runs automatically under the lock before any mutation/read. |
+| **C**onsistency | Schema validation + uniqueness enforcement happen before anything is written; every operation is atomic, so a table is never observed half-applied. |
+| **I**solation | **One writer lock per table** serializes every mutation (single-host and multi-host / NFS); a transaction holds the writer lock of every table it touches for its whole lifetime, plus a database lock to serialize transactions. Reads are **lock-free** with optimistic version-retry: each read snapshots the identity of every column + pagination file, and is re-run if anything changed mid-scan — a reader never sees torn rows. |
+| **D**urability | Durability knob `INIBASE_DURABILITY=full` (default) fsyncs the temp file, the journal (begin/commit), and the affected directories (incl. shell `sed`/`gzip` temp paths and stream pipelines). DDL (create/update table, compression & prepend toggles) is fsynced too. `INIBASE_DURABILITY=none` skips **every** fsync while keeping the exact journal protocol — the data is process-crash safe (a crash leaves an in-flight journal that recovery rolls back or forward) but **not** power-loss safe, because the OS page cache can be lost. |
+
+**Commit-point ordering:** the pagination metadata rename happens *first* (the atomic publication point — the row count flips in a single rename that lock-free readers observe), then column files are swapped `live → backup` + `tmp → live`.
+
+### Transactions (multi-table atomicity)
+
+```js
+await db.begin(["orders", "invoices"]); // pre-lock tables in sorted order (deadlock-free)
+try {
+  await db.post("orders", order);
+  await db.post("invoices", invoice);
+  await db.commit(); // publish everything crash-atomically
+} catch {
+  await db.rollback(); // discard everything; no live file was touched
+}
+```
+
+- **Semantics:** mutations issued inside a transaction are *staged* — their
+  temps are fsynced and an `op` entry appended to the database journal — but no
+  live file changes until `commit()`. `commit()` publishes every staged
+  mutation (per table: pagination rename first, then column swaps) and ends
+  with a single fsynced `commit` marker, making the whole set atomic with
+  respect to crashes and process kills. `rollback()` removes the temps and the
+  journal without touching any live file.
+- **Cascade:** a `delete` inside a transaction cascades into referencing tables
+  *through the same journal*, so the whole parent + children removal is atomic;
+  a failure during the cascade aborts the transaction.
+- **Rules & limits (v1):**
+  - **No read-your-writes:** reads inside a transaction observe the last
+    committed state, not staged writes.
+  - **One mutation per table per transaction.** A second post/put/delete on a
+    table already staged in the same transaction throws `INVALID_PARAMETERS`
+    (composing same-table writes would require read-your-writes).
+  - **DDL is not allowed inside a transaction** (`createTable` / `updateTable`
+    throw `INVALID_PARAMETERS`).
+  - `begin` without a table list locks tables on first touch, in first-touch
+    order; list the tables up front to get sorted, cycle-free ordering.
+  - `returnPostedData` inside a transaction returns the formatted staged rows
+    (no joins); `returnUpdatedData` inside a transaction throws
+    `INVALID_PARAMETERS`.
+  - Transactions are excluded from structural lock-upgrade deadlocks, but two
+    long transactions that touch overlapping tables can only deadlock in the
+    first-touch-order case (pre-listing avoids it).
+
+### Scope & caveats
+
+- **Best-effort without a transaction.** Cross-table cascade deletes outside a
+  transaction stay best-effort: referencing rows are removed *after* the
+  primary delete commits, and a crash in between can leave orphaned references.
+  Wrap them in `begin`/`commit` for atomicity.
+- **NFS:** lock files use `O_EXCL` creation, which is advisory on some NFS
+  servers — two hosts may briefly both believe they hold a lock. Locks store
+  `{pid, host, startedAt}`: a same-host owner that is **provably dead**
+  (`kill(pid, 0)` fails) is stolen immediately; foreign/unknown owners fall
+  back to the TTL (`INIBASE_LOCK_TTL_MS`, default `60000`).
+- **fsync guarantees:** durability assumes the OS/filesystem honours `fsync`.
+  Some disks and virtualized filesystems silently ignore it; directory `fsync`
+  is unsupported on a few platforms (best-effort there). `none` mode
+  deliberately gives up power-loss durability — that is the whole point of the
+  knob.
+- **Cost:** at `full`, every mutation fsyncs the temp file, journal, and
+  directories — expect noticeably slower hot-path writes than pre-durability
+  builds (the benchmark compares `full` vs `none` side by side). The swap
+  protocol also transiently holds temp + backup + live copies (~2–3× a
+  column's size; worst case is a `put` with no `where` — a full-table rewrite).
+- **Cache (`.cache`):** entries are derived, rebuildable artifacts versioned by
+  the row count; they detect staleness but never participate in the ACID
+  guarantee. Non-fsync'd.
+
+Run `pnpm test:durability` for the journal-recovery, multi-process writer,
+live-reader and stale-lock test suite, `pnpm test:transaction` for the
+transaction/cascade/crash-recovery suite, and `pnpm benchmark:durability` for
+the `full` vs `none` throughput comparison.
 
 ## Inibase CLI
 
@@ -793,6 +885,9 @@ await db.get("user", undefined, { sort: {age: -1, username: "asc"} });
 > Default testing uses a table with username, email, and password fields, ensuring password encryption is included in the process<br>
 > Results are measured on a default table plus dedicated tables with `prepend`, `compression`, and `decodeID` configs enabled<br>
 > To run benchmarks, install _typescript_ & _[tsx](https://github.com/privatenumber/tsx)_ globally and run `benchmark` by default bulk, for single use `benchmark --single|-s`
+>
+> > [!WARNING]
+> > The numbers above were measured **before** always-on fsync + write-ahead journaling landed (they no longer reflect current hot-path write costs). Run `pnpm benchmark:durability` for the crash-atomic numbers.
 
 ## Roadmap
 

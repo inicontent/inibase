@@ -9,14 +9,13 @@ import {
 	readFile,
 	stat,
 	unlink,
-	writeFile,
 } from "node:fs/promises";
+import { hostname } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface, type Interface } from "node:readline";
 import { Transform, type Transform as TransformType } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createGunzip, createGzip } from "node:zlib";
-
 import Inison from "inison";
 import {
 	type ComparisonOperator,
@@ -24,6 +23,7 @@ import {
 	type FieldType,
 	globalConfig,
 } from "./index.js";
+import { recover } from "./journal.js";
 import {
 	detectFieldType,
 	isArrayOfObjects,
@@ -41,40 +41,261 @@ import {
 	gzip,
 } from "./utils.server.js";
 
-// Locks older than this are assumed abandoned by a crashed/killed process, not a slow operation.
-const STALE_LOCK_MS = 30_000;
+// Locks older than this are candidates for removal. Same-host locks are only
+// stolen when the recorded owner PID is provably dead; foreign-host locks fall
+// back to this TTL (NFS has no reliable cross-host liveness check).
+const DEFAULT_LOCK_TTL_MS = Number(process.env.INIBASE_LOCK_TTL_MS ?? 60_000);
+
+// Durability knob: `full` (default) fsyncs every temp file, journal entry and
+// directory touch before acknowledging a mutation. `none` skips all fsync
+// calls but keeps the write-ahead journal protocol unchanged, so a *process*
+// crash (page cache survives) still recovers atomically — only power-loss
+// durability is lost. The ACID claim documented in the README holds at `full`.
+const DURABILITY = process.env.INIBASE_DURABILITY ?? "full";
+export const DURABLE = DURABILITY !== "none";
+
+/** fsync a handle, or no-op when `INIBASE_DURABILITY=none` is set. */
+const maybeSync = async (handle: FileHandle): Promise<void> => {
+	if (DURABLE) await handle.sync();
+};
+
+const LOCK_RETRY_MS = 13;
+
+// Per-process reentrancy: the same process may acquire the same lock file
+// multiple times (e.g. post() -> get() -> sort-cache). Depth 1 is a real
+// filesystem acquisition; deeper acquisitions just bump the counter.
+const lockDepths = new Map<string, number>();
+
+const lockFilePathFor = (folderPath: string, prefix?: string) =>
+	join(folderPath, `${prefix ?? ""}.locked`);
+
+/**
+ * State of the lock's recorded owner, used to decide when a lock may be
+ * stolen (see `stealableLock`).
+ */
+type LockOwnerState = "alive" | "dead" | "unknown";
+
+const lockOwnerState = async (
+	lockFilePath: string,
+): Promise<LockOwnerState> => {
+	try {
+		const metadata = JSON.parse(await readFile(lockFilePath, "utf8")) as {
+			pid?: number;
+			host?: string;
+		};
+		if (typeof metadata.pid === "number" && metadata.host === hostname()) {
+			try {
+				process.kill(metadata.pid, 0);
+			} catch (error: any) {
+				return error?.code === "ESRCH" ? "dead" : "unknown";
+			}
+			return "alive";
+		}
+	} catch {
+		// No/invalid metadata (e.g. crash between create and metadata write).
+	}
+	return "unknown"; // foreign host or unparsable metadata
+};
+
+/**
+ * A lock may be stolen when its owner is provably dead on this host
+ * (immediately — a same-host crash must not wedge writers or block crash
+ * recovery) or, for foreign/unknown owners where no liveness check exists
+ * (e.g. NFS), once the recorded lock is older than the TTL.
+ */
+const stealableLock = async (
+	lockFilePath: string,
+	mtimeMs: number,
+	ttl: number,
+): Promise<boolean> => {
+	const state = await lockOwnerState(lockFilePath);
+	if (state === "alive") return false;
+	if (state === "dead") return true;
+	return Date.now() - mtimeMs > ttl;
+};
 
 export const lock = async (
 	folderPath: string,
 	prefix?: string,
+	ttl: number = DEFAULT_LOCK_TTL_MS,
 ): Promise<void> => {
-	let lockFile = null;
-	const lockFilePath = join(folderPath, `${prefix ?? ""}.locked`);
-	try {
-		lockFile = await open(lockFilePath, "wx");
+	const lockFilePath = lockFilePathFor(folderPath, prefix);
+	const resolvedPath = resolve(lockFilePath);
+
+	const depth = lockDepths.get(resolvedPath);
+	if (depth) {
+		lockDepths.set(resolvedPath, depth + 1);
 		return;
-	} catch ({ message }: any) {
-		if (message.split(":")[0] === "EEXIST") {
+	}
+
+	for (;;) {
+		try {
+			const lockFile = await open(lockFilePath, "wx");
+			try {
+				await lockFile.writeFile(
+					JSON.stringify({
+						pid: process.pid,
+						host: hostname(),
+						startedAt: Date.now(),
+					}),
+				);
+				await maybeSync(lockFile);
+			} finally {
+				await lockFile.close();
+			}
+			// The global (prefix-less) lock is the writer lock: run crash
+			// recovery for this table while we exclusively hold it. Locked
+			// calls with a prefix are read-side helpers (e.g. sort cache) and
+			// must never roll back an in-flight transaction.
+			if (!prefix) {
+				try {
+					await recover(folderPath);
+				} catch {
+					// Recovery is best-effort at lock time; reads retry on
+					// torn state, writers re-check before mutating.
+				}
+			}
+			lockDepths.set(resolvedPath, 1);
+			return;
+		} catch (error: any) {
+			const message = String(error?.message ?? error);
+			if (message.split(":")[0] !== "EEXIST") throw error;
+
 			const lockStat = await stat(lockFilePath).catch(() => null);
-			if (lockStat && Date.now() - lockStat.mtimeMs > STALE_LOCK_MS)
+			// Someone else released the lock between our failed open and the
+			// stat: retry immediately instead of counting down the TTL.
+			if (!lockStat) continue;
+
+			if (await stealableLock(lockFilePath, lockStat.mtimeMs, ttl)) {
 				await unlink(lockFilePath).catch(() => {});
-			return await new Promise<void>((resolve) =>
-				setTimeout(() => resolve(lock(folderPath, prefix)), 13),
+			}
+
+			await new Promise<void>((resolvePromise) =>
+				setTimeout(() => resolvePromise(), LOCK_RETRY_MS),
 			);
 		}
-	} finally {
-		await lockFile?.close();
 	}
 };
 
+/**
+ * Non-blocking lock acquisition (used by the read path and the open-time
+ * recovery sweep). Returns true when the lock was acquired (running crash
+ * recovery for prefix-less locks, exactly like `lock`), false when another
+ * process holds it. A single stale-lock steal (dead same-host owner, or aged
+ * foreign/unknown owner) is attempted so a crashed owner can't wedge readers
+ * behind it forever.
+ */
+export const tryLock = async (
+	folderPath: string,
+	prefix?: string,
+	ttl: number = DEFAULT_LOCK_TTL_MS,
+): Promise<boolean> => {
+	const lockFilePath = lockFilePathFor(folderPath, prefix);
+	const resolvedPath = resolve(lockFilePath);
+
+	const depth = lockDepths.get(resolvedPath);
+	if (depth) {
+		lockDepths.set(resolvedPath, depth + 1);
+		return true;
+	}
+
+	for (let attempt = 0; attempt < 2; attempt++) {
+		try {
+			const lockFile = await open(lockFilePath, "wx");
+			try {
+				await lockFile.writeFile(
+					JSON.stringify({
+						pid: process.pid,
+						host: hostname(),
+						startedAt: Date.now(),
+					}),
+				);
+				await maybeSync(lockFile);
+			} finally {
+				await lockFile.close();
+			}
+			if (!prefix) {
+				try {
+					await recover(folderPath);
+				} catch {
+					// Best-effort at lock time, mirroring `lock`.
+				}
+			}
+			lockDepths.set(resolvedPath, 1);
+			return true;
+		} catch (error: any) {
+			if (String(error?.message ?? error).split(":")[0] !== "EEXIST")
+				throw error;
+
+			const lockStat = await stat(lockFilePath).catch(() => null);
+			if (!lockStat) continue; // released between open and stat
+
+			if (
+				attempt === 0 &&
+				(await stealableLock(lockFilePath, lockStat.mtimeMs, ttl))
+			)
+				await unlink(lockFilePath).catch(() => {});
+			else return false; // genuinely held -> don't wait
+		}
+	}
+	return false;
+};
+
 export const unlock = async (folderPath: string, prefix?: string) => {
+	const lockFilePath = lockFilePathFor(folderPath, prefix);
+	const resolvedPath = resolve(lockFilePath);
+	const depth = lockDepths.get(resolvedPath);
+	if (depth && depth > 1) {
+		lockDepths.set(resolvedPath, depth - 1);
+		return;
+	}
+	lockDepths.delete(resolvedPath);
 	try {
-		await unlink(join(folderPath, `${prefix ?? ""}.locked`));
-	} catch {}
+		await unlink(lockFilePath);
+	} catch {
+		// Already released (stolen by a foreign-host stealer or cleaned up).
+	}
 };
 
 export const write = async (filePath: string, data: any) => {
-	await writeFile(filePath, filePath.endsWith(".gz") ? await gzip(data) : data);
+	const handle = await open(filePath, "w");
+	try {
+		await handle.writeFile(filePath.endsWith(".gz") ? await gzip(data) : data);
+		await maybeSync(handle);
+	} finally {
+		await handle.close();
+	}
+};
+
+/**
+ * fsync an existing file. Used to flush temp files (written via streams or
+ * shell pipelines) before they are renamed into place.
+ */
+export const syncFile = async (filePath: string) => {
+	let handle: FileHandle | null = null;
+	try {
+		handle = await open(filePath, "r+");
+		await maybeSync(handle);
+	} catch {
+		// Unsupported filesystem/platform: best effort.
+	} finally {
+		await handle?.close();
+	}
+};
+
+/**
+ * fsync a directory so that renames performed inside it are durable.
+ */
+export const syncDir = async (dirPath: string) => {
+	let handle: FileHandle | null = null;
+	try {
+		handle = await open(dirPath, "r");
+		await maybeSync(handle);
+	} catch {
+		// Directory fsync is not supported on every platform/filesystem.
+	} finally {
+		await handle?.close();
+	}
 };
 
 export const read = async (filePath: string) =>

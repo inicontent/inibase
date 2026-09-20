@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { randomBytes, scryptSync } from "node:crypto";
+import { randomBytes, randomUUID, scryptSync } from "node:crypto";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import {
 	glob,
@@ -8,14 +8,16 @@ import {
 	readFile,
 	rename,
 	rm,
+	stat,
 	unlink,
 	writeFile,
 } from "node:fs/promises";
-import { join, parse } from "node:path";
+import { basename, join, parse, resolve } from "node:path";
 import { inspect } from "node:util";
 import Inison from "inison";
 
 import * as File from "./file.js";
+import { DatabaseJournal, Journal, type JournalFileOp } from "./journal.js";
 import * as Utils from "./utils.js";
 import * as UtilsServer from "./utils.server.js";
 
@@ -75,6 +77,25 @@ export interface TableConfig {
 export interface TableObject {
 	schema?: Schema;
 	config: TableConfig;
+}
+
+/**
+ * Per-table state maintained while a database transaction is open: the writer
+ * lock is held for the whole transaction, pagination state is staged in
+ * memory (the live files only change at commit()), and `staged` collects the
+ * journaled ops that commit() publishes (one per table per transaction).
+ */
+export interface TxnTableEntry {
+	locked: boolean;
+	/** Live pagination path the first staged op builds on. */
+	paginationFrom: string;
+	/** Staged last-id / row count (chained across ops in the txn). */
+	lastId: number;
+	total: number;
+	staged: {
+		ops: JournalFileOp[];
+		pagination: { from: string; to: string } | null;
+	}[];
 }
 
 export type ComparisonOperator =
@@ -172,6 +193,18 @@ export default class Inibase {
 		{ exclude: Set<number>; columnsValues: Map<number, Set<string | number>> }
 	>;
 	private schemaFileExtension = process.env.INIBASE_SCHEMA_EXTENSION ?? "json";
+
+	/**
+	 * Open database transaction (see begin/commit/rollback). Holds the
+	 * database lock (`<db>/.tmp/.locked`) for its whole lifetime and the
+	 * per-table writer lock of every table it mutates, so mutations stage into
+	 * the database journal and publish only on commit().
+	 */
+	private transaction: {
+		id: string;
+		journal: DatabaseJournal;
+		tables: Map<string, TxnTableEntry>;
+	} | null = null;
 
 	constructor(database: string, mainFolder = ".", language: ErrorLang = "en") {
 		this.language = language;
@@ -288,6 +321,11 @@ export default class Inibase {
 	) {
 		this.validateName(tableName);
 
+		// DDL does not participate in the write-ahead journal: schema surgery
+		// inside a transaction would escape the atomic publish/rollback scope.
+		if (this.transaction) throw this.createError("INVALID_PARAMETERS");
+		await this.ensureDatabaseRecovered();
+
 		if (schema) this.validateSchema(schema);
 
 		const tablePath = join(this.databasePath, tableName);
@@ -309,25 +347,29 @@ export default class Inibase {
 
 		if (config) {
 			if (config.compression)
-				await writeFile(join(tablePath, ".compression.config"), "");
-			if (config.cache) await writeFile(join(tablePath, ".cache.config"), "");
+				await File.write(join(tablePath, ".compression.config"), "");
+			if (config.cache) await File.write(join(tablePath, ".cache.config"), "");
 			if (config.prepend)
-				await writeFile(join(tablePath, ".prepend.config"), "");
+				await File.write(join(tablePath, ".prepend.config"), "");
 			if (config.decodeID)
-				await writeFile(join(tablePath, ".decodeID.config"), "");
+				await File.write(join(tablePath, ".decodeID.config"), "");
 		}
 		if (schema) {
 			const lastSchemaID = { value: 0 };
-			await writeFile(
+			await File.write(
 				join(tablePath, `schema.${this.schemaFileExtension}`),
 				this.schemaFileExtension === "json"
 					? JSON.stringify(Utils.addIdToSchema(schema, lastSchemaID), null, 2)
 					: Inison.stringify(Utils.addIdToSchema(schema, lastSchemaID)),
 			);
-			await writeFile(join(tablePath, `${lastSchemaID.value}.schema`), "");
-		} else await writeFile(join(tablePath, "0.schema"), "");
+			await File.write(join(tablePath, `${lastSchemaID.value}.schema`), "");
+		} else await File.write(join(tablePath, "0.schema"), "");
 
-		await writeFile(join(tablePath, "0-0.pagination"), "");
+		await File.write(join(tablePath, "0-0.pagination"), "");
+
+		// Make the new table's metadata durable before acknowledging creation.
+		await File.syncDir(tablePath);
+		await File.syncDir(join(tablePath, ".tmp"));
 
 		this.idDensity.set(tableName, true);
 	}
@@ -342,7 +384,9 @@ export default class Inibase {
 
 		if (data.includes(targetString)) {
 			const updatedContent = data.replaceAll(targetString, replaceString);
-			await writeFile(filePath, updatedContent, "utf8");
+			// File.write fsyncs the replacement so a link-update after a table
+			// rename survives a crash.
+			await File.write(filePath, updatedContent);
 		}
 	}
 
@@ -360,12 +404,41 @@ export default class Inibase {
 	) {
 		this.validateName(tableName);
 
+		// DDL does not participate in the write-ahead journal: schema surgery
+		// inside a transaction would escape the atomic publish/rollback scope.
+		if (this.transaction) throw this.createError("INVALID_PARAMETERS");
+		await this.ensureDatabaseRecovered();
+
 		if (config?.name) this.validateName(config.name);
 
 		const table = await this.getTable(tableName);
 		if (!table) return;
 		const tablePath = join(this.databasePath, tableName);
 
+		// DDL is serialized with DML writers on the same per-table lock, so a
+		// post/put/delete can never interleave with schema/file surgery.
+		try {
+			await File.lock(join(tablePath, ".tmp"));
+			await this.updateTableLocked(tableName, table, tablePath, schema, config);
+		} finally {
+			await File.unlock(join(tablePath, ".tmp"));
+			// Renaming the table moves its .tmp (and with it the lock file)
+			// to the new directory, so the unlock above only released the old
+			// path. Release the lock at its new location too, or the renamed
+			// table is left with a perpetual live-owner lock no writer can
+			// steal.
+			if (config?.name && config.name !== tableName)
+				await File.unlock(join(join(this.databasePath, config.name), ".tmp"));
+		}
+	}
+
+	private async updateTableLocked(
+		tableName: string,
+		table: TableObject,
+		tablePath: string,
+		schema?: Schema,
+		config?: TableConfig & { name?: string },
+	) {
 		if (schema) {
 			this.validateSchema(schema);
 			// remove id from schema
@@ -415,7 +488,9 @@ export default class Inibase {
 					);
 			}
 
-			await writeFile(
+			// Data-bearing schema writes go through File.write so they are
+			// fsynced before updateTable returns.
+			await File.write(
 				join(tablePath, `schema.${this.schemaFileExtension}`),
 				this.schemaFileExtension === "json"
 					? JSON.stringify(schema, null, 2)
@@ -426,7 +501,8 @@ export default class Inibase {
 					schemaIdFilePath,
 					join(tablePath, `${lastSchemaID.value}.schema`),
 				);
-			else await writeFile(join(tablePath, `${lastSchemaID.value}.schema`), "");
+			else
+				await File.write(join(tablePath, `${lastSchemaID.value}.schema`), "");
 
 			// Fields added by this migration have no backing file yet. If the
 			// first post after the migration writes such a file from scratch it
@@ -458,28 +534,34 @@ export default class Inibase {
 				config.compression !== undefined &&
 				config.compression !== table.config.compression
 			) {
-				await UtilsServer.execFile(
-					"find",
-					[
-						tableName,
-						"-type",
-						"f",
-						"-name",
-						`*${this.fileExtension}${config.compression ? "" : ".gz"}`,
-						"-exec",
-						config.compression ? "gzip" : "gunzip",
-						"-f",
-						"{}",
-						"+",
-					],
-					{ cwd: this.databasePath },
+				// Toggle compression crash-safely: the shell only decompresses
+				// to a temp file (streamed), the publish step fsyncs each temp
+				// before renaming it over the original, then the config marker
+				// is fsynced. A crash mid-toggle leaves valid (uncompressed or
+				// compressed) files, never a truncated one.
+				const toggleFiles = (await readdir(tablePath)).filter((name) =>
+					config.compression
+						? name.endsWith(this.fileExtension) &&
+							!name.endsWith(`${this.fileExtension}.gz`)
+						: name.endsWith(`${this.fileExtension}.gz`),
 				);
+				for (const name of toggleFiles) {
+					const src = join(tablePath, name);
+					const tmp = `${src}.recompressed`;
+					const target = config.compression ? `${src}.gz` : src.slice(0, -3); // strip ".gz"
+					await UtilsServer.exec(
+						`${config.compression ? "gzip" : "gunzip"} -c ${File.escapeShellPath(src)} > ${File.escapeShellPath(tmp)}`,
+					);
+					await File.syncFile(tmp);
+					await rename(tmp, target);
+				}
 				if (config.compression)
-					await writeFile(join(tablePath, ".compression.config"), "");
+					await File.write(join(tablePath, ".compression.config"), "");
 				else await unlink(join(tablePath, ".compression.config"));
 			}
 			if (config.cache !== undefined && config.cache !== table.config.cache) {
-				if (config.cache) await writeFile(join(tablePath, ".cache.config"), "");
+				if (config.cache)
+					await File.write(join(tablePath, ".cache.config"), "");
 				else {
 					await this.clearCache(tableName);
 					await unlink(join(tablePath, ".cache.config"));
@@ -490,13 +572,18 @@ export default class Inibase {
 				config.decodeID !== table.config.decodeID
 			) {
 				if (config.decodeID)
-					await writeFile(join(tablePath, ".decodeID.config"), "");
+					await File.write(join(tablePath, ".decodeID.config"), "");
 				else await unlink(join(tablePath, ".decodeID.config"));
 			}
 			if (
 				config.prepend !== undefined &&
 				config.prepend !== table.config.prepend
 			) {
+				// Reverse every column file so the "first" row stays first after
+				// toggling prepend. The (streaming) shell only writes `<file>.reversed`
+				// temp files; the publish step below fsyncs each temp before renaming
+				// it into place, so a crash mid-toggle never leaves a half-reversed
+				// live file (the old file stays valid until the rename).
 				await UtilsServer.execFile(
 					"find",
 					[
@@ -510,8 +597,8 @@ export default class Inibase {
 						"-c",
 						`for file; do ${
 							config.compression
-								? `zcat "$file" | ${process.platform === "darwin" ? "tail -r" : "tac"} | gzip > "$file.reversed" && mv "$file.reversed" "$file"`
-								: `${process.platform === "darwin" ? "tail -r" : "tac"} "$file" > "$file.reversed" && mv "$file.reversed" "$file"`
+								? `zcat "$file" | ${process.platform === "darwin" ? "tail -r" : "tac"} | gzip > "$file.reversed"`
+								: `${process.platform === "darwin" ? "tail -r" : "tac"} "$file" > "$file.reversed"`
 						}; done`,
 						"_",
 						"{}",
@@ -519,13 +606,28 @@ export default class Inibase {
 					],
 					{ cwd: this.databasePath },
 				);
+
+				const reversedSuffix = `${this.fileExtension}${
+					config.compression ? ".gz" : ""
+				}.reversed`;
+				for (const fileName of await readdir(tablePath)) {
+					if (!fileName.endsWith(reversedSuffix)) continue;
+					const reversedPath = join(tablePath, fileName);
+					await File.syncFile(reversedPath);
+					await rename(
+						reversedPath,
+						join(tablePath, fileName.slice(0, -".reversed".length)),
+					);
+				}
 				if (config.prepend)
-					await writeFile(join(tablePath, ".prepend.config"), "");
+					await File.write(join(tablePath, ".prepend.config"), "");
 				else await unlink(join(tablePath, ".prepend.config"));
 			}
 			if (config.name) {
 				await rename(tablePath, join(this.databasePath, config.name));
-				// replace table name in other linked tables (relationship)
+				// replace table name in other linked tables (relationship).
+				// glob() returns paths relative to `cwd`, so resolve them
+				// against the database path before touching the files.
 				for await (const schemaPath of glob(
 					`**/schema.${this.schemaFileExtension}`,
 					{
@@ -533,7 +635,7 @@ export default class Inibase {
 					},
 				))
 					await this.replaceStringInFile(
-						schemaPath,
+						resolve(this.databasePath, schemaPath),
 						// TODO: escape caracters in table name
 						this.schemaFileExtension === "json"
 							? `"table": "${tableName}"`
@@ -544,6 +646,11 @@ export default class Inibase {
 					);
 			}
 		}
+
+		// Flush the directory entries touched by this DDL (renames, unlinks,
+		// fresh config markers) before updateTable returns so the schema/config
+		// change survives a crash.
+		await File.syncDir(config?.name ? this.databasePath : tablePath);
 
 		globalConfig[this.databasePath].tables?.delete(tableName);
 	}
@@ -619,13 +726,17 @@ export default class Inibase {
 					? JSON.parse(schemaFile)
 					: Inison.unstringify(schemaFile);
 
-			await writeFile(
+			// Mirror the legacy schema file into the preferred extension and
+			// drop the old one (fsync-backed; this read-path migration must
+			// survive a crash).
+			await File.write(
 				join(tablePath, `schema.${this.schemaFileExtension}`),
 				this.schemaFileExtension === "json"
 					? JSON.stringify(schema, null, 2)
 					: Inison.stringify(schema),
 			);
 			await unlink(join(tablePath, `schema.${otherSchemaFileExtension}`));
+			await File.syncDir(tablePath);
 		} else
 			schemaFile = await readFile(
 				join(tablePath, `schema.${this.schemaFileExtension}`),
@@ -1951,6 +2062,395 @@ export default class Inibase {
 	}
 
 	/**
+	 * Commit a multi-file mutation crash-atomically:
+	 * 1. fsync every freshly-written temp file;
+	 * 2. write the journal `begin` entry and fsync it;
+	 * 3. rename the pagination metadata file first (atomic publication point:
+	 *    the row count flips in a single rename, which is what lock-free
+	 *    readers observe) and then swap each live file aside (backup) and
+	 *    rename the temp into place;
+	 * 4. write the journal `commit` marker and fsync it;
+	 * 5. discard backups/temps + the journal, fsync the directories.
+	 *
+	 * On any failure before `commit`, the journal is rolled back so the table
+	 * is left exactly as it was. `renameList` entries are [tempPath, livePath]
+	 * pairs; a null tempPath means a pure removal (live file taken out).
+	 */
+	private async commitFiles(
+		tablePath: string,
+		renameList: (string | null)[][],
+		pagination: { from: string; to: string } | null,
+	): Promise<void> {
+		const txn = randomUUID();
+		const ops: JournalFileOp[] = [];
+		// Backups are parked in a per-transaction subdirectory
+		// (.tmp/backup/<txn>/), so a later transaction can never collide with
+		// the leftovers of an earlier crashed one.
+		const backupDir = join(tablePath, ".tmp", "backup", txn);
+		await mkdir(backupDir, { recursive: true });
+		for (const [tmp, live] of renameList) {
+			if (!live) continue;
+			ops.push({
+				live,
+				backup: join(backupDir, basename(live)),
+				tmp,
+				existed: await File.isExists(live),
+			});
+		}
+
+		const journal = new Journal(tablePath, txn);
+		try {
+			// Make every replacement durable before it can be published.
+			await Promise.allSettled(
+				ops
+					.filter((op) => op.tmp)
+					.map(async (op) => File.syncFile(op.tmp as string)),
+			);
+
+			await journal.begin(ops, pagination);
+
+			// Publish: the pagination rename is the atomic publication point
+			// (row count flips in one rename) and MUST come first — readers
+			// that snapshot file identities detect the flip and retry. Then
+			// park each original and move the replacement in.
+			if (pagination) await rename(pagination.from, pagination.to);
+			for (const op of ops) {
+				if (op.existed) await rename(op.live, op.backup);
+				if (op.tmp) await rename(op.tmp, op.live);
+			}
+
+			await journal.commit();
+		} catch (error) {
+			await journal.rollback().catch(() => {});
+			throw error;
+		} finally {
+			await Promise.allSettled(
+				ops.map((op) => unlink(op.backup).catch(() => {})),
+			);
+			await rm(backupDir, { recursive: true, force: true }).catch(() => {});
+			await journal.dispose();
+			await unlink(journal.path).catch(() => {});
+			// Make the renames durable before acknowledging the commit.
+			await File.syncDir(join(tablePath, ".tmp"));
+			await File.syncDir(tablePath);
+		}
+	}
+
+	/**
+	 * Runs crash recovery for a table (and any crashed database transaction)
+	 * before a read. Mutation paths get the same guarantee implicitly (the
+	 * writer lock runs recovery on acquire); reads call this explicitly
+	 * because they never take the table lock.
+	 */
+	private async ensureTableRecovered(tableName: string): Promise<void> {
+		const tablePath = join(this.databasePath, tableName);
+		if (await File.isExists(join(tablePath, ".tmp", "journal.jsonl"))) {
+			await File.lock(join(tablePath, ".tmp"));
+			await File.unlock(join(tablePath, ".tmp"));
+		}
+		// A database journal exists only while a live transaction holds the
+		// database lock, or after one crashed. Recovery must never roll back a
+		// live transaction, so acquire the database lock non-blocking here:
+		// on success the previous owner is gone (recovery ran); on failure a
+		// live transaction owns the lock across processes and readers simply
+		// proceed against the committed state.
+		const dbTmp = join(this.databasePath, ".tmp");
+		if (await File.isExists(join(dbTmp, "journal.jsonl"))) {
+			if (await File.tryLock(dbTmp)) await File.unlock(dbTmp);
+		}
+	}
+
+	/**
+	 * Blocking database-journal recovery, used by mutation paths (writers are
+	 * serialized with live transactions on the database lock anyway).
+	 */
+	private async ensureDatabaseRecovered(): Promise<void> {
+		const dbTmp = join(this.databasePath, ".tmp");
+		if (await File.isExists(join(dbTmp, "journal.jsonl"))) {
+			await File.lock(dbTmp);
+			await File.unlock(dbTmp);
+		}
+	}
+
+	private async ensureDatabaseTmpDir(): Promise<void> {
+		await mkdir(join(this.databasePath, ".tmp"), { recursive: true });
+	}
+
+	/** Staged per-table entry of the open transaction, or null when none. */
+	private txnTableEntry(tableName: string): TxnTableEntry | null {
+		const txn = this.transaction;
+		if (!txn) return null;
+		let entry = txn.tables.get(tableName);
+		if (!entry) {
+			entry = {
+				locked: false,
+				paginationFrom: "",
+				lastId: 0,
+				total: 0,
+				staged: [],
+			};
+			txn.tables.set(tableName, entry);
+		}
+		return entry;
+	}
+
+	/** Lock a table for the open transaction (idempotent per transaction). */
+	private async ensureTxnLock(tableName: string): Promise<void> {
+		const entry = this.txnTableEntry(tableName);
+		if (!entry || entry.locked) return;
+		await File.lock(join(this.databasePath, tableName, ".tmp"));
+		entry.locked = true;
+	}
+
+	/**
+	 * Resolve the pagination state a DML op should build on. Outside a
+	 * transaction this reads the live pagination file (as before); inside a
+	 * transaction the first touch reads it once and the entry keeps the staged
+	 * id/count so chained ops (guarded to one per table) and commit() stay
+	 * consistent without publishing anything early.
+	 */
+	private async resolvePagination(tableName: string): Promise<{
+		filePath: string;
+		lastId: number;
+		total: number;
+	}> {
+		const tablePath = join(this.databasePath, tableName);
+		const entry = this.txnTableEntry(tableName);
+		if (entry?.paginationFrom) {
+			return {
+				filePath: entry.paginationFrom,
+				lastId: entry.lastId,
+				total: entry.total,
+			};
+		}
+		let paginationFilePath = "";
+		for await (const fileName of glob("*.pagination", { cwd: tablePath }))
+			paginationFilePath = join(tablePath, fileName);
+		const [lastId, total] = parse(paginationFilePath)
+			.name.split("-")
+			.map(Number) as [number, number];
+		if (entry) {
+			entry.paginationFrom = paginationFilePath;
+			entry.lastId = lastId;
+			entry.total = total;
+		}
+		return { filePath: paginationFilePath, lastId, total };
+	}
+
+	/**
+	 * Stage one table mutation into the open transaction: fsync its temps and
+	 * append an `op` entry to the database journal (no live file is touched;
+	 * commit() performs the actual renames). One staged mutation per table per
+	 * transaction (multi-table atomicity; a second touch of the same table
+	 * would need read-your-writes composition).
+	 */
+	private async stageTxnOp(
+		tableName: string,
+		renameList: (string | null)[][],
+		pagination: { from: string; to: string } | null,
+	): Promise<void> {
+		const txn = this.transaction;
+		const entry = this.txnTableEntry(tableName);
+		if (!txn || !entry) throw this.createError("INVALID_PARAMETERS");
+		if (entry.staged.length) throw this.createError("INVALID_PARAMETERS");
+		const backupDir = join(this.databasePath, ".tmp", "backup", txn.id);
+		await mkdir(backupDir, { recursive: true });
+		const ops: JournalFileOp[] = [];
+		for (const [tmp, live] of renameList) {
+			if (!live) continue;
+			// Benchmarks must be unique within the whole transaction: the same
+			// column basename can exist in several tables, and rollback
+			// restores by path. Namespace per table (one staged op per table).
+			ops.push({
+				live,
+				backup: join(
+					backupDir,
+					`${entry.staged.length}-${tableName}-${basename(live)}`,
+				),
+				tmp,
+				existed: await File.isExists(live),
+			});
+		}
+		// Make every replacement durable before the journal records intent.
+		await Promise.allSettled(
+			ops
+				.filter((op) => op.tmp)
+				.map(async (op) => File.syncFile(op.tmp as string)),
+		);
+		await txn.journal.op(ops, pagination);
+		entry.staged.push({ ops, pagination });
+		if (pagination) entry.paginationFrom = pagination.to;
+	}
+
+	/**
+	 * Begin a database transaction. Mutations issued while the transaction is
+	 * open (post/put/delete, including cascade deletes) are staged into the
+	 * database journal and published atomically at commit(); rollback()
+	 * discards them without touching any live file.
+	 *
+	 * @param tables Optional table names to pre-lock at begin() in sorted
+	 * order (the deadlock-free way to span tables). Tables not listed are
+	 * locked on first touch, in first-touch order.
+	 */
+	public async begin(tables: string[] = []): Promise<void> {
+		if (this.transaction) throw this.createError("INVALID_PARAMETERS");
+		await this.ensureDatabaseTmpDir();
+		// The database lock is the transaction mutex: it serializes
+		// transactions and its acquisition runs crash recovery on any journal
+		// left behind by a crashed transaction.
+		await File.lock(join(this.databasePath, ".tmp"));
+		const uniqueTables = [...new Set(tables)].sort();
+		const acquired: string[] = [];
+		try {
+			// Validate every listed table before locking anything.
+			for (const name of uniqueTables) {
+				this.validateName(name);
+				await this.getTable(name); // throws TABLE_NOT_EXISTS
+			}
+
+			const id = randomUUID();
+			this.transaction = {
+				id,
+				journal: new DatabaseJournal(this.databasePath, id),
+				tables: new Map(),
+			};
+			await this.transaction.journal.begin(uniqueTables);
+
+			for (const name of uniqueTables) {
+				await File.lock(join(this.databasePath, name, ".tmp"));
+				acquired.push(name);
+				this.transaction.tables.set(name, {
+					locked: true,
+					paginationFrom: "",
+					lastId: 0,
+					total: 0,
+					staged: [],
+				});
+			}
+		} catch (error) {
+			// Release only the table locks this process actually took (an
+			// unlock of a never-acquired path could unlink another process's
+			// lock file).
+			for (const name of acquired)
+				await File.unlock(join(this.databasePath, name, ".tmp")).catch(
+					() => {},
+				);
+			this.transaction = null;
+			await File.unlock(join(this.databasePath, ".tmp")).catch(() => {});
+			throw error;
+		}
+	}
+
+	/**
+	 * Publish every staged mutation atomically: per table (sorted), the
+	 * pagination rename comes first (the atomic publication point readers
+	 * observe) and then live->backup + tmp->live swaps, before a single fsynced
+	 * `commit` marker makes the whole transaction durable. A crash at any
+	 * point is recovered by the journal rule (no marker -> roll back all
+	 * tables, marker -> roll forward all tables).
+	 */
+	public async commit(): Promise<void> {
+		const txn = this.transaction;
+		if (!txn) throw this.createError("INVALID_PARAMETERS");
+		try {
+			for (const tableName of [...txn.tables.keys()].sort()) {
+				const entry = txn.tables.get(tableName);
+				if (!entry) continue;
+				for (const { ops, pagination } of entry.staged) {
+					if (pagination) await rename(pagination.from, pagination.to);
+					for (const op of ops) {
+						if (op.existed) await rename(op.live, op.backup);
+						if (op.tmp) await rename(op.tmp, op.live);
+					}
+				}
+			}
+
+			await txn.journal.commit();
+
+			// Clean the fast-path leftovers; recovery owns any crash leftovers.
+			await txn.journal.dispose();
+			await unlink(txn.journal.path).catch(() => {});
+			await rm(join(this.databasePath, ".tmp", "backup", txn.id), {
+				recursive: true,
+				force: true,
+			}).catch(() => {});
+			await File.syncDir(join(this.databasePath, ".tmp"));
+			await File.syncDir(this.databasePath);
+			for (const tableName of txn.tables.keys()) {
+				await File.syncDir(join(this.databasePath, tableName));
+				await File.syncDir(join(this.databasePath, tableName, ".tmp"));
+			}
+		} catch (error) {
+			await txn.journal.rollback().catch(() => {});
+			throw error;
+		} finally {
+			for (const tableName of [...txn.tables.keys()].sort().reverse())
+				await File.unlock(join(this.databasePath, tableName, ".tmp"));
+			await File.unlock(join(this.databasePath, ".tmp"));
+			this.transaction = null;
+		}
+	}
+
+	/**
+	 * Discard the open transaction: temps and the journal are removed and no
+	 * live file is touched (nothing is published before commit()).
+	 */
+	public async rollback(): Promise<void> {
+		const txn = this.transaction;
+		if (!txn) throw this.createError("INVALID_PARAMETERS");
+		try {
+			await txn.journal.rollback().catch(() => {});
+		} finally {
+			for (const tableName of [...txn.tables.keys()].sort().reverse())
+				await File.unlock(join(this.databasePath, tableName, ".tmp"));
+			await File.unlock(join(this.databasePath, ".tmp"));
+			this.transaction = null;
+		}
+	}
+
+	/**
+	 * Snapshot the identity (dev:inode:mtime:size) of every column file and
+	 * the pagination file. Reading data and then re-verifying this snapshot
+	 * lets lock-free readers detect an in-flight writer commit and retry
+	 * instead of returning a torn row set.
+	 */
+	private async snapshotTableFiles(
+		tableName: string,
+	): Promise<Map<string, string>> {
+		const tablePath = join(this.databasePath, tableName);
+		const extension = this.getFileExtension(tableName);
+		const snapshot = new Map<string, string>();
+		for (const fileName of await readdir(tablePath).catch(() => [])) {
+			if (!fileName.endsWith(extension) && !fileName.endsWith(".pagination"))
+				continue;
+			const filePath = join(tablePath, fileName);
+			const fileStat = await stat(filePath).catch(() => null);
+			if (fileStat)
+				snapshot.set(
+					filePath,
+					`${fileStat.dev}:${fileStat.ino}:${fileStat.mtimeMs}:${fileStat.size}`,
+				);
+		}
+		return snapshot;
+	}
+
+	/** True when every snapshotted file is still present and unchanged. */
+	private async verifyTableFiles(
+		snapshot: Map<string, string>,
+	): Promise<boolean> {
+		for (const [filePath, identity] of snapshot) {
+			const fileStat = await stat(filePath).catch(() => null);
+			if (
+				!fileStat ||
+				`${fileStat.dev}:${fileStat.ino}:${fileStat.mtimeMs}:${fileStat.size}` !==
+					identity
+			)
+				return false;
+		}
+		return true;
+	}
+
+	/**
 	 * Retrieve item(s) from a table
 	 *
 	 * @param {string} tableName
@@ -2012,7 +2512,38 @@ export default class Inibase {
 		_whereIsLinesNumbers?: boolean,
 	): Promise<(Data & TData) | number | ((Data & TData) | number)[] | null> {
 		this.validateName(tableName);
+		await this.ensureTableRecovered(tableName);
 
+		// Lock-free reads with optimistic retry: snapshot the identity of every
+		// column + pagination file, run the read, then verify nothing changed
+		// mid-scan. A writer commit flips at least one file identity, so a torn
+		// read is detected and re-run instead of being returned.
+		for (let attempt = 0; ; attempt++) {
+			const snapshot = await this.snapshotTableFiles(tableName);
+			const result = await this.getOnce<TData>(
+				tableName,
+				where,
+				options,
+				onlyOne,
+				onlyLinesNumbers,
+				_whereIsLinesNumbers,
+			);
+			if (attempt === 2 || (await this.verifyTableFiles(snapshot)))
+				return result;
+		}
+	}
+
+	private async getOnce<TData extends Record<string, any> & Partial<Data>>(
+		tableName: string,
+		where?: string | number | (string | number)[] | Criteria,
+		options: Options = {
+			page: 1,
+			perPage: 15,
+		},
+		onlyOne?: boolean,
+		onlyLinesNumbers?: boolean,
+		_whereIsLinesNumbers?: boolean,
+	): Promise<(Data & TData) | number | ((Data & TData) | number)[] | null> {
 		const tablePath = join(this.databasePath, tableName);
 
 		// Ensure options.columns is an array
@@ -2076,9 +2607,13 @@ export default class Inibase {
 					.map((column) => [column, true]);
 
 			let cacheKey = "";
-			// Criteria
+			// Criteria. The sort cache is versioned by the pagination row count
+			// (see the criteria-cache note) so stale sorted line numbers from
+			// before a post/delete are never replayed.
 			if (globalConfig[this.databasePath].tables?.get(tableName)?.config.cache)
-				cacheKey = UtilsServer.hashString(inspect(sortArray, { sorted: true }));
+				cacheKey = UtilsServer.hashString(
+					inspect([sortArray, pagination[1]], { sorted: true }),
+				);
 
 			if (where) {
 				const lineNumbers = await this.get(
@@ -2387,12 +2922,16 @@ export default class Inibase {
 			if (
 				globalConfig[this.databasePath].tables?.get(tableName)?.config.cache
 			) {
+				// Cache entries are versioned by the pagination row count so a
+				// stale cache written before a post/delete (in this process or
+				// another) is detectable: the candidate filename simply stops
+				// matching and the cache is rebuilt.
 				cachedFilePath = join(
 					tablePath,
 					".cache",
-					`${UtilsServer.hashString(inspect(where, { sorted: true }))}${
-						this.fileExtension
-					}`,
+					`${UtilsServer.hashString(inspect(where, { sorted: true }))}-${
+						pagination[1]
+					}${this.fileExtension}`,
 				);
 
 				if (await File.isExists(cachedFilePath)) {
@@ -2553,6 +3092,7 @@ export default class Inibase {
 			);
 
 		const tablePath = join(this.databasePath, tableName);
+		if (!this.transaction) await this.ensureDatabaseRecovered();
 		await this.getTable(tableName);
 
 		if (!globalConfig[this.databasePath].tables?.get(tableName)?.schema)
@@ -2562,37 +3102,34 @@ export default class Inibase {
 
 		let clonedData = structuredClone(data);
 
-		const keys = UtilsServer.hashString(
-			Object.keys(Array.isArray(clonedData) ? clonedData[0] : clonedData).join(
-				".",
-			),
-		);
-
 		await this.validateTableData(tableName, clonedData);
 
 		const renameList: (string | null)[][] = [];
+		let txnStaged = false;
 		try {
-			await File.lock(join(tablePath, ".tmp"), keys);
+			// Inside a transaction the table lock is taken once per txn (and
+			// held until commit/rollback); otherwise the usual writer lock.
+			if (this.transaction) await this.ensureTxnLock(tableName);
+			else await File.lock(join(tablePath, ".tmp"));
 
-			let paginationFilePath = "";
-			for await (const fileName of glob("*.pagination", { cwd: tablePath }))
-				paginationFilePath = join(tablePath, fileName);
+			const {
+				filePath: paginationFilePath,
+				lastId,
+				total: _totalItems,
+			} = await this.resolvePagination(tableName);
+			let lastIdValue = lastId;
 
-			let [lastId, _totalItems] = parse(paginationFilePath)
-				.name.split("-")
-				.map(Number) as [number, number];
-
-			this.totalItems.set(`${tableName}-*`, _totalItems);
+			if (!this.transaction) this.totalItems.set(`${tableName}-*`, _totalItems);
 
 			if (Utils.isArrayOfObjects(clonedData))
 				for (let index = 0; index < clonedData.length; index++) {
 					const element = clonedData[index];
-					element.id = ++lastId as any;
+					element.id = ++lastIdValue as any;
 					element.createdAt = Date.now();
 					element.updatedAt = undefined;
 				}
 			else {
-				clonedData.id = ++lastId as any;
+				clonedData.id = ++lastIdValue as any;
 				clonedData.createdAt = Date.now();
 				clonedData.updatedAt = undefined;
 			}
@@ -2623,30 +3160,40 @@ export default class Inibase {
 				),
 			);
 
-			await Promise.allSettled(
-				renameList
-					.filter((pair): pair is [string, string] => Boolean(pair[1]))
-					.map(async ([tempPath, filePath]) => rename(tempPath, filePath)),
-			);
+			const newTotal = _totalItems + (Array.isArray(data) ? data.length : 1);
 
-			if (globalConfig[this.databasePath].tables?.get(tableName)?.config.cache)
-				await this.clearCache(tableName);
+			const pagination = {
+				from: paginationFilePath,
+				to: join(tablePath, `${lastIdValue}-${newTotal}.pagination`),
+			};
 
-			const currentValue = this.totalItems.get(`${tableName}-*`) || 0;
-			this.totalItems.set(
-				`${tableName}-*`,
-				currentValue + (Array.isArray(data) ? data.length : 1),
-			);
+			if (this.transaction) {
+				// Stage: journal the intent (fsynced op entry); the live files
+				// only change when commit() publishes.
+				await this.stageTxnOp(tableName, renameList, pagination);
+				txnStaged = true;
+				const stagedEntry = this.txnTableEntry(tableName);
+				if (stagedEntry) {
+					stagedEntry.lastId = lastIdValue;
+					stagedEntry.total = newTotal;
+				}
+			} else {
+				// Crash-atomic commit: journal + backup swap + pagination rename.
+				await this.commitFiles(tablePath, renameList, pagination);
 
-			await rename(
-				paginationFilePath,
-				join(
-					tablePath,
-					`${lastId}-${this.totalItems.get(`${tableName}-*`)}.pagination`,
-				),
-			);
+				this.totalItems.set(`${tableName}-*`, newTotal);
 
-			if (returnPostedData)
+				if (
+					globalConfig[this.databasePath].tables?.get(tableName)?.config.cache
+				)
+					await this.clearCache(tableName);
+			}
+
+			if (returnPostedData) {
+				if (this.transaction)
+					// No read-your-writes yet: return the formatted staged rows
+					// (ids + defaults) instead of a committed-state read.
+					return (Array.isArray(clonedData) ? clonedData : clonedData) as any;
 				return this.get<TData>(
 					tableName,
 					globalConfig[this.databasePath].tables?.get(tableName)?.config.prepend
@@ -2666,6 +3213,7 @@ export default class Inibase {
 					undefined,
 					true,
 				);
+			}
 
 			return Array.isArray(clonedData)
 				? (globalConfig[this.databasePath].tables?.get(tableName)?.config
@@ -2677,13 +3225,25 @@ export default class Inibase {
 						(clonedData as Data & TData).id as string | number,
 					);
 		} finally {
-			if (renameList.length)
-				await Promise.allSettled(
-					renameList
-						.filter((pair): pair is [string, string] => Boolean(pair[1]))
-						.map(async ([tempPath, _]) => unlink(tempPath)),
-				);
-			await File.unlock(join(tablePath, ".tmp"), keys);
+			if (this.transaction) {
+				// Staged temps belong to the journal op; commit()/rollback()
+				// owns them. Temps from a failed pre-stage attempt are cleaned
+				// here so nothing leaks.
+				if (!txnStaged && renameList.length)
+					await Promise.allSettled(
+						renameList
+							.filter((pair): pair is [string, string] => Boolean(pair[1]))
+							.map(async ([tempPath, _]) => unlink(tempPath)),
+					);
+			} else {
+				if (renameList.length)
+					await Promise.allSettled(
+						renameList
+							.filter((pair): pair is [string, string] => Boolean(pair[1]))
+							.map(async ([tempPath, _]) => unlink(tempPath)),
+					);
+				await File.unlock(join(tablePath, ".tmp"));
+			}
 		}
 	}
 
@@ -2741,6 +3301,7 @@ export default class Inibase {
 		_whereIsLinesNumbers?: boolean,
 	): Promise<(Data & TData) | (Data & TData)[] | null | undefined | undefined> {
 		const renameList: (string | null)[][] = [];
+		let txnStaged = false;
 		this.validateName(tableName);
 
 		if (options.columns)
@@ -2751,6 +3312,7 @@ export default class Inibase {
 			);
 
 		const tablePath = join(this.databasePath, tableName);
+		if (!this.transaction) await this.ensureDatabaseRecovered();
 		await this.throwErrorIfTableEmpty(tableName);
 
 		let clonedData: (Data & TData) | (Data & TData)[] = structuredClone(data);
@@ -2800,49 +3362,58 @@ export default class Inibase {
 			});
 
 			try {
-				await File.lock(join(tablePath, ".tmp"));
+				if (this.transaction) await this.ensureTxnLock(tableName);
+				else await File.lock(join(tablePath, ".tmp"));
 
-				for await (const paginationFileName of glob("*.pagination", {
-					cwd: tablePath,
-				}))
-					this.totalItems.set(
-						`${tableName}-*`,
-						parse(paginationFileName).name.split("-").map(Number)[1],
-					);
+				const { total } = await this.resolvePagination(tableName);
 
 				await Promise.allSettled(
 					Object.entries(pathesContents).map(async ([path, content]) =>
-						renameList.push(
-							await File.replace(
-								path,
-								content,
-								this.totalItems.get(`${tableName}-*`),
-							),
-						),
+						renameList.push(await File.replace(path, content, total)),
 					),
 				);
 
-				await Promise.allSettled(
-					renameList
-						.filter((pair): pair is [string, string] => Boolean(pair[1]))
-						.map(async ([tempPath, filePath]) => rename(tempPath, filePath)),
-				);
+				if (this.transaction) {
+					// Stage instead of publishing: row count is unchanged so
+					// there is no pagination rename to journal.
+					await this.stageTxnOp(tableName, renameList, null);
+					txnStaged = true;
+				} else {
+					// Crash-atomic commit (row count unchanged -> no pagination rename).
+					await this.commitFiles(tablePath, renameList, null);
 
-				if (
-					globalConfig[this.databasePath].tables?.get(tableName)?.config.cache
-				)
-					await this.clearCache(join(tablePath, ".cache"));
+					if (
+						globalConfig[this.databasePath].tables?.get(tableName)?.config.cache
+					)
+						await this.clearCache(tableName);
+				}
 
-				if (returnUpdatedData)
+				if (returnUpdatedData) {
+					if (this.transaction)
+						// Reading the committed state would miss the staged
+						// write (no read-your-writes yet).
+						throw this.createError("INVALID_PARAMETERS");
 					return await this.get<TData>(tableName, undefined, options);
+				}
 			} finally {
-				if (renameList.length)
-					await Promise.allSettled(
-						renameList
-							.filter((pair): pair is [string, string] => Boolean(pair[1]))
-							.map(async ([tempPath, _]) => unlink(tempPath)),
-					);
-				await File.unlock(join(tablePath, ".tmp"));
+				if (this.transaction) {
+					// Staged temps belong to the journal op; commit()/rollback()
+					// owns them.
+					if (!txnStaged && renameList.length)
+						await Promise.allSettled(
+							renameList
+								.filter((pair): pair is [string, string] => Boolean(pair[1]))
+								.map(async ([tempPath, _]) => unlink(tempPath)),
+						);
+				} else {
+					if (renameList.length)
+						await Promise.allSettled(
+							renameList
+								.filter((pair): pair is [string, string] => Boolean(pair[1]))
+								.map(async ([tempPath, _]) => unlink(tempPath)),
+						);
+					await File.unlock(join(tablePath, ".tmp"));
+				}
 			}
 		} else if (
 			((Array.isArray(where) && where.every(Utils.isNumber)) ||
@@ -2884,14 +3455,11 @@ export default class Inibase {
 				]),
 			);
 
-			const keys = UtilsServer.hashString(
-				Object.keys(pathesContents)
-					.map((path) => path.replaceAll(this.getFileExtension(tableName), ""))
-					.join("."),
-			);
-
 			try {
-				await File.lock(join(tablePath, ".tmp"), keys);
+				// One global lock per table serializes every writer; inside a
+				// transaction the lock is held for the whole txn.
+				if (this.transaction) await this.ensureTxnLock(tableName);
+				else await File.lock(join(tablePath, ".tmp"));
 
 				await Promise.allSettled(
 					Object.entries(pathesContents).map(async ([path, content]) =>
@@ -2899,18 +3467,20 @@ export default class Inibase {
 					),
 				);
 
-				await Promise.allSettled(
-					renameList
-						.filter((pair): pair is [string, string] => Boolean(pair[1]))
-						.map(async ([tempPath, filePath]) => rename(tempPath, filePath)),
-				);
+				if (this.transaction) {
+					await this.stageTxnOp(tableName, renameList, null);
+					txnStaged = true;
+				} else {
+					await this.commitFiles(tablePath, renameList, null);
 
-				if (
-					globalConfig[this.databasePath].tables?.get(tableName)?.config.cache
-				)
-					await this.clearCache(tableName);
+					if (
+						globalConfig[this.databasePath].tables?.get(tableName)?.config.cache
+					)
+						await this.clearCache(tableName);
+				}
 
-				if (returnUpdatedData)
+				if (returnUpdatedData) {
+					if (this.transaction) throw this.createError("INVALID_PARAMETERS");
 					return this.get(
 						tableName,
 						where,
@@ -2919,14 +3489,24 @@ export default class Inibase {
 						undefined,
 						true,
 					);
+				}
 			} finally {
-				if (renameList.length)
-					await Promise.allSettled(
-						renameList
-							.filter((pair): pair is [string, string] => Boolean(pair[1]))
-							.map(async ([tempPath, _]) => unlink(tempPath)),
-					);
-				await File.unlock(join(tablePath, ".tmp"), keys);
+				if (this.transaction) {
+					if (!txnStaged && renameList.length)
+						await Promise.allSettled(
+							renameList
+								.filter((pair): pair is [string, string] => Boolean(pair[1]))
+								.map(async ([tempPath, _]) => unlink(tempPath)),
+						);
+				} else {
+					if (renameList.length)
+						await Promise.allSettled(
+							renameList
+								.filter((pair): pair is [string, string] => Boolean(pair[1]))
+								.map(async ([tempPath, _]) => unlink(tempPath)),
+						);
+					await File.unlock(join(tablePath, ".tmp"));
+				}
 			}
 		} else if (
 			(!_whereIsLinesNumbers &&
@@ -2994,56 +3574,79 @@ export default class Inibase {
 	): Promise<boolean | null> {
 		this.validateName(tableName);
 
+		if (!this.transaction) await this.ensureDatabaseRecovered();
 		const tablePath = join(this.databasePath, tableName);
 		await this.throwErrorIfTableEmpty(tableName);
 
 		if (!where) {
+			let txnStaged = false;
+			// Crash-atomic truncate: park every column file (pure removal
+			// ops) and publish the empty row count in one journaled commit.
+			const renameList: (string | null)[][] = [];
 			try {
-				await File.lock(join(tablePath, ".tmp"));
+				if (this.transaction) await this.ensureTxnLock(tableName);
+				else await File.lock(join(tablePath, ".tmp"));
 
-				let paginationFilePath = "";
-				let pagination: [number, number] = [0, 0];
-				for await (const paginationFileName of glob("*.pagination", {
-					cwd: tablePath,
-				})) {
-					paginationFilePath = join(tablePath, paginationFileName);
-					pagination = parse(paginationFileName)
-						.name.split("-")
-						.map(Number) as [number, number];
-				}
-
-				await Promise.allSettled(
-					(await readdir(tablePath))
-						?.filter((fileName: string) =>
+				const files = (await readdir(tablePath)) ?? [];
+				renameList.push(
+					...files
+						.filter((fileName: string) =>
 							fileName.endsWith(this.getFileExtension(tableName)),
 						)
-						.map(async (file) => unlink(join(tablePath, file))),
+						.map((file) => [null, join(tablePath, file)] as (string | null)[]),
 				);
 
-				if (
-					globalConfig[this.databasePath].tables?.get(tableName)?.config.cache
-				)
-					await this.clearCache(tableName);
+				const {
+					filePath: paginationFilePath,
+					lastId,
+					total,
+				} = await this.resolvePagination(tableName);
 
-				await rename(
-					paginationFilePath,
-					join(tablePath, `${pagination[0]}-0.pagination`),
-				);
+				const pagination = {
+					from: paginationFilePath,
+					to: join(tablePath, `${lastId}-0.pagination`),
+				};
+
+				if (this.transaction) {
+					await this.stageTxnOp(tableName, renameList, pagination);
+					txnStaged = true;
+					const stagedEntry = this.txnTableEntry(tableName);
+					if (stagedEntry) stagedEntry.total = 0;
+				} else {
+					await this.commitFiles(tablePath, renameList, pagination);
+
+					if (
+						globalConfig[this.databasePath].tables?.get(tableName)?.config.cache
+					)
+						await this.clearCache(tableName);
+				}
 
 				this.idDensity.set(tableName, true);
 
 				// Deleting every row must also delete rows that reference them.
-				if (pagination[1]) {
-					const allLines = Array.from(
-						{ length: pagination[1] },
-						(_, i) => i + 1,
-					);
+				if (total) {
+					const allLines = Array.from({ length: total }, (_, i) => i + 1);
 					await this.cascadeDelete(tableName, allLines, new Set());
 				}
 
 				return true;
 			} finally {
-				await File.unlock(join(tablePath, ".tmp"));
+				if (this.transaction) {
+					if (!txnStaged && renameList.length)
+						await Promise.allSettled(
+							renameList
+								.filter((pair): pair is [string, string] => Boolean(pair[1]))
+								.map(async ([tempPath, _]) => unlink(tempPath)),
+						);
+				} else {
+					if (renameList.length)
+						await Promise.allSettled(
+							renameList
+								.filter((pair): pair is [string, string] => Boolean(pair[1]))
+								.map(async ([tempPath, _]) => unlink(tempPath)),
+						);
+					await File.unlock(join(tablePath, ".tmp"));
+				}
 			}
 		}
 		if (
@@ -3060,24 +3663,20 @@ export default class Inibase {
 
 			if (files.length) {
 				const renameList: (string | null)[][] = [];
+				let txnStaged = false;
 				try {
-					await File.lock(join(tablePath, ".tmp"));
+					if (this.transaction) await this.ensureTxnLock(tableName);
+					else await File.lock(join(tablePath, ".tmp"));
 
-					let paginationFilePath = "";
-					let pagination: [number, number] = [0, 0];
-					for await (const paginationFileName of glob("*.pagination", {
-						cwd: tablePath,
-					})) {
-						paginationFilePath = join(tablePath, paginationFileName);
-						pagination = parse(paginationFileName)
-							.name.split("-")
-							.map(Number) as [number, number];
-					}
+					const {
+						filePath: paginationFilePath,
+						lastId,
+						total,
+					} = await this.resolvePagination(tableName);
 
-					if (
-						pagination[1] &&
-						pagination[1] - (Array.isArray(where) ? where.length : 1) > 0
-					) {
+					const remaining = total - (Array.isArray(where) ? where.length : 1);
+
+					if (total && remaining > 0) {
 						this.idDensity.set(tableName, false);
 						await Promise.allSettled(
 							files.map(async (file) =>
@@ -3087,36 +3686,48 @@ export default class Inibase {
 							),
 						);
 
-						await Promise.allSettled(
-							renameList
-								.filter((pair): pair is [string, string] => Boolean(pair[1]))
-								.map(async ([tempPath, filePath]) =>
-									rename(tempPath, filePath),
-								),
-						);
+						const pagination = {
+							from: paginationFilePath,
+							to: join(tablePath, `${lastId}-${remaining}.pagination`),
+						};
+						if (this.transaction) {
+							await this.stageTxnOp(tableName, renameList, pagination);
+							txnStaged = true;
+							const stagedEntry = this.txnTableEntry(tableName);
+							if (stagedEntry) stagedEntry.total = remaining;
+						} else {
+							await this.commitFiles(tablePath, renameList, pagination);
+						}
 					} else {
 						this.idDensity.set(tableName, true);
-						await Promise.allSettled(
-							(await readdir(tablePath))
-								?.filter((fileName: string) =>
-									fileName.endsWith(this.getFileExtension(tableName)),
-								)
-								.map(async (file) => unlink(join(tablePath, file))),
-						);
+						// Deleting every remaining row: pure removals.
+						const truncateList: (string | null)[][] = (await readdir(tablePath))
+							?.filter((fileName: string) =>
+								fileName.endsWith(this.getFileExtension(tableName)),
+							)
+							.map((file) => [null, join(tablePath, file)]);
+
+						const pagination = {
+							from: paginationFilePath,
+							to: join(tablePath, `${lastId}-0.pagination`),
+						};
+						if (this.transaction) {
+							await this.stageTxnOp(tableName, truncateList, pagination);
+							txnStaged = true;
+							const stagedEntry = this.txnTableEntry(tableName);
+							if (stagedEntry) stagedEntry.total = 0;
+						} else {
+							await this.commitFiles(tablePath, truncateList, pagination);
+						}
 					}
 
+					// Cache still describes the committed state while a
+					// transaction is open, so only clear it outside one.
 					if (
+						!this.transaction &&
 						globalConfig[this.databasePath].tables?.get(tableName)?.config.cache
 					)
 						await this.clearCache(tableName);
-
-					await rename(
-						paginationFilePath,
-						join(
-							tablePath,
-							`${pagination[0]}-${pagination[1] - (Array.isArray(where) ? where.length : 1)}.pagination`,
-						),
-					);
 
 					// Cascade: rows in other tables referencing the deleted rows
 					// (via `table`-typed fields) are removed too.
@@ -3128,13 +3739,22 @@ export default class Inibase {
 
 					return true;
 				} finally {
-					if (renameList.length)
-						await Promise.allSettled(
-							renameList
-								.filter((pair): pair is [string, string] => Boolean(pair[1]))
-								.map(async ([tempPath, _]) => unlink(tempPath)),
-						);
-					await File.unlock(join(tablePath, ".tmp"));
+					if (this.transaction) {
+						if (!txnStaged && renameList.length)
+							await Promise.allSettled(
+								renameList
+									.filter((pair): pair is [string, string] => Boolean(pair[1]))
+									.map(async ([tempPath, _]) => unlink(tempPath)),
+							);
+					} else {
+						if (renameList.length)
+							await Promise.allSettled(
+								renameList
+									.filter((pair): pair is [string, string] => Boolean(pair[1]))
+									.map(async ([tempPath, _]) => unlink(tempPath)),
+							);
+						await File.unlock(join(tablePath, ".tmp"));
+					}
 				}
 			}
 		}
@@ -3244,8 +3864,11 @@ export default class Inibase {
 							false,
 						);
 						if (found) for (const l of found) matching.add(l);
-					} catch {
+					} catch (error) {
 						// Unreadable/unsupported column -> skip this reference.
+						// Inside a transaction a broken reference must abort the
+						// whole cascade (all-or-nothing).
+						if (this.transaction) throw error;
 					}
 				}
 
@@ -3259,8 +3882,11 @@ export default class Inibase {
 
 				try {
 					await this.delete(candidateName, toDelete, true, guard);
-				} catch {
-					// Cascade is best-effort: never break the parent delete.
+				} catch (error) {
+					// Cascade is best-effort outside a transaction: never break
+					// the parent delete. Inside a transaction a cascade failure
+					// must abort the whole txn (all-or-nothing).
+					if (this.transaction) throw error;
 				}
 			}
 		}

@@ -1,6 +1,6 @@
 {
 	"name": "inibase",
-	"version": "2.0.1",
+	"version": "3.0.0",
 	"type": "module",
 	"author": {
 		"name": "Karim Amahtil",
@@ -17,7 +17,7 @@
 	"bugs": {
 		"url": "https://github.com/inicontent/inibase/issues"
 	},
-	"description": "A file-based & memory-efficient, serverless, ACID compliant, relational database management system",
+	"description": "A file-based & memory-efficient, serverless relational database with crash-atomic ACID: single-table DML + multi-table transactions (per-table writer locks, write-ahead journal + crash recovery, fsync-backed durability, begin/commit/rollback)",
 	"engines": {
 		"node": ">=22"
 	},
@@ -53,7 +53,10 @@
 		"prebuild": "biome check --write src",
 		"build": "tsc",
 		"benchmark": "./benchmark/run.js",
+		"benchmark:durability": "tsx ./benchmark/durability.ts",
 		"test": "tsx ./tests/inibase.test.ts",
+		"test:durability": "tsx ./tests/durability.test.ts",
+		"test:transaction": "tsx ./tests/transaction.test.ts",
 		"test:utils": "tsx ./tests/utils.test.ts",
 		"test:advanced": "tsx ./tests/inibase.advanced.test.ts"
 	},

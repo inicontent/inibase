@@ -230,8 +230,7 @@ export const dateToTimestamp = (input: unknown): number | null => {
 	// Convert to number and check if it's a valid number
 	const numTimestamp = Number(input);
 	// Check if the converted number is NaN or not finite
-	if (Number.isNaN(numTimestamp) || !Number.isFinite(numTimestamp))
-		return null;
+	if (Number.isNaN(numTimestamp) || !Number.isFinite(numTimestamp)) return null;
 
 	// Create a Date object from the timestamp
 	const date = new Date(numTimestamp);
