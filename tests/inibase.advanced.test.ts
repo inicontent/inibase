@@ -1500,6 +1500,82 @@ await test("Computed fields (v1 id-only expression language)", async (t) => {
 		assert.equal(fetched.totalCentsLive, 847);
 	});
 
+	await t.test("batched link hops: bulk posts share one read per distinct linked row", async () => {
+		await inibase.createTable("b_product", [
+			{ key: "name", type: "string" },
+			{ key: "price", type: "number" },
+		]);
+		await inibase.createTable("b_orders", [
+			{ key: "customer", type: "string" },
+			{
+				key: "items",
+				type: "array",
+				children: [
+					{ key: "product", type: "table", table: "b_product" },
+					{ key: "quantity", type: "number" },
+				],
+			},
+			// ids: customer=1, items=2, product=3, quantity=4, total=5
+			{ key: "total", type: "number", computed: "sum(4, 3.2)" },
+		]);
+
+		// Shared catalog: every order below links back to these few rows, so
+		// the batched reader resolves each (table, column, id) once instead of
+		// once per line item.
+		const catalog = (await seed("b_product", [
+			{ name: "p1", price: 100 },
+			{ name: "p2", price: 300 },
+			{ name: "p3", price: 500 },
+		])) as Row[];
+		const orderCount = 24;
+		const row = (i: number) => ({
+			customer: `c${i}`,
+			items: [
+				{ product: catalog[i % 3].id, quantity: 2 },
+				{ product: catalog[(i + 1) % 3].id, quantity: 1 },
+			],
+		});
+		const posted = (await inibase.post(
+			"b_orders",
+			[...Array(orderCount)].map((_, i) => row(i)),
+			{ perPage: -1 },
+			true,
+		)) as Row[];
+		assert.equal(posted.length, orderCount);
+		for (let i = 0; i < posted.length; i++) {
+			const a = catalog[i % 3].price as number;
+			const b = catalog[(i + 1) % 3].price as number;
+			assert.equal(posted[i].total, 2 * a + 1 * b, `row ${i} total via shared links`);
+		}
+
+		// Where-less put recomputes the whole batch through the same path.
+		await inibase.put("b_orders", {
+			items: [{ product: catalog[2].id, quantity: 5 }],
+		});
+		const reread = (await inibase.get<Row>("b_orders", undefined, {
+			perPage: -1,
+		})) as Row[];
+		assert.equal(reread.length, orderCount);
+		for (const r of reread)
+			assert.equal(r.total, 5 * (catalog[2].price as number), "recomputed after where-less put");
+
+		// A dangling link anywhere in a bulk post still rejects evaluation.
+		await assert.rejects(
+			() =>
+				inibase.post(
+					"b_orders",
+					[
+						{ customer: "ok", items: [{ product: catalog[0].id, quantity: 1 }] },
+						{ customer: "dangling", items: [{ product: 42424242, quantity: 1 }] },
+					],
+					{ perPage: -1 },
+					true,
+				),
+			(error: unknown) =>
+				(error as Error).name === "COMPUTED_FIELD_DANGLING_LINK",
+		);
+	});
+
 	await t.test("rename-proof: renaming a linked key does not retarget expressions", async () => {
 		// rename c_product.price -> priceCents through a schema round-trip
 		const productSchema = await userSchema("c_product");

@@ -202,6 +202,9 @@ export const globalConfig: {
 interface ComputedPlan {
 	fields: ComputedPlanField[];
 	index: Map<number, FieldRef>;
+	/** True when any expression contains a link hop (a path with more than
+	 *  one segment), i.e. the plan can read rows of other tables. */
+	hasHops: boolean;
 }
 
 interface ComputedPlanField {
@@ -229,6 +232,103 @@ interface ComputedEvalEnv {
 	ownKey: string;
 	/** Shared cache of linked-table id indexes. */
 	indexCache: Map<string, Map<number, FieldRef>>;
+	/** Batch-scoped link-hop reader (only during batched evaluation of a
+	 *  plan that contains hops). Every read goes through it so each distinct
+	 *  (table, column, id) triple resolves once per batch. */
+	links?: LinkedRowReader;
+	/** Collection pass (batched link evaluation only): link hops record the
+	 *  target triple instead of reading, unresolved hops read as null, and
+	 *  arithmetic over them is not an error — the pass exists solely to
+	 *  discover which linked rows the batch needs. */
+	collect?: boolean;
+}
+
+/**
+ * Batch-scoped link-hop reader for computed-field evaluation: a dry pass
+ * records every (table, column, id) triple the expressions need, each
+ * distinct triple is resolved exactly once by the engine's `readLinkedRow`
+ * (deduplicated across rows and fields of the batch), and subsequent passes
+ * are served from a warm per-(table, column) cache.
+ */
+class LinkedRowReader {
+	private readonly pending = new Map<string, Set<string | number>>();
+	private readonly cache = new Map<string, Map<string | number, Data | null>>();
+
+	constructor(
+		private readonly readRow: (
+			table: string,
+			column: string,
+			id: string | number,
+		) => Promise<Data | null>,
+	) {}
+
+	get hasPending(): boolean {
+		return this.pending.size > 0;
+	}
+
+	record(table: string, column: string, id: string | number): void {
+		const key = `${table}\u0000${column}`;
+		let ids = this.pending.get(key);
+		if (!ids) this.pending.set(key, (ids = new Set()));
+		ids.add(id);
+	}
+
+	async read(
+		table: string,
+		column: string,
+		id: string | number,
+	): Promise<Data | null> {
+		const key = `${table}\u0000${column}`;
+		let map = this.cache.get(key);
+		if (!map) {
+			map = await this.resolve(key, this.pending.get(key) ?? new Set());
+			this.pending.delete(key);
+			this.cache.set(key, map);
+		}
+		return (map.get(id) as Data) ?? null;
+	}
+
+	/** Resolve every pending bucket now (called between the collection pass
+	 *  and the real evaluation pass). */
+	async resolveAll(): Promise<void> {
+		for (const [key, ids] of this.pending)
+			this.cache.set(key, await this.resolve(key, ids));
+		this.pending.clear();
+	}
+
+	private async resolve(
+		key: string,
+		ids: Set<string | number>,
+	): Promise<Map<string | number, Data | null>> {
+		const separator = key.indexOf("\u0000");
+		const table = key.slice(0, separator);
+		const column = key.slice(separator + 1);
+		const map = new Map<string | number, Data | null>();
+		// One engine read per distinct triple; the buckets' triples are
+		// independent so they resolve concurrently. A missing row caches as
+		// null so repeated dangling hops fail once, exactly like a direct
+		// readLinkedRow would per hop.
+		await Promise.all(
+			Array.from(ids).map(async (id) => {
+				map.set(id, await this.readRow(table, column, id));
+			}),
+		);
+		return map;
+	}
+}
+
+/** True when an expression tree contains any link hop (multi-segment path). */
+function astHasHops(node: CompiledExpressionNode): boolean {
+	switch (node.kind) {
+		case "num":
+			return false;
+		case "path":
+			return node.ids.length > 1;
+		case "bin":
+			return astHasHops(node.left) || astHasHops(node.right);
+		case "fn":
+			return astHasHops(node.arg);
+	}
 }
 
 /**
@@ -1676,9 +1776,13 @@ export default class Inibase {
 			this.language,
 		);
 		const byId = new Map(fields.map((f) => [f.id, f]));
+		const planFields = ordered.map(
+			(meta) => byId.get(meta.id) as ComputedPlanField,
+		);
 		const plan: ComputedPlan = {
-			fields: ordered.map((meta) => byId.get(meta.id) as ComputedPlanField),
+			fields: planFields,
 			index,
+			hasHops: planFields.some((field) => astHasHops(field.ast)),
 		};
 		if (schema === undefined) this.computedPlanCache.set(tableName, plan);
 		return plan;
@@ -1696,6 +1800,13 @@ export default class Inibase {
 	/**
 	 * Evaluate a batch of (merged) rows against the table's computed fields.
 	 * Returns `lineNo -> { computedKey -> value }` in dependency order.
+	 *
+	 * Batched link-hop reads: when the plan contains any link hop, a dry
+	 * collection pass records every (table, column, id) triple the rows'
+	 * expressions need (no file I/O), each distinct triple is then resolved
+	 * exactly once — deduplicated across rows and fields — and a final pass
+	 * evaluates against the warm cache. Plans without hops run the single
+	 * evaluation pass unchanged.
 	 */
 	private async evaluateComputedRows(
 		tableName: string,
@@ -1706,14 +1817,35 @@ export default class Inibase {
 		const indexCache = new Map<string, Map<number, FieldRef>>([
 			[tableName, plan.index],
 		]);
-		for (const [line, row] of Object.entries(rows))
+		const entries = Object.entries(rows);
+		const reader = plan.hasHops ? this.createLinkReader() : null;
+		if (reader) {
+			for (const [, row] of entries)
+				await this.evaluateRowComputed(
+					tableName,
+					plan,
+					row as Data,
+					indexCache,
+					reader,
+					true,
+				);
+			if (reader.hasPending) await reader.resolveAll();
+		}
+		for (const [line, row] of entries)
 			out[Number(line)] = await this.evaluateRowComputed(
 				tableName,
 				plan,
 				row as Data,
 				indexCache,
+				reader ?? undefined,
 			);
 		return out;
+	}
+
+	private createLinkReader(): LinkedRowReader {
+		return new LinkedRowReader((table, column, id) =>
+			this.readLinkedRow(table, id, column),
+		);
 	}
 
 	/** Evaluate every computed field of one row (topological order) and merge
@@ -1723,6 +1855,8 @@ export default class Inibase {
 		plan: ComputedPlan,
 		row: Data,
 		indexCache: Map<string, Map<number, FieldRef>>,
+		links?: LinkedRowReader,
+		collect = false,
 	): Promise<Record<string, number | string | null>> {
 		const out: Record<string, number | string | null> = {};
 		// One structured frame per row, shared by every computed field: paths
@@ -1738,6 +1872,8 @@ export default class Inibase {
 			strip: "",
 			ownKey: "",
 			indexCache,
+			links,
+			collect,
 		};
 		for (const field of plan.fields) {
 			env.strip = "";
@@ -1761,7 +1897,7 @@ export default class Inibase {
 			case "bin": {
 				const a = await this.evaluateNode(node.left, env);
 				const b = await this.evaluateNode(node.right, env);
-				return this.applyBinaryOp(node.op, a, b, env.ownKey);
+				return this.applyBinaryOp(node.op, a, b, env.ownKey, env.collect);
 			}
 			case "fn": {
 				const arrayRef = env.index.get(node.arrayFieldId);
@@ -1789,7 +1925,13 @@ export default class Inibase {
 				}
 				env.frame = savedFrame;
 				env.strip = savedStrip;
-				return this.aggregate(node.name, values, elements.length, env.ownKey);
+				return this.aggregate(
+					node.name,
+					values,
+					elements.length,
+					env.ownKey,
+					env.collect,
+				);
 			}
 		}
 	}
@@ -1837,8 +1979,19 @@ export default class Inibase {
 				// staged (no read-your-writes past its commit point).
 				if (this.transaction?.tables.has(table))
 					throw this.createError("INVALID_PARAMETERS");
-				const row = await this.readLinkedRow(table, value, ref.key);
-				if (row === undefined || row === null)
+				// Batched link-hop reads: during the collection pass a hop
+				// only records its (table, column, id) triple; the real pass
+				// is served from the reader's warm cache. Without a reader
+				// this is the plain per-hop engine read.
+				const row = env.links
+					? env.collect
+						? (env.links.record(table, ref.key, value), null)
+						: await env.links.read(table, ref.key, value)
+					: await this.readLinkedRow(table, value, ref.key);
+				if (
+					!env.collect &&
+					(row === undefined || row === null)
+				)
 					throw this.createError("COMPUTED_FIELD_DANGLING_LINK", [
 						env.ownKey,
 						table,
@@ -1847,7 +2000,7 @@ export default class Inibase {
 				// flattened copy). readLinkedRow already fetched only the
 				// `ref.key` column, so the frame is minimal.
 				frame = row;
-				value = resolveFramePath(frame, ref.key);
+				value = row ? resolveFramePath(frame, ref.key) : null;
 				index = (await this.indexFor(table, env.indexCache)) ?? index;
 			}
 
@@ -1908,12 +2061,18 @@ export default class Inibase {
 		a: number | string | null,
 		b: number | string | null,
 		ownKey: string,
+		collect = false,
 	): number {
-		if (a === null || a === undefined || b === null || b === undefined)
+		if (a === null || a === undefined || b === null || b === undefined) {
+			// Collection passes must tolerate unresolved (null) link hops:
+			// the pass only discovers which links are needed, so a neutral
+			// result is fine. Real evaluation still throws.
+			if (collect) return 0;
 			throw this.createError("COMPUTED_FIELD_ARITHMETIC", [
 				ownKey,
 				"missing or null operand",
 			]);
+		}
 		const an = this.coerceNumber(a, ownKey);
 		const bn = this.coerceNumber(b, ownKey);
 		switch (op) {
@@ -1945,6 +2104,7 @@ export default class Inibase {
 		values: number[],
 		elementCount: number,
 		ownKey: string,
+		collect = false,
 	): number {
 		switch (name) {
 			case "count":
@@ -1954,27 +2114,35 @@ export default class Inibase {
 			case "sum":
 				return values.reduce((acc, v) => acc + v, 0);
 			case "avg": {
-				if (!values.length)
+				if (!values.length) {
+					// Collection passes may have skipped every value of an
+					// array whose elements only held unresolved link hops.
+					if (collect) return 0;
 					throw this.createError("COMPUTED_FIELD_ARITHMETIC", [
 						ownKey,
 						"average over no values",
 					]);
+				}
 				return values.reduce((acc, v) => acc + v, 0) / values.length;
 			}
 			case "min": {
-				if (!values.length)
+				if (!values.length) {
+					if (collect) return 0;
 					throw this.createError("COMPUTED_FIELD_ARITHMETIC", [
 						ownKey,
 						"min over no values",
 					]);
+				}
 				return Math.min(...values);
 			}
 			case "max": {
-				if (!values.length)
+				if (!values.length) {
+					if (collect) return 0;
 					throw this.createError("COMPUTED_FIELD_ARITHMETIC", [
 						ownKey,
 						"max over no values",
 					]);
+				}
 				return Math.max(...values);
 			}
 		}
@@ -3800,16 +3968,17 @@ export default class Inibase {
 				const rows = Array.isArray(clonedData)
 					? clonedData
 					: [clonedData as Data & TData];
-				const indexCache = new Map<string, Map<number, FieldRef>>([
-					[tableName, computedPlan.index],
-				]);
-				for (const row of rows)
-					await this.evaluateRowComputed(
-						tableName,
-						computedPlan,
-						row as Data,
-						indexCache,
-					);
+				// Evaluate every row against the shared plan in one batch:
+				// link hops are read once per distinct (table, column, id)
+				// across the whole post instead of once per hop.
+				await this.evaluateComputedRows(
+					tableName,
+					computedPlan,
+					Object.fromEntries(rows.map((row, index) => [index, row])) as Record<
+						number,
+						Data
+					>,
+				);
 			}
 
 			const pathesContents = this.joinPathesContents(
@@ -4067,27 +4236,20 @@ export default class Inibase {
 							Object.entries(row).filter(([, v]) => v !== "undefined"),
 						),
 					);
-					const evaluated: Record<
-						number,
-						Record<string, number | string | null>
-					> = {};
-					const indexCache = new Map<string, Map<number, FieldRef>>([
-						[tableName, computedPlan.index],
-					]);
+					const mergedRows: Record<number, Data> = {};
 					for (let index = 0; index < lineNumbers.length; index++) {
 						const line = lineNumbers[index];
-						const merged = {
+						mergedRows[line] = {
 							...((existing[line] as Data) ?? {}),
 							...(payloadRows[index % payloadRows.length] ?? {}),
 							updatedAt: Date.now(),
 						} as Data;
-						evaluated[line] = await this.evaluateRowComputed(
-							tableName,
-							computedPlan,
-							merged,
-							indexCache,
-						);
 					}
+					const evaluated = await this.evaluateComputedRows(
+						tableName,
+						computedPlan,
+						mergedRows,
+					);
 					this.mergeComputedLineRecords(
 						tableName,
 						computedPlan,
