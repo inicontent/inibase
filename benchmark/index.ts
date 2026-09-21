@@ -225,3 +225,6 @@ for (const { table: tableName, suffix } of benchmarkTables) {
 	logger.table(results[tableName]);
 	logger.groupEnd();
 }
+
+// Delete the test folder the benchmark created, so it leaves no artifacts behind
+await rm("test", { recursive: true, force: true });
