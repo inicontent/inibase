@@ -992,6 +992,16 @@ Write-time evaluation cost (helpers `sum(3 , 4)`, `avg(4)`, `min(4)`, `max(4)`, 
 
 > Min of 3 rounds (fsync + journal on); the plain-vs-computed delta is the pure expression-evaluation cost (~6 ms/1000 rows of helpers on POST, more on `PUT` because every matched row is recomputed). GET all (1110 rows): 11.44 / 15.90 ms — computed values are stored in real column files, so reads never evaluate; the gap is the larger column count to scan. Run `pnpm benchmark:computed` to reproduce.
 
+**Link-heavy: shared product catalog with batched link-hop reads.** Every order's line items reference a shared 20-row catalog; `totalCentsLive = sum(quantity, product.price)` follows one link hop per line item. The engine batches the hops across the whole post: each batch resolves at most one read per **distinct** `(table, column, id)` triple (here: catalogSize=20 product rows) instead of one full row-level read per line item (2000 reads for 1000 orders × 2 items):
+
+| rows | POST bulk (lk link hop) |
+|------|-------------------------|
+| 10   | 42.29 ms                |
+| 100  | 47.76 ms                |
+| 1000 | 59.46 ms                |
+
+> Shared 20-row catalog (10/100/1000 orders × 2 line items). Without batching every line item re-reads its product row; with it each batch resolves ≤ catalogSize distinct linked rows once (deduplicated across every line item and every order of the batch) and re-evaluates against the warm in-memory cache. A dangling link anywhere in the batch still rejects the whole post (`COMPUTED_FIELD_DANGLING_LINK`). HTTP-request bound, not disk-bound: the cost scales with the number of *distinct* linked rows the catalog actually has, not with line-item count.
+
 ## Roadmap
 
 - [x] Actions:
