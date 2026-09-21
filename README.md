@@ -980,6 +980,18 @@ const posted = await db.post(
 > > [!WARNING]
 > > The numbers above were measured **before** always-on fsync + write-ahead journaling landed (they no longer reflect current hot-path write costs). Run `pnpm benchmark:durability` for the crash-atomic numbers.
 
+### Computed fields
+
+Write-time evaluation cost (helpers `sum(3 , 4)`, `avg(4)`, `min(4)`, `max(4)`, `count(3)` over an `items` array with 3 lines, plus an arithmetic field `itemTotal × (314 / 100)`), compared against the identical table without computed fields:
+
+| rows | POST bulk (plain / computed) | POST single (plain / computed) | PUT recompute (plain / computed) |
+|------|------------------------------|--------------------------------|----------------------------------|
+| 10   | 23.88 / 26.89 ms             | 26.67 / 29.24 ms               | 22.87 / 39.98 ms                 |
+| 100  | 25.00 / 27.29 ms             | 26.67 / 29.24 ms               | 20.95 / 43.07 ms                 |
+| 1000 | 28.80 / 43.96 ms             | 26.67 / 29.24 ms               | 22.77 / 60.21 ms                 |
+
+> Min of 3 rounds (fsync + journal on); the plain-vs-computed delta is the pure expression-evaluation cost (~2 ms/1000 rows of helpers on POST, more on `PUT` because every matched row is recomputed). GET all (1110 rows): 11.64 / 19.33 ms — computed values are stored in real column files, so reads never evaluate; the gap is the larger column count to scan. Run `pnpm benchmark:computed` to reproduce.
+
 ## Roadmap
 
 - [x] Actions:
