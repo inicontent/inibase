@@ -93,20 +93,26 @@ const reps = 3;
 type RowMeasure = { plain: number; computed: number };
 const bulkPost: Partial<Record<number, RowMeasure>> = {};
 const putRecompute: Partial<Record<number, RowMeasure>> = {};
+const postHeap: Partial<Record<number, RowMeasure>> = {};
 
 // --- bulk POST: write + evaluate every computed field -----------------------
 for (const size of sizes) {
-	bulkPost[size] = { plain: Infinity, computed: Infinity };
+	const timeSlot = { plain: Infinity, computed: Infinity };
+	const heapSlot = { plain: 0, computed: 0 };
 	for (let rep = 0; rep < reps; rep++) {
-		bulkPost[size].plain = Math.min(
-			bulkPost[size].plain,
-			await ms(() => db.post("plain", rows(size))),
-		);
-		bulkPost[size].computed = Math.min(
-			bulkPost[size].computed,
-			await ms(() => db.post("computed", rows(size))),
-		);
+		for (const table of ["plain", "computed"] as const) {
+			const before = process.memoryUsage().heapUsed;
+			const t0 = process.hrtime.bigint();
+			await db.post(table, rows(size));
+			const tookMs = Number(process.hrtime.bigint() - t0) / 1e6;
+			const heap = (process.memoryUsage().heapUsed - before) / (1024 * 1024);
+			// Min time / max transient heap across the reps.
+			timeSlot[table] = Math.min(timeSlot[table], tookMs);
+			heapSlot[table] = Math.max(heapSlot[table], heap);
+		}
 	}
+	bulkPost[size] = timeSlot;
+	postHeap[size] = heapSlot;
 }
 
 // --- single POST: mean ms/op over singleN rows -------------------------------
@@ -184,6 +190,15 @@ for (const size of sizes) {
 console.log(
 	`\nGET all after POST rounds (${sizes.reduce((a, b) => a + b, 0)} rows): ${fmt(getAll)} ms (reads hit stored columns; no compute)`,
 );
+console.log("\nPOST bulk transient heap, max of 3 reps (plain / computed):");
+for (const size of sizes) {
+	const m = postHeap[size] as RowMeasure;
+	console.log(
+		`  ${String(size).padEnd(5)} ${m.plain.toFixed(2)} / ${m.computed.toFixed(
+			2,
+		)} mb`,
+	);
+}
 
 // README-ready markdown block (paste under "### Computed fields")
 console.log("\n--- README markdown ---\n");

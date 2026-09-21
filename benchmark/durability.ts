@@ -22,23 +22,28 @@ const measure = (mode: string) =>
 			execArgv: ["--import", "tsx"],
 			env: { ...process.env, INIBASE_DURABILITY: mode },
 		});
-		child.on("message", (message) => resolve(message as Record<string, string>));
+		child.on("message", (message) =>
+			resolve(message as Record<string, string>),
+		);
 		child.on("error", reject);
 		child.on("exit", (code) => {
-			if (code !== 0) reject(new Error(`durability.measure (${mode}) exited ${code}`));
+			if (code !== 0)
+				reject(new Error(`durability.measure (${mode}) exited ${code}`));
 		});
 	});
 
-console.log(
-	"inibase durability benchmark — INIBASE_DURABILITY=full vs none\n",
-);
+console.log("inibase durability benchmark — INIBASE_DURABILITY=full vs none\n");
 console.log(
 	"  full: temp file + journal (begin/commit) + directory fsyncs per op\n",
 	"  none: same journal protocol, every fsync skipped (process-crash safe,\n",
 	"        NOT power-loss durable)\n",
 );
-console.log("mode  POST single      POST bulk        GET all       PUT by id      DELETE by id");
-console.log("----  --------------   --------------   -----------   -----------    -----------");
+console.log(
+	"mode  POST single      POST bulk        GET all       PUT by id      DELETE by id",
+);
+console.log(
+	"----  --------------   --------------   -----------   -----------    -----------",
+);
 
 const full = await measure("full");
 const none = await measure("none");

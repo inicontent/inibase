@@ -228,6 +228,11 @@ interface ComputedEvalEnv {
 	ownKey: string;
 	/** Shared cache of linked-table id indexes. */
 	indexCache: Map<string, Map<number, FieldRef>>;
+	/** Per-row cache of flattened array-element frames, keyed by the array
+	 *  field key: every helper of the row shares the same flattened elements
+	 *  so each element is flattened once per row instead of once per helper.
+	 *  (Only present on the top-level row frame; helper args cannot nest.) */
+	elementFrames?: Map<string, Array<Record<string, any>>>;
 }
 
 /**
@@ -245,6 +250,12 @@ export default class Inibase {
 	 *  resolve numeric ids to line numbers arithmetically instead of scanning
 	 *  the id file. Set false by any partial row deletion. */
 	private idDensity = new Map<string, boolean>();
+	/** Per-table computed-plan cache (null = table has no computed fields).
+	 *  A plan depends only on the table's persisted schema (compiled ASTs are
+	 *  id-based and rename-proof), so it is rebuilt only when the schema
+	 *  changes: see the invalidation in `getTable`'s reload branch,
+	 *  `createTable` and `updateTableLocked`. Bounded by the number of tables. */
+	private readonly computedPlanCache = new Map<string, ComputedPlan | null>();
 	private databasePath: string;
 	private uniqueMap: Map<
 		string | number,
@@ -436,6 +447,10 @@ export default class Inibase {
 		await File.syncDir(join(tablePath, ".tmp"));
 
 		this.idDensity.set(tableName, true);
+
+		// Defensive: a table of the same name may have had a cached plan from
+		// before a delete+recreate.
+		this.computedPlanCache.delete(tableName);
 	}
 
 	// Function to replace the string in one schema file
@@ -783,6 +798,12 @@ export default class Inibase {
 		await File.syncDir(config?.name ? this.databasePath : tablePath);
 
 		globalConfig[this.databasePath].tables?.delete(tableName);
+		// The schema on disk changed under the DDL lock: drop the cached plan
+		// (also under the old name when the table was renamed) so the next DML
+		// rebuilds from the reloaded schema.
+		this.computedPlanCache.delete(tableName);
+		if (config?.name && config.name !== tableName)
+			this.computedPlanCache.delete(config.name);
 	}
 
 	/**
@@ -820,6 +841,9 @@ export default class Inibase {
 					join(tablePath, `schema.${this.schemaFileExtension}`),
 				),
 			});
+		// A reload means the on-disk schema changed (create/update/external
+		// edit): the cached computed plan is derived from it.
+		this.computedPlanCache.delete(tableName);
 		return globalConfig[this.databasePath].tables?.get(tableName);
 	}
 
@@ -1596,6 +1620,14 @@ export default class Inibase {
 		tableName: string,
 		schema?: Schema,
 	): Promise<ComputedPlan | null> {
+		// Plans only depend on the persisted schema (compiled, id-based ASTs),
+		// so cache per table and invalidate on schema changes. The explicit
+		// `schema` argument (backfill during updateTable) always bypasses the
+		// cache — the caller owns that freshly-migrated schema.
+		if (schema === undefined) {
+			const cached = this.computedPlanCache.get(tableName);
+			if (cached !== undefined) return cached;
+		}
 		const s =
 			schema ?? globalConfig[this.databasePath].tables?.get(tableName)?.schema;
 		if (!s) return null;
@@ -1638,17 +1670,22 @@ export default class Inibase {
 					deps: collectFieldDeps(computed.ast),
 				});
 		}
-		if (!fields.length) return null;
+		if (!fields.length) {
+			if (schema === undefined) this.computedPlanCache.set(tableName, null);
+			return null;
+		}
 
 		const ordered = topoSortComputedFields(
 			fields.map(({ id, key, deps }) => ({ id, key, deps })),
 			this.language,
 		);
 		const byId = new Map(fields.map((f) => [f.id, f]));
-		return {
+		const plan: ComputedPlan = {
 			fields: ordered.map((meta) => byId.get(meta.id) as ComputedPlanField),
 			index,
 		};
+		if (schema === undefined) this.computedPlanCache.set(tableName, plan);
+		return plan;
 	}
 
 	/** Id index of a table's schema (link targets are re-resolved at write
@@ -1692,19 +1729,29 @@ export default class Inibase {
 		indexCache: Map<string, Map<number, FieldRef>>,
 	): Promise<Record<string, number | string | null>> {
 		const out: Record<string, number | string | null> = {};
+		// One flattened frame per row, shared by every computed field: the
+		// previous per-field re-flatten duplicated the whole row (its arrays
+		// included) once per expression. Freshly evaluated values are injected
+		// into the frame, so dependent fields still see earlier results while
+		// each row costs a single flatten plus a per-array element cache.
+		const flat = flattenRecord(row);
+		const env: ComputedEvalEnv = {
+			table: tableName,
+			index: plan.index,
+			flat,
+			row,
+			strip: "",
+			ownKey: "",
+			indexCache,
+			elementFrames: new Map<string, Array<Record<string, any>>>(),
+		};
 		for (const field of plan.fields) {
-			const env: ComputedEvalEnv = {
-				table: tableName,
-				index: plan.index,
-				flat: flattenRecord(row),
-				row,
-				strip: "",
-				ownKey: field.key,
-				indexCache,
-			};
+			env.strip = "";
+			env.ownKey = field.key;
 			const value = await this.evaluateNode(field.ast, env);
 			out[field.key] = value;
 			row[field.key] = value;
+			flat[field.key] = value;
 		}
 		return out;
 	}
@@ -1730,18 +1777,35 @@ export default class Inibase {
 				// formatData turns a missing/empty array-of-objects into `{}`;
 				// treat anything that is not an actual array as empty.
 				const elements = Array.isArray(raw) ? (raw as Data[]) : [];
+				// Every helper over the same array shares one flat per element,
+				// cached per row (keyed by the array's field key) so e.g.
+				// sum/avg/min/max/count flatten their elements exactly once.
+				let frames: Array<Record<string, any>> | undefined =
+					elements.length && arrayKey
+						? env.elementFrames?.get(arrayKey)
+						: undefined;
+				if (!frames) {
+					frames = [];
+					if (elements.length)
+						for (const element of elements)
+							if (Utils.isObject(element)) frames.push(flattenRecord(element));
+					if (arrayKey) env.elementFrames?.set(arrayKey, frames);
+				}
 				const values: number[] = [];
-				for (const element of elements) {
-					if (!Utils.isObject(element)) continue;
-					const value = await this.evaluateNode(node.arg, {
-						...env,
-						flat: flattenRecord(element),
-						strip: `${arrayKey}.`,
-					});
+				// Reuse the env object across elements (only flat/strip change)
+				// to avoid allocating a frame per element.
+				const savedFlat = env.flat;
+				const savedStrip = env.strip;
+				for (const flat of frames) {
+					env.flat = flat;
+					env.strip = `${arrayKey}.`;
+					const value = await this.evaluateNode(node.arg, env);
 					if (value === null || value === undefined) continue;
 					const num = this.coerceNumber(value, env.ownKey);
 					values.push(num);
 				}
+				env.flat = savedFlat;
+				env.strip = savedStrip;
 				return this.aggregate(node.name, values, elements.length, env.ownKey);
 			}
 		}
@@ -1936,6 +2000,7 @@ export default class Inibase {
 		plan: ComputedPlan,
 		evaluated: Record<number, Record<string, number | string | null>>,
 		pathesContents: Record<string, any>,
+		existing?: Record<number, Data>,
 	): void {
 		for (const field of plan.fields) {
 			const path = join(
@@ -1943,12 +2008,29 @@ export default class Inibase {
 				tableName,
 				`${field.key}${this.getFileExtension(tableName)}`,
 			);
+			const entries = Object.entries(evaluated);
+			// When the pre-update rows are available, compare each column's
+			// re-evaluated line values against the stored ones (deterministic
+			// encode). A column that is identical for every evaluated line is
+			// left untouched — no content buffer, no File.replace, no fsync.
+			if (existing) {
+				let matches = true;
+				for (const [line, values] of entries) {
+					const old = existing[Number(line)]?.[field.key];
+					const fresh = File.encode(values[field.key]);
+					if (old === undefined || File.encode(old) !== fresh) {
+						matches = false;
+						break;
+					}
+				}
+				if (matches) continue;
+			}
 			const content: Record<number, string | number | boolean | null> =
 				(pathesContents[path] as Record<
 					number,
 					string | number | boolean | null
 				>) ?? {};
-			for (const [line, values] of Object.entries(evaluated))
+			for (const [line, values] of entries)
 				content[Number(line)] = File.encode(values[field.key]);
 			pathesContents[path] = content;
 		}
@@ -3983,9 +4065,12 @@ export default class Inibase {
 					const schema =
 						globalConfig[this.databasePath].tables?.get(tableName)?.schema ??
 						[];
+					// Read every stored column (computed ones included) so the
+					// merge can skip columns whose re-evaluated values are
+					// unchanged — no rewrite, no fsync for them.
 					const existing = await this.processSchemaData<Data>(
 						tableName,
-						schema.filter((field) => typeof field.computed === "undefined"),
+						schema,
 						lineNumbers,
 					);
 					const payloadRows = (
@@ -4021,6 +4106,7 @@ export default class Inibase {
 						computedPlan,
 						evaluated,
 						pathesContents,
+						existing,
 					);
 				}
 
@@ -4127,9 +4213,12 @@ export default class Inibase {
 					const schema =
 						globalConfig[this.databasePath].tables?.get(tableName)?.schema ??
 						[];
+					// Read every stored column (computed ones included) so the
+					// merge can skip columns whose re-evaluated values are
+					// unchanged — no rewrite, no fsync for them.
 					const existing = await this.processSchemaData<Data>(
 						tableName,
-						schema.filter((field) => typeof field.computed === "undefined"),
+						schema,
 						whereLines,
 					);
 					const payloadRows = (
@@ -4165,6 +4254,7 @@ export default class Inibase {
 						computedPlan,
 						evaluated,
 						pathesContents,
+						existing,
 					);
 				}
 
