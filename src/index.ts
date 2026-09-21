@@ -15,7 +15,20 @@ import {
 import { basename, join, parse, resolve } from "node:path";
 import { inspect } from "node:util";
 import Inison from "inison";
-
+import {
+	type BinaryOp,
+	buildFieldIndex,
+	type CompiledExpressionNode,
+	type ComputedFieldSpec,
+	type ComputedFunctionName,
+	collectFieldDeps,
+	type FieldRef,
+	flattenRecord,
+	parseExpression,
+	type ResolveContext,
+	resolveExpression,
+	topoSortComputedFields,
+} from "./expression.js";
 import * as File from "./file.js";
 import { DatabaseJournal, Journal, type JournalFileOp } from "./journal.js";
 import * as Utils from "./utils.js";
@@ -53,6 +66,10 @@ export type Field = {
 	unique?: boolean | number | string;
 	children?: FieldType | FieldType[] | Schema;
 	regex?: string;
+	/** Computed-fields expression (see the README). Either a raw expression
+	 *  string, or the persisted `{ expr, ast }` spec written by Inibase once
+	 *  the expression has been compiled. */
+	computed?: string | ComputedFieldSpec;
 };
 
 export type Schema = Field[];
@@ -153,6 +170,15 @@ export const ERROR_CODES = [
 	"TABLE_NOT_EXISTS",
 	"INVALID_REGEX_MATCH",
 	"INVALID_NAME",
+	"COMPUTED_FIELD_SYNTAX",
+	"COMPUTED_FIELD_UNKNOWN_FIELD",
+	"COMPUTED_FIELD_INVALID_LINK",
+	"COMPUTED_FIELD_INVALID_TARGET",
+	"COMPUTED_FIELD_CONFLICT",
+	"COMPUTED_FIELD_CYCLE",
+	"COMPUTED_FIELD_SETTABLE",
+	"COMPUTED_FIELD_DANGLING_LINK",
+	"COMPUTED_FIELD_ARITHMETIC",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 export type ErrorLang = "en" | "ar" | "fr" | "es";
@@ -171,6 +197,38 @@ export const globalConfig: {
 		tables?: Map<string, TableObject & { timestamp?: Date }>;
 	};
 } & { salt?: string | Buffer } = {};
+
+/** Topological evaluation plan for a table's computed fields. */
+interface ComputedPlan {
+	fields: ComputedPlanField[];
+	index: Map<number, FieldRef>;
+}
+
+interface ComputedPlanField {
+	id: number;
+	key: string;
+	ast: CompiledExpressionNode;
+	deps: Set<number>;
+}
+
+/** Per-node evaluation environment (frame-aware). */
+interface ComputedEvalEnv {
+	/** Table the current frame belongs to. */
+	table: string;
+	/** Id index of the current frame's table. */
+	index: Map<number, FieldRef>;
+	/** Flattened frame: dotted keys -> values (element frames strip the
+	 *  array key via `strip`). */
+	flat: Record<string, any>;
+	/** Structured row of the table being written (helper iteration). */
+	row: Data;
+	/** Prefix stripped from ref keys inside array-element frames, else "". */
+	strip: string;
+	/** Key of the computed field being evaluated (error context). */
+	ownKey: string;
+	/** Shared cache of linked-table id indexes. */
+	indexCache: Map<string, Map<number, FieldRef>>;
+}
 
 /**
  * @param {string} database - Database name
@@ -356,11 +414,17 @@ export default class Inibase {
 		}
 		if (schema) {
 			const lastSchemaID = { value: 0 };
+			// Compile computed expressions only after ids are assigned (the
+			// persisted AST carries ids, making it rename-proof), and before
+			// the schema is written so a bad expression never lands on disk.
+			schema = await this.compileComputedFields(
+				Utils.addIdToSchema(schema, lastSchemaID),
+			);
 			await File.write(
 				join(tablePath, `schema.${this.schemaFileExtension}`),
 				this.schemaFileExtension === "json"
-					? JSON.stringify(Utils.addIdToSchema(schema, lastSchemaID), null, 2)
-					: Inison.stringify(Utils.addIdToSchema(schema, lastSchemaID)),
+					? JSON.stringify(schema, null, 2)
+					: Inison.stringify(schema),
 			);
 			await File.write(join(tablePath, `${lastSchemaID.value}.schema`), "");
 		} else await File.write(join(tablePath, "0.schema"), "");
@@ -456,6 +520,20 @@ export default class Inibase {
 
 			schema = Utils.addIdToSchema(schema, lastSchemaID);
 
+			// Compile computed expressions now that ids are assigned (the
+			// persisted AST only stores ids, so later renames never retarget
+			// an expression). Compilation happens before any file surgery so
+			// a bad expression aborts the migration cleanly.
+			schema = await this.compileComputedFields(schema);
+
+			// Row count is needed for the computed backfill below, so read the
+			// pagination before the schema is rewritten.
+			let totalLines = 0;
+			for await (const paginationFileName of glob("*.pagination", {
+				cwd: tablePath,
+			}))
+				totalLines = parse(paginationFileName).name.split("-").map(Number)[1];
+
 			// if schema file exists, update columns files names based on field id
 			if (
 				(await File.isExists(
@@ -488,6 +566,64 @@ export default class Inibase {
 					);
 			}
 
+			// Computed-field backfill: a computed expression that is added or
+			// changed by this migration must be (re)derived for every existing
+			// row. Evaluation happens BEFORE the schema is rewritten, so a
+			// failed migration (dangling link, arithmetic error, unknown
+			// field, ...) leaves the old schema and column values untouched.
+			const oldComputed = new Map(
+				(table.schema ?? [])
+					.filter((field) => typeof field.computed !== "undefined")
+					.map((field) => [field.key, this.computedExprOf(field)]),
+			);
+			const changedComputedKeys = new Set(
+				totalLines > 0
+					? schema
+							.filter(
+								(field) =>
+									typeof field.computed !== "undefined" &&
+									oldComputed.get(field.key) !== this.computedExprOf(field),
+							)
+							.map((field) => field.key)
+					: [],
+			);
+			const backfillReplacers = changedComputedKeys.size
+				? await (async () => {
+						const plan = await this.buildComputedPlan(tableName, schema);
+						if (!plan) return undefined;
+						const lineNumbers = Array.from(
+							{ length: totalLines },
+							(_, index) => index + 1,
+						);
+						const existing = await this.processSchemaData<Data>(
+							tableName,
+							schema.filter((field) => typeof field.computed === "undefined"),
+							lineNumbers,
+						);
+						return this.evaluateComputedRows(tableName, plan, existing);
+					})()
+				: undefined;
+
+			// Publish the backfilled values before the schema write.
+			if (backfillReplacers) {
+				const backfillRenameList: (string | null)[][] = [];
+				for (const key of changedComputedKeys) {
+					const lines: Record<number, string | number | boolean | null> = {};
+					for (const [line, values] of Object.entries(backfillReplacers))
+						if (Object.hasOwn(values, key))
+							lines[Number(line)] = File.encode(values[key]);
+					if (!Object.keys(lines).length) continue;
+					backfillRenameList.push(
+						await File.replace(
+							join(tablePath, `${key}${this.getFileExtension(tableName)}`),
+							lines,
+						),
+					);
+				}
+				for (const [tmp, live] of backfillRenameList)
+					if (tmp && live) await rename(tmp, live);
+			}
+
 			// Data-bearing schema writes go through File.write so they are
 			// fsynced before updateTable returns.
 			await File.write(
@@ -511,12 +647,6 @@ export default class Inibase {
 			// files padded with one empty line per existing row so appends keep
 			// line-aligned with the other column files (decode("") is
 			// undefined/null, matching the "no value yet" semantics).
-			let totalLines = 0;
-			for await (const paginationFileName of glob("*.pagination", {
-				cwd: tablePath,
-			}))
-				totalLines = parse(paginationFileName).name.split("-").map(Number)[1];
-
 			await Promise.allSettled(
 				schema.map(async ({ key }) => {
 					const filePath = join(
@@ -802,6 +932,13 @@ export default class Inibase {
 		}
 		if (Utils.isObject(data)) {
 			for (const field of schema) {
+				// Computed columns are never user-settable: their value is
+				// always derived by the engine at write time.
+				if (typeof field.computed !== "undefined") {
+					if (Object.hasOwn(data, field.key))
+						throw this.createError("COMPUTED_FIELD_SETTABLE", field.key);
+					continue;
+				}
 				if (
 					!Object.hasOwn(data, field.key) ||
 					data[field.key] === null ||
@@ -1370,6 +1507,451 @@ export default class Inibase {
 		}
 
 		return RETURN;
+	}
+
+	/* -----------------------------------------------------------------------
+	 * Computed fields
+	 * --------------------------------------------------------------------- */
+
+	/**
+	 * Extract the raw expression from a field's `computed` property (string or
+	 * persisted `{ expr, ast }` spec).
+	 */
+	private computedExprOf(field: Field): string {
+		const computed = field.computed as string | ComputedFieldSpec;
+		return typeof computed === "string" ? computed : (computed?.expr ?? "");
+	}
+
+	/**
+	 * Compile every `computed` expression of a schema (which must already have
+	 * ids assigned) into its persisted `{ expr, ast }` form, in dependency
+	 * order. Throws `COMPUTED_FIELD_CYCLE` on cyclic fields. Used by DDL so the
+	 * on-disk schema always carries compiled ASTs.
+	 */
+	private async compileComputedFields(schema: Schema): Promise<Schema> {
+		const computedFields = schema.filter(
+			(field) => typeof field.computed !== "undefined",
+		);
+		if (!computedFields.length) return schema;
+
+		const index = buildFieldIndex(schema);
+		const ctx: ResolveContext = {
+			language: this.language,
+			ownKey: "",
+			index,
+			getTableIndex: async (target: string) => this.tableFieldIndex(target),
+		};
+
+		const resolved: {
+			field: Field;
+			ast: CompiledExpressionNode;
+			deps: Set<number>;
+		}[] = [];
+		for (const field of computedFields) {
+			// Computed fields are evaluated from the row of the table they
+			// belong to, so v1 restricts them to top-level schema fields.
+			const ref = index.get(field.id as number);
+			if (!ref || ref.arrayAncestor)
+				throw this.createError("COMPUTED_FIELD_INVALID_TARGET", field.key);
+			ctx.ownKey = field.key;
+			const raw = parseExpression(
+				this.computedExprOf(field),
+				this.language,
+				field.key,
+			);
+			const { ast, deps } = await resolveExpression(raw, ctx);
+			resolved.push({ field, ast, deps });
+		}
+
+		const ordered = topoSortComputedFields(
+			resolved.map(({ field, deps }) => ({
+				id: field.id as number,
+				key: field.key,
+				deps,
+			})),
+			this.language,
+		);
+
+		const specByKey = new Map<string, ComputedFieldSpec>();
+		for (const meta of ordered) {
+			const entry = resolved.find(({ field }) => field.id === meta.id);
+			if (!entry) continue;
+			specByKey.set(meta.key, {
+				expr: this.computedExprOf(entry.field),
+				ast: entry.ast,
+			});
+		}
+		return schema.map((field) =>
+			typeof field.computed !== "undefined"
+				? { ...field, computed: specByKey.get(field.key) }
+				: field,
+		);
+	}
+
+	/**
+	 * Build the evaluation plan (topological order + id index) for a table's
+	 * computed fields. Throws on cycles or unresolvable expressions.
+	 */
+	private async buildComputedPlan(
+		tableName: string,
+		schema?: Schema,
+	): Promise<ComputedPlan | null> {
+		const s =
+			schema ?? globalConfig[this.databasePath].tables?.get(tableName)?.schema;
+		if (!s) return null;
+		const index = buildFieldIndex(s);
+
+		const fields: ComputedPlanField[] = [];
+		const indexCache = new Map<string, Map<number, FieldRef>>();
+		const ctx: ResolveContext = {
+			language: this.language,
+			ownKey: "",
+			index,
+			getTableIndex: async (target: string) => {
+				let cached = indexCache.get(target);
+				if (!cached) {
+					cached = await this.tableFieldIndex(target);
+					if (cached) indexCache.set(target, cached);
+				}
+				return cached;
+			},
+		};
+
+		for (const field of s) {
+			if (typeof field.computed === "undefined") continue;
+			const computed = field.computed as string | ComputedFieldSpec;
+			if (typeof computed === "string") {
+				ctx.ownKey = field.key;
+				const raw = parseExpression(computed, this.language, field.key);
+				const { ast, deps } = await resolveExpression(raw, ctx);
+				fields.push({
+					id: field.id as number,
+					key: field.key,
+					ast,
+					deps,
+				});
+			} else
+				fields.push({
+					id: field.id as number,
+					key: field.key,
+					ast: computed.ast,
+					deps: collectFieldDeps(computed.ast),
+				});
+		}
+		if (!fields.length) return null;
+
+		const ordered = topoSortComputedFields(
+			fields.map(({ id, key, deps }) => ({ id, key, deps })),
+			this.language,
+		);
+		const byId = new Map(fields.map((f) => [f.id, f]));
+		return {
+			fields: ordered.map((meta) => byId.get(meta.id) as ComputedPlanField),
+			index,
+		};
+	}
+
+	/** Id index of a table's schema (link targets are re-resolved at write
+	 *  time, so renames never retarget a compiled expression). */
+	private async tableFieldIndex(
+		tableName: string,
+	): Promise<Map<number, FieldRef> | undefined> {
+		const schema = await this.getTableSchema(tableName);
+		return schema ? buildFieldIndex(schema) : undefined;
+	}
+
+	/**
+	 * Evaluate a batch of (merged) rows against the table's computed fields.
+	 * Returns `lineNo -> { computedKey -> value }` in dependency order.
+	 */
+	private async evaluateComputedRows(
+		tableName: string,
+		plan: ComputedPlan,
+		rows: Record<number, Data>,
+	): Promise<Record<number, Record<string, number | string | null>>> {
+		const out: Record<number, Record<string, number | string | null>> = {};
+		const indexCache = new Map<string, Map<number, FieldRef>>([
+			[tableName, plan.index],
+		]);
+		for (const [line, row] of Object.entries(rows))
+			out[Number(line)] = await this.evaluateRowComputed(
+				tableName,
+				plan,
+				row as Data,
+				indexCache,
+			);
+		return out;
+	}
+
+	/** Evaluate every computed field of one row (topological order) and merge
+	 *  the results back into the row so dependent fields see them. */
+	private async evaluateRowComputed(
+		tableName: string,
+		plan: ComputedPlan,
+		row: Data,
+		indexCache: Map<string, Map<number, FieldRef>>,
+	): Promise<Record<string, number | string | null>> {
+		const out: Record<string, number | string | null> = {};
+		for (const field of plan.fields) {
+			const env: ComputedEvalEnv = {
+				table: tableName,
+				index: plan.index,
+				flat: flattenRecord(row),
+				row,
+				strip: "",
+				ownKey: field.key,
+				indexCache,
+			};
+			const value = await this.evaluateNode(field.ast, env);
+			out[field.key] = value;
+			row[field.key] = value;
+		}
+		return out;
+	}
+
+	private async evaluateNode(
+		node: CompiledExpressionNode,
+		env: ComputedEvalEnv,
+	): Promise<number | string | null> {
+		switch (node.kind) {
+			case "num":
+				return node.value;
+			case "path":
+				return this.evaluatePath(node, env);
+			case "bin": {
+				const a = await this.evaluateNode(node.left, env);
+				const b = await this.evaluateNode(node.right, env);
+				return this.applyBinaryOp(node.op, a, b, env.ownKey);
+			}
+			case "fn": {
+				const arrayRef = env.index.get(node.arrayFieldId);
+				const arrayKey = arrayRef?.key;
+				const raw = arrayKey ? env.row[arrayKey] : undefined;
+				// formatData turns a missing/empty array-of-objects into `{}`;
+				// treat anything that is not an actual array as empty.
+				const elements = Array.isArray(raw) ? (raw as Data[]) : [];
+				const values: number[] = [];
+				for (const element of elements) {
+					if (!Utils.isObject(element)) continue;
+					const value = await this.evaluateNode(node.arg, {
+						...env,
+						flat: flattenRecord(element),
+						strip: `${arrayKey}.`,
+					});
+					if (value === null || value === undefined) continue;
+					const num = this.coerceNumber(value, env.ownKey);
+					values.push(num);
+				}
+				return this.aggregate(node.name, values, elements.length, env.ownKey);
+			}
+		}
+	}
+
+	/** Evaluate a path (`ids`, dot-separated link hops) against the current
+	 *  frame. Returns `null` when an intermediate link value is missing. */
+	private async evaluatePath(
+		node: { kind: "path"; ids: number[] },
+		env: ComputedEvalEnv,
+	): Promise<number | string | null> {
+		const ids = node.ids;
+		let table = env.table;
+		let index = env.index;
+		let flat = env.flat;
+		let strip = env.strip;
+		let value: any;
+		let ref: FieldRef | undefined;
+
+		for (let i = 0; i < ids.length; i++) {
+			ref = index.get(ids[i]);
+			if (!ref)
+				throw this.createError("COMPUTED_FIELD_UNKNOWN_FIELD", [
+					env.ownKey,
+					ids[i],
+				]);
+			const key =
+				strip && ref.key.startsWith(strip)
+					? ref.key.slice(strip.length)
+					: ref.key;
+
+			if (i === 0) {
+				value = flat[key];
+				strip = "";
+			} else {
+				// `value` is the id of the row this hop lives in.
+				if (
+					value === undefined ||
+					value === null ||
+					value === "" ||
+					(typeof value === "object" && value !== null)
+				)
+					return null;
+				// A transaction cannot read a dependency table it has already
+				// staged (no read-your-writes past its commit point).
+				if (this.transaction?.tables.has(table))
+					throw this.createError("INVALID_PARAMETERS");
+				const row = await this.readLinkedRow(table, value, ref.key);
+				if (row === undefined || row === null)
+					throw this.createError("COMPUTED_FIELD_DANGLING_LINK", [
+						env.ownKey,
+						table,
+					]);
+				flat = flattenRecord(row);
+				value = flat[ref.key];
+				index = (await this.indexFor(table, env.indexCache)) ?? index;
+			}
+
+			if (i < ids.length - 1) {
+				if (ref.field.type !== "table" || typeof ref.field.table !== "string")
+					throw this.createError("COMPUTED_FIELD_INVALID_LINK", [
+						env.ownKey,
+						ids[i + 1],
+					]);
+				table = ref.field.table;
+				index = (await this.indexFor(table, env.indexCache)) ?? index;
+			}
+		}
+
+		return value === undefined ? null : (value as number | string | null);
+	}
+
+	/** Id index lookup with a shared per-evaluation cache. */
+	private async indexFor(
+		tableName: string,
+		cache: Map<string, Map<number, FieldRef>>,
+	): Promise<Map<number, FieldRef> | undefined> {
+		const cached = cache.get(tableName);
+		if (cached) return cached;
+		const index = await this.tableFieldIndex(tableName);
+		if (index) cache.set(tableName, index);
+		return index;
+	}
+
+	/** Read a single column of one linked row via `get`, or null when the
+	 *  row does not exist (dangling link). */
+	private async readLinkedRow(
+		tableName: string,
+		id: string | number,
+		column: string,
+	): Promise<Data | null> {
+		const row = await this.get<Data>(
+			tableName,
+			id,
+			{ columns: [column] },
+			true,
+		);
+		return (row as Data) ?? null;
+	}
+
+	private coerceNumber(value: number | string, ownKey: string): number {
+		const num = Number(value);
+		if (!Number.isFinite(num))
+			throw this.createError("COMPUTED_FIELD_ARITHMETIC", [
+				ownKey,
+				`non-numeric value '${String(value)}'`,
+			]);
+		return num;
+	}
+
+	private applyBinaryOp(
+		op: BinaryOp,
+		a: number | string | null,
+		b: number | string | null,
+		ownKey: string,
+	): number {
+		if (a === null || a === undefined || b === null || b === undefined)
+			throw this.createError("COMPUTED_FIELD_ARITHMETIC", [
+				ownKey,
+				"missing or null operand",
+			]);
+		const an = this.coerceNumber(a, ownKey);
+		const bn = this.coerceNumber(b, ownKey);
+		switch (op) {
+			case "add":
+				return an + bn;
+			case "sub":
+				return an - bn;
+			case "mul":
+				return an * bn;
+			case "div":
+				if (bn === 0)
+					throw this.createError("COMPUTED_FIELD_ARITHMETIC", [
+						ownKey,
+						"division by zero",
+					]);
+				return an / bn;
+			case "mod":
+				if (bn === 0)
+					throw this.createError("COMPUTED_FIELD_ARITHMETIC", [
+						ownKey,
+						"modulo by zero",
+					]);
+				return an % bn;
+		}
+	}
+
+	private aggregate(
+		name: ComputedFunctionName,
+		values: number[],
+		elementCount: number,
+		ownKey: string,
+	): number {
+		switch (name) {
+			case "count":
+				// Aggregates iterate the row's actual array, so count is the
+				// element count (regardless of value presence).
+				return elementCount;
+			case "sum":
+				return values.reduce((acc, v) => acc + v, 0);
+			case "avg": {
+				if (!values.length)
+					throw this.createError("COMPUTED_FIELD_ARITHMETIC", [
+						ownKey,
+						"average over no values",
+					]);
+				return values.reduce((acc, v) => acc + v, 0) / values.length;
+			}
+			case "min": {
+				if (!values.length)
+					throw this.createError("COMPUTED_FIELD_ARITHMETIC", [
+						ownKey,
+						"min over no values",
+					]);
+				return Math.min(...values);
+			}
+			case "max": {
+				if (!values.length)
+					throw this.createError("COMPUTED_FIELD_ARITHMETIC", [
+						ownKey,
+						"max over no values",
+					]);
+				return Math.max(...values);
+			}
+		}
+	}
+
+	/** Merge evaluated per-line computed values into a `pathesContents` map
+	 *  as line-numbered replace records (encoded cells). */
+	private mergeComputedLineRecords(
+		tableName: string,
+		plan: ComputedPlan,
+		evaluated: Record<number, Record<string, number | string | null>>,
+		pathesContents: Record<string, any>,
+	): void {
+		for (const field of plan.fields) {
+			const path = join(
+				this.databasePath,
+				tableName,
+				`${field.key}${this.getFileExtension(tableName)}`,
+			);
+			const content: Record<number, string | number | boolean | null> =
+				(pathesContents[path] as Record<
+					number,
+					string | number | boolean | null
+				>) ?? {};
+			for (const [line, values] of Object.entries(evaluated))
+				content[Number(line)] = File.encode(values[field.key]);
+			pathesContents[path] = content;
+		}
 	}
 
 	// Helper function to determine if a field is simple
@@ -3140,6 +3722,27 @@ export default class Inibase {
 				false,
 			);
 
+			// Derived columns: evaluate every computed expression against the
+			// final formatted row (the row is pieced back in place so helpers
+			// iterate the real array values and dependent fields see each
+			// other). Evaluation happens before any file is touched.
+			const computedPlan = await this.buildComputedPlan(tableName);
+			if (computedPlan) {
+				const rows = Array.isArray(clonedData)
+					? clonedData
+					: [clonedData as Data & TData];
+				const indexCache = new Map<string, Map<number, FieldRef>>([
+					[tableName, computedPlan.index],
+				]);
+				for (const row of rows)
+					await this.evaluateRowComputed(
+						tableName,
+						computedPlan,
+						row as Data,
+						indexCache,
+					);
+			}
+
 			const pathesContents = this.joinPathesContents(
 				tableName,
 				globalConfig[this.databasePath].tables?.get(tableName)?.config.prepend
@@ -3361,11 +3964,65 @@ export default class Inibase {
 				updatedAt: Date.now(),
 			});
 
+			// Derived columns: a where-less put rewrites every row, so each
+			// computed expression must be re-evaluated against the existing
+			// row overlaid with the payload. The plan itself is schema-only.
+			const computedPlan = await this.buildComputedPlan(tableName);
+
 			try {
 				if (this.transaction) await this.ensureTxnLock(tableName);
 				else await File.lock(join(tablePath, ".tmp"));
 
 				const { total } = await this.resolvePagination(tableName);
+
+				if (computedPlan) {
+					const lineNumbers = Array.from(
+						{ length: total },
+						(_, index) => index + 1,
+					);
+					const schema =
+						globalConfig[this.databasePath].tables?.get(tableName)?.schema ??
+						[];
+					const existing = await this.processSchemaData<Data>(
+						tableName,
+						schema.filter((field) => typeof field.computed === "undefined"),
+						lineNumbers,
+					);
+					const payloadRows = (
+						Array.isArray(clonedData) ? clonedData : [clonedData]
+					).map((row) =>
+						Object.fromEntries(
+							Object.entries(row).filter(([, v]) => v !== "undefined"),
+						),
+					);
+					const evaluated: Record<
+						number,
+						Record<string, number | string | null>
+					> = {};
+					const indexCache = new Map<string, Map<number, FieldRef>>([
+						[tableName, computedPlan.index],
+					]);
+					for (let index = 0; index < lineNumbers.length; index++) {
+						const line = lineNumbers[index];
+						const merged = {
+							...((existing[line] as Data) ?? {}),
+							...(payloadRows[index % payloadRows.length] ?? {}),
+							updatedAt: Date.now(),
+						} as Data;
+						evaluated[line] = await this.evaluateRowComputed(
+							tableName,
+							computedPlan,
+							merged,
+							indexCache,
+						);
+					}
+					this.mergeComputedLineRecords(
+						tableName,
+						computedPlan,
+						evaluated,
+						pathesContents,
+					);
+				}
 
 				await Promise.allSettled(
 					Object.entries(pathesContents).map(async ([path, content]) =>
@@ -3455,11 +4112,61 @@ export default class Inibase {
 				]),
 			);
 
+			// Derived columns re-evaluate the target lines: existing values +
+			// payload overlay feed the expressions, results go back per line.
+			const computedPlan = await this.buildComputedPlan(tableName);
+
 			try {
 				// One global lock per table serializes every writer; inside a
 				// transaction the lock is held for the whole txn.
 				if (this.transaction) await this.ensureTxnLock(tableName);
 				else await File.lock(join(tablePath, ".tmp"));
+
+				if (computedPlan) {
+					const whereLines = Array.isArray(where) ? where : [where];
+					const schema =
+						globalConfig[this.databasePath].tables?.get(tableName)?.schema ??
+						[];
+					const existing = await this.processSchemaData<Data>(
+						tableName,
+						schema.filter((field) => typeof field.computed === "undefined"),
+						whereLines,
+					);
+					const payloadRows = (
+						Array.isArray(clonedData) ? clonedData : [clonedData]
+					).map((row) =>
+						Object.fromEntries(
+							Object.entries(row).filter(([, v]) => v !== "undefined"),
+						),
+					);
+					const evaluated: Record<
+						number,
+						Record<string, number | string | null>
+					> = {};
+					const indexCache = new Map<string, Map<number, FieldRef>>([
+						[tableName, computedPlan.index],
+					]);
+					for (let index = 0; index < whereLines.length; index++) {
+						const line = whereLines[index];
+						const merged = {
+							...((existing[line] as Data) ?? {}),
+							...(payloadRows[index] ?? {}),
+							updatedAt: Date.now(),
+						} as Data;
+						evaluated[line] = await this.evaluateRowComputed(
+							tableName,
+							computedPlan,
+							merged,
+							indexCache,
+						);
+					}
+					this.mergeComputedLineRecords(
+						tableName,
+						computedPlan,
+						evaluated,
+						pathesContents,
+					);
+				}
 
 				await Promise.allSettled(
 					Object.entries(pathesContents).map(async ([path, content]) =>

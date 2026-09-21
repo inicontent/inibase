@@ -3,7 +3,7 @@ import { existsSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import Inibase, { type Options, type Schema } from "../src/index.js";
+import Inibase, { type Schema } from "../src/index.js";
 
 // Test database directory (kept separate from the main test suite database)
 const dbPath = "test-db-advanced";
@@ -1441,6 +1441,325 @@ await test("Decode resilience for `{`/`[`-leading string values", async (t) => {
 		await seed(tbl, [{ text: "[not a real array" }]);
 		const rows = await inibase.get<Row>(tbl, undefined, { perPage: -1 });
 		assert.deepEqual(rows?.[0]?.text, ["not a real array"]);
+	});
+});
+
+await test("Computed fields (v1 id-only expression language)", async (t) => {
+	initializeDatabase();
+
+	/** Round-trips the persisted schema (ids + computed specs). */
+	const userSchema = async (tableName: string) => {
+		const full = (await inibase.getTableSchema(tableName)) as Schema;
+		return full.filter((f) => !["id", "createdAt", "updatedAt"].includes(f.key));
+	};
+
+	await t.test("order totals: quantity x unit price and linked product price", async () => {
+		await inibase.createTable("c_product", [
+			{ key: "name", type: "string" },
+			{ key: "price", type: "number" },
+		]);
+		await inibase.createTable("c_orders", [
+			{ key: "customer", type: "string" },
+			{ key: "status", type: "number" },
+			{
+				key: "items",
+				type: "array",
+				children: [
+					{ key: "product", type: "table", table: "c_product" },
+					{ key: "quantity", type: "number" },
+					{ key: "unitPriceCents", type: "number" },
+				],
+			},
+			// ids: customer=1, status=2, items=3, product=4, quantity=5,
+			// unitPriceCents=6, totalCents=7, totalCentsLive=8
+			{ key: "totalCents", type: "number", computed: "sum(5, 6)" },
+			{ key: "totalCentsLive", type: "number", computed: "sum(5, 4.2)" },
+		]);
+
+		const p1 = (await inibase.post("c_product", { name: "widget", price: 199 }, undefined, true)) as Row;
+		const p2 = (await inibase.post("c_product", { name: "gadget", price: 449 }, undefined, true)) as Row;
+		const order = (await inibase.post(
+			"c_orders",
+			{
+				customer: "acme",
+				status: 1,
+				items: [
+					{ product: p1.id, quantity: 2, unitPriceCents: 250 },
+					{ product: p2.id, quantity: 1, unitPriceCents: 100 },
+				],
+			},
+			undefined,
+			true,
+		)) as Row;
+		assert.equal(order.totalCents, 600, "2*250 + 1*100");
+		assert.equal(order.totalCentsLive, 847, "2*199 + 1*449 via link hop");
+
+		// stored computed columns survive a reload-as-read
+		const fetched = (await inibase.get("c_orders", order.id)) as Row;
+		assert.equal(fetched.totalCents, 600);
+		assert.equal(fetched.totalCentsLive, 847);
+	});
+
+	await t.test("rename-proof: renaming a linked key does not retarget expressions", async () => {
+		// rename c_product.price -> priceCents through a schema round-trip
+		const productSchema = await userSchema("c_product");
+		await inibase.updateTable(
+			"c_product",
+			productSchema.map((f) => (f.key === "price" ? { ...f, key: "priceCents" } : f)),
+		);
+		const order = (await inibase.get<Row>("c_orders")) as Row[];
+		assert.deepEqual(
+			order.map((r) => [r.totalCents, r.totalCentsLive]),
+			[[600, 847]],
+			"totals must be unchanged after the rename",
+		);
+	});
+
+	await t.test("bulk post computes every row; put recomputes by id, criteria and no-where", async () => {
+		await inibase.createTable("c_put", [
+			{ key: "qty", type: "number" },
+			{ key: "price", type: "number" },
+			{ key: "total", type: "number", computed: "1, 2" },
+		]);
+		await seed("c_put", [
+			{ qty: 1, price: 10 },
+			{ qty: 2, price: 20 },
+			{ qty: 3, price: 30 },
+		]);
+		const totals = (rows: Row[] | null) => rows?.map((r) => r.total);
+		assert.deepEqual(totals(await inibase.get<Row>("c_put")), [10, 40, 90]);
+
+		const first = (await inibase.get<Row>("c_put")) as Row[];
+		await inibase.put("c_put", { qty: 7 }, first[0].id);
+		assert.deepEqual(totals(await inibase.get<Row>("c_put")), [70, 40, 90]);
+
+		await inibase.put("c_put", { qty: 9 }, { price: 30 });
+		assert.deepEqual(totals(await inibase.get<Row>("c_put")), [70, 40, 270]);
+
+		await inibase.put("c_put", { price: 100 });
+		assert.deepEqual(totals(await inibase.get<Row>("c_put")), [700, 200, 900]);
+	});
+
+	await t.test("helpers: empty array sums to 0; avg over none is an arithmetic error", async () => {
+		// ids: name=1, items=2, n=3, total=4, avg=5, count=6 — helpers reference
+		// the child id (n=3), never the container (items=2)
+		await inibase.createTable("c_agg", [
+			{ key: "name", type: "string" },
+			{ key: "items", type: "array", children: [{ key: "n", type: "number" }] },
+			{ key: "total", type: "number", computed: "sum(3)" },
+			{ key: "count", type: "number", computed: "count(3)" },
+		]);
+		const withItems = (await inibase.post(
+			"c_agg",
+			{ name: "x", items: [{ n: 4 }, { n: 6 }] },
+			undefined,
+			true,
+		)) as Row;
+		assert.equal(withItems.total, 10);
+		assert.equal(withItems.count, 2);
+
+		const empty = (await inibase.post("c_agg", { name: "y" }, undefined, true)) as Row;
+		assert.equal(empty.total, 0, "sum over no values is 0");
+		assert.equal(empty.count, 0);
+
+		// avg over no values is an arithmetic error
+		await inibase.createTable("c_agg2", [
+			{ key: "items", type: "array", children: [{ key: "n", type: "number" }] },
+			{ key: "avg", type: "number", computed: "avg(2)" },
+		]);
+		await assert.rejects(
+			() => inibase.post("c_agg2", { items: [] }),
+			(error: unknown) =>
+				(error as Error).name === "COMPUTED_FIELD_ARITHMETIC",
+		);
+	});
+
+	await t.test("links: missing link value stores empty, dangling link throws", async () => {
+		await inibase.createTable("c_owner", [{ key: "name", type: "string" }]);
+		await inibase.createTable("c_ledger", [
+			{ key: "owner", type: "table", table: "c_owner" },
+			{ key: "ownerName", type: "string", computed: "1.1" },
+		]);
+
+		// no owner: a single bare path may evaluate to null (stored empty)
+		const bare = (await inibase.post("c_ledger", {}, undefined, true)) as Row;
+		assert.ok(!("ownerName" in bare), "missing link value stays empty");
+
+		// dangling link: owner points at a row that does not exist
+		await assert.rejects(
+			() => inibase.post("c_ledger", { owner: 99999 }),
+			(error: unknown) =>
+				(error as Error).name === "COMPUTED_FIELD_DANGLING_LINK",
+		);
+
+		// a live link resolves through the target table
+		const owner = (await inibase.post("c_owner", { name: "aca" }, undefined, true)) as Row;
+		const linked = (await inibase.post("c_ledger", { owner: { id: owner.id } }, undefined, true)) as Row;
+		assert.equal(linked.ownerName, "aca");
+	});
+
+	await t.test("computed values cannot be set directly", async () => {
+		await inibase.createTable("c_set", [
+			{ key: "a", type: "number" },
+			{ key: "s", type: "number", computed: "1" },
+		]);
+		// seed a valid row so where-less writes reach validation
+		await inibase.post("c_set", { a: 5 });
+		await assert.rejects(
+			() => inibase.post("c_set", { a: 5, s: 99 }),
+			(error: unknown) => (error as Error).name === "COMPUTED_FIELD_SETTABLE",
+		);
+		await assert.rejects(
+			() => inibase.put("c_set", { s: 99 }),
+			(error: unknown) => (error as Error).name === "COMPUTED_FIELD_SETTABLE",
+		);
+	});
+
+	await t.test("DDL rejects syntax, conflicts, cycles and invalid targets", async () => {
+		// syntax
+		await assert.rejects(
+			() => inibase.createTable("c_e", [{ key: "x", type: "number", computed: "1 ++" }]),
+			(error: unknown) => (error as Error).name === "COMPUTED_FIELD_SYNTAX",
+		);
+		// conflicts with required / unique / regex
+		for (const extra of [{ required: true }, { unique: true }, { regex: "^1$" }])
+			await assert.rejects(
+				() =>
+					inibase.createTable("c_e2", [
+						{ key: "x", type: "number", computed: "1", ...extra },
+					]),
+				(error: unknown) => (error as Error).name === "COMPUTED_FIELD_CONFLICT",
+			);
+		// cycles (mutual and self)
+		await assert.rejects(
+			() =>
+				inibase.createTable("c_cyc", [
+					{ key: "a", type: "number", computed: "2" },
+					{ key: "b", type: "number", computed: "1" },
+				]),
+			(error: unknown) => (error as Error).name === "COMPUTED_FIELD_CYCLE",
+		);
+		await assert.rejects(
+			() =>
+				inibase.createTable("c_cyc2", [
+					{ key: "a", type: "number", computed: "1" },
+				]),
+			(error: unknown) => (error as Error).name === "COMPUTED_FIELD_CYCLE",
+		);
+		// a bare path into array content is only legal inside a helper
+		await assert.rejects(
+			() =>
+				inibase.createTable("c_arr", [
+					{ key: "items", type: "array", children: [{ key: "n", type: "number" }] },
+					{ key: "first", type: "number", computed: "2" },
+				]),
+			(error: unknown) => (error as Error).name === "COMPUTED_FIELD_INVALID_TARGET",
+		);
+	});
+
+	await t.test("integer-only: a decimal written as a path fails at compile time", async () => {
+		// `2.5` is a link hop (field 2, then field 5 of its target), never the
+		// decimal 2.5, so this schema cannot express fractional literals.
+		await assert.rejects(
+			() =>
+				inibase.createTable("c_dec", [
+					{ key: "a", type: "number" },
+					{ key: "b", type: "number" },
+					{ key: "ratio", type: "number", computed: "2.5" },
+				]),
+			(error: unknown) => (error as Error).name === "COMPUTED_FIELD_INVALID_LINK",
+		);
+		// fractional results are reachable by division instead
+		await inibase.createTable("c_div", [
+			{ key: "z", type: "number", computed: "314 / 100" },
+		]);
+		const row = (await inibase.post("c_div", {}, undefined, true)) as Row;
+		assert.equal(row.z, 3.14);
+	});
+
+	await t.test("precedence, parens and modulo", async () => {
+		// ids: base=1, p1=2, p2=3, p3=4, x=5, y=6, w=7, d=8
+		await inibase.createTable("c_prec", [
+			{ key: "base", type: "number" },
+			{ key: "p1", type: "number" },
+			{ key: "p2", type: "number" },
+			{ key: "p3", type: "number" },
+			{ key: "x", type: "number", computed: "2 , 3 + 4" },
+			{ key: "y", type: "number", computed: "2 , (3 + 4)" },
+			{ key: "w", type: "number", computed: "97 % 10" },
+			{ key: "d", type: "number", computed: "2 / 3" },
+		]);
+		const row = (await inibase.post("c_prec", { base: 1, p1: 2, p2: 3, p3: 4 }, undefined, true)) as Row;
+		assert.equal(row.x, 10, "p1*p2 + p3");
+		assert.equal(row.y, 14, "p1*(p2+p3)");
+		assert.equal(row.w, 7);
+		assert.equal(row.d, 2 / 3);
+		// division by zero is an arithmetic error
+		await assert.rejects(
+			() => inibase.post("c_prec", { base: 1, p1: 5, p2: 0, p3: 1 }),
+			(error: unknown) => (error as Error).name === "COMPUTED_FIELD_ARITHMETIC",
+		);
+	});
+
+	await t.test("updateTable backfills added and changed computed fields", async () => {
+		const tableName = "c_backfill";
+		await inibase.createTable(tableName, [
+			{ key: "qty", type: "number" },
+			{ key: "price", type: "number" },
+		]);
+		await seed(tableName, [
+			{ qty: 2, price: 3 },
+			{ qty: 5, price: 4 },
+		]);
+
+		// add a computed field: existing rows get backfilled values
+		await inibase.updateTable(tableName, [
+			...(await userSchema(tableName)),
+			{ key: "total", type: "number", computed: "1, 2" },
+		]);
+		let rows = (await inibase.get<Row>(tableName)) as Row[];
+		assert.deepEqual(rows.map((r) => r.total), [6, 20], "backfilled totals");
+		assert.deepEqual(rows.map((r) => r.qty), [2, 5], "existing columns survive");
+
+		// changing the expression re-backfills
+		await inibase.updateTable(tableName, [
+			...(await userSchema(tableName)).map((f) =>
+				f.key === "total" ? { ...f, computed: "1, 2, 2" } : f,
+			),
+		]);
+		rows = (await inibase.get<Row>(tableName)) as Row[];
+		assert.deepEqual(rows.map((r) => r.total), [18, 80], "re-backfilled totals");
+
+		// posts after the migration keep computing
+		const posted = (await inibase.post(tableName, { qty: 10, price: 2 }, undefined, true)) as Row;
+		assert.equal(posted.total, 40);
+	});
+
+	await t.test("a failed backfill leaves the schema untouched", async () => {
+		const tableName = "c_fail";
+		await inibase.createTable(tableName, [{ key: "a", type: "number" }]);
+		await seed(tableName, [{ a: 5 }]);
+		const before = await userSchema(tableName);
+
+		// `1, 2` = a * b but b has no backing column yet: backfill arithmetic error
+		await assert.rejects(
+			() =>
+				inibase.updateTable(tableName, [
+					...before,
+					{ key: "b", type: "number" },
+					{ key: "s", type: "number", computed: "1, 2" },
+				]),
+			(error: unknown) => (error as Error).name === "COMPUTED_FIELD_ARITHMETIC",
+		);
+
+		const after = await userSchema(tableName);
+		assert.deepEqual(
+			after.map((f) => f.key),
+			["a"],
+			"failed migration must not persist the computed field",
+		);
+		const rows = (await inibase.get<Row>(tableName)) as Row[];
+		assert.equal(rows[0].a, 5, "row data survives the failed migration");
 	});
 });
 

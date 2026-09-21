@@ -365,7 +365,7 @@ await test("a writer in another process blocks on a live transaction", async () 
 		{ execArgv: ["--import", "tsx"] },
 	);
 
-	let finishedEarly = false;
+	const finishedEarly = false;
 	const writerDone = new Promise<void>((resolve) => {
 		writer.on("message", (message) => {
 			if (message === "done") resolve();
@@ -421,6 +421,43 @@ await test("INIBASE_DURABILITY=none is functionally identical", async () => {
 		names2: ["a", "b", "d"],
 	});
 	rmSync(noneDb, { recursive: true, force: true });
+});
+
+await test("computed link-hops reject transaction-staged dependency tables", async () => {
+	// wallet_t.ownerName = owner.name is a link hop into user_t (ids: owner=1,
+	// ownerName=2; user_t name=1)
+	await db.createTable("wallet_t", [
+		{ key: "owner", type: "table", table: "user_t" },
+		{ key: "ownerName", type: "string", computed: "1.1" },
+	]);
+	const ownerId = await db.post("user_t", { name: "wallet-owner" });
+
+	// outside a transaction the link resolves
+	const outside = (await db.post("wallet_t", { owner: { id: ownerId } }, undefined, true)) as any;
+	assert.equal(outside.ownerName, "wallet-owner");
+
+	// a transaction touching only wallet_t may still link-read user_t
+	await db.begin(["wallet_t"]);
+	try {
+		await db.post("wallet_t", { owner: { id: ownerId } });
+	} finally {
+		await db.commit();
+	}
+	assert.equal((await readAll("wallet_t")).length, 2);
+
+	// a transaction pre-listing both tables cannot evaluate the link hop (the
+	// dependency would be read from its pre-commit state)
+	await db.begin(["user_t", "wallet_t"]);
+	try {
+		await assert.rejects(
+			() => db.post("wallet_t", { owner: { id: ownerId } }),
+			(error: any) => error?.name === "INVALID_PARAMETERS",
+			"link hop into a staged dependency must be rejected",
+		);
+	} finally {
+		await db.rollback();
+	}
+	assert.equal((await readAll("wallet_t")).length, 2, "rejected write staged nothing");
 });
 
 await test("Cleanup transaction database", async () => {

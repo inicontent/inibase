@@ -858,6 +858,97 @@ await db.get("user", undefined, { sort: {age: -1, username: "asc"} });
 </blockquote>
 </details>
 
+<details>
+<summary>Computed Fields</summary>
+<blockquote>
+
+A `computed` column is derived from other columns of the same row whenever the
+row is written (`post` / `put`, including backfill on `updateTable`). The
+result is stored in its own column file like any other value, so reads and
+criteria queries work unchanged.
+
+```ts
+const db = new Inibase("/databaseName");
+
+await db.createTable("product", [
+	{ key: "name", type: "string" },
+	{ key: "price", type: "number" },
+]);
+
+// ids are assigned per table in schema order: customer=1, status=2, items=3,
+// product=4, quantity=5, unitPriceCents=6, totalCents=7, totalCentsLive=8
+await db.createTable("orders", [
+	{ key: "customer", type: "string" },
+	{ key: "status", type: "number" },
+	{
+		key: "items",
+		type: "array",
+		children: [
+			{ key: "product", type: "table", table: "product" },
+			{ key: "quantity", type: "number" },
+			{ key: "unitPriceCents", type: "number" },
+		],
+	},
+	{ key: "totalCents", type: "number", computed: "sum(5, 6)" }, // quantity x unitPriceCents
+	{ key: "totalCentsLive", type: "number", computed: "sum(5, 4.2)" }, // quantity x product.price
+]);
+
+const posted = await db.post(
+	"orders",
+	{
+		customer: "acme",
+		status: 1,
+		items: [
+			{ product: "id-of-widget", quantity: 2, unitPriceCents: 250 },
+			{ product: "id-of-gadget", quantity: 1, unitPriceCents: 100 },
+		],
+	},
+	undefined,
+	true,
+);
+// posted.totalCents === 600      (2*250 + 1*100)
+// posted.totalCentsLive === 847  (2*price(widget) + 1*price(gadget))
+```
+
+**Expression language (v1, integer-only).**
+
+- Operators: `+` `-` `,` (multiply) `/` `%`; `( )` for grouping. Multiplication
+  binds tighter than addition (`1 , 2 + 3` = `(1*2) + 3`).
+- Helpers: `sum` `count` `avg` `min` `max` iterate an array-of-objects found by
+  the ids inside the parentheses (`sum(5, 6)` = quantity x unit-price per item).
+- Paths: `id ("." id)*` where `.` hops through a `table` link
+  (`4.2` = price of the linked product row).
+- Integers only: there are no decimal literals — `.` is the path separator, so
+  `3.14` is a path (`field 3`, hop `field 14`), never 3.14. Fractional results
+  are written as division: `314 / 100` → 3.14.
+- A bare integer that matches a field id in the table's schema is that field
+  (ids are locative); a bare integer that matches no field is a literal.
+
+**Rules & limits (v1).**
+
+- Computed fields cannot be `required`, `unique` or `regex` (a
+  `COMPUTED_FIELD_CONFLICT` error).
+- Computed values are never user-settable (`post`/`put` with a computed key
+  throws `COMPUTED_FIELD_SETTABLE`).
+- Values are evaluated at write time and persisted; compiled expressions are
+  stored as `{ expr, ast }` in the schema. The AST carries only field ids, so
+  renaming a column (or its linked table's columns) never retargets an
+  expression.
+- `updateTable` backfills existing rows when a computed field is added or its
+  expression changes; a backfill that fails (missing dependency, arithmetic
+  error, dangling link) aborts the migration and leaves the schema untouched.
+- Aggregates: `sum` over no values is `0`, `count` is the element count, and
+  `avg`/`min`/`max` over no values throw `COMPUTED_FIELD_ARITHMETIC`.
+- Non-numeric operands, division/modulo by zero, and arithmetic over missing
+  (null) values throw `COMPUTED_FIELD_ARITHMETIC`; a link to a missing row
+  throws `COMPUTED_FIELD_DANGLING_LINK`.
+- Only top-level schema fields can be computed in v1; array contents are
+  reachable through helpers. Missing link values make a single bare path
+  evaluate to null (stored empty).
+
+</blockquote>
+</details>
+
 </blockquote>
 </details>
 
@@ -930,6 +1021,7 @@ await db.get("user", undefined, { sort: {age: -1, username: "asc"} });
   - [ ] Encryption
   - [x] Data Compression
   - [x] Caching System
+  - [x] Computed fields (v1 id-only expression language)
   - [ ] Suggest [new feature +](https://github.com/inicontent/inibase/discussions/new?category=ideas)
 
 ## License

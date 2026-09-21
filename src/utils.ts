@@ -1,3 +1,4 @@
+import { COMPUTED_EXPR_MAX_LENGTH } from "./expression.js";
 import type {
 	ComparisonOperator,
 	Data,
@@ -772,6 +773,23 @@ export const ERROR_MESSAGES: Record<ErrorLang, Record<ErrorCode, string>> = {
 		INVALID_REGEX_MATCH: "Field {variable} does not match the expected pattern",
 		INVALID_NAME: "Name {variable} is not valid",
 		NO_ENV: "No environment file found",
+		COMPUTED_FIELD_SYNTAX:
+			"Invalid computed expression syntax in field {variable}",
+		COMPUTED_FIELD_UNKNOWN_FIELD:
+			"Field {variable} references unknown field id {variable}",
+		COMPUTED_FIELD_INVALID_LINK:
+			"Field {variable} has an invalid link at hop {variable}",
+		COMPUTED_FIELD_INVALID_TARGET:
+			"Field {variable} references an invalid target ({variable})",
+		COMPUTED_FIELD_CONFLICT:
+			"Field {variable} cannot be computed and required/unique/regex at the same time",
+		COMPUTED_FIELD_CYCLE: "Computed fields form a cycle: {variable}",
+		COMPUTED_FIELD_SETTABLE:
+			"Field {variable} is computed and cannot be set directly",
+		COMPUTED_FIELD_DANGLING_LINK:
+			"Computed field {variable} references a missing row in table {variable}",
+		COMPUTED_FIELD_ARITHMETIC:
+			"Computed field {variable} failed evaluation ({variable})",
 	},
 	ar: {
 		TABLE_EMPTY: "الجدول {variable} فارغ",
@@ -790,6 +808,21 @@ export const ERROR_MESSAGES: Record<ErrorLang, Record<ErrorCode, string>> = {
 		INVALID_REGEX_MATCH: "الحقل {variable} لا يتطابق مع النمط المتوقع",
 		INVALID_NAME: "الاسم {variable} غير صالح",
 		NO_ENV: "لم يتم العثور على ملف البيئة",
+		COMPUTED_FIELD_SYNTAX: "صيغة الحقل المحسوب غير صالحة في الحقل {variable}",
+		COMPUTED_FIELD_UNKNOWN_FIELD:
+			"الحقل {variable} يشير إلى معرف حقل غير معروف {variable}",
+		COMPUTED_FIELD_INVALID_LINK:
+			"الحقل {variable} يحتوي على رابط غير صالح عند الخطوة {variable}",
+		COMPUTED_FIELD_INVALID_TARGET:
+			"الحقل {variable} يشير إلى هدف غير صالح ({variable})",
+		COMPUTED_FIELD_CONFLICT:
+			"لا يمكن أن يكون الحقل {variable} محسوبًا ومطلوبًا/فريدًا/بنمط في نفس الوقت",
+		COMPUTED_FIELD_CYCLE: "الحقول المحسوبة تشكل دورة: {variable}",
+		COMPUTED_FIELD_SETTABLE: "الحقل {variable} محسوب ولا يمكن تعيينه مباشرة",
+		COMPUTED_FIELD_DANGLING_LINK:
+			"الحقل المحسوب {variable} يشير إلى صف غير موجود في الجدول {variable}",
+		COMPUTED_FIELD_ARITHMETIC:
+			"فشل تقييم الحقل المحسوب {variable} ({variable})",
 	},
 	fr: {
 		TABLE_EMPTY: "La table {variable} est vide",
@@ -809,6 +842,23 @@ export const ERROR_MESSAGES: Record<ErrorLang, Record<ErrorCode, string>> = {
 			"Le champ {variable} ne correspond pas au modèle attendu",
 		INVALID_NAME: "Le nom {variable} n'est pas valide",
 		NO_ENV: "Aucun fichier d'environnement trouvé",
+		COMPUTED_FIELD_SYNTAX:
+			"Syntaxe d'expression calculée invalide pour le champ {variable}",
+		COMPUTED_FIELD_UNKNOWN_FIELD:
+			"Le champ {variable} référence un identifiant de champ inconnu {variable}",
+		COMPUTED_FIELD_INVALID_LINK:
+			"Le champ {variable} possède un lien invalide à l'étape {variable}",
+		COMPUTED_FIELD_INVALID_TARGET:
+			"Le champ {variable} référence une cible invalide ({variable})",
+		COMPUTED_FIELD_CONFLICT:
+			"Le champ {variable} ne peut pas être calculé et requis/unique/regex à la fois",
+		COMPUTED_FIELD_CYCLE: "Les champs calculés forment un cycle : {variable}",
+		COMPUTED_FIELD_SETTABLE:
+			"Le champ {variable} est calculé et ne peut pas être défini directement",
+		COMPUTED_FIELD_DANGLING_LINK:
+			"Le champ calculé {variable} référence une ligne manquante dans la table {variable}",
+		COMPUTED_FIELD_ARITHMETIC:
+			"L'évaluation du champ calculé {variable} a échoué ({variable})",
 	},
 	es: {
 		TABLE_EMPTY: "La tabla {variable} está vacía",
@@ -828,6 +878,23 @@ export const ERROR_MESSAGES: Record<ErrorLang, Record<ErrorCode, string>> = {
 			"El campo {variable} no coincide con el patrón esperado",
 		INVALID_NAME: "El nombre {variable} no es válido",
 		NO_ENV: "No se encontró el archivo de entorno",
+		COMPUTED_FIELD_SYNTAX:
+			"Sintaxis de expresión calculada no válida en el campo {variable}",
+		COMPUTED_FIELD_UNKNOWN_FIELD:
+			"El campo {variable} referencia un id de campo desconocido {variable}",
+		COMPUTED_FIELD_INVALID_LINK:
+			"El campo {variable} tiene un enlace no válido en el paso {variable}",
+		COMPUTED_FIELD_INVALID_TARGET:
+			"El campo {variable} referencia un destino no válido ({variable})",
+		COMPUTED_FIELD_CONFLICT:
+			"El campo {variable} no puede ser calculado y requerido/único/regex a la vez",
+		COMPUTED_FIELD_CYCLE: "Los campos calculados forman un ciclo: {variable}",
+		COMPUTED_FIELD_SETTABLE:
+			"El campo {variable} es calculado y no puede establecerse directamente",
+		COMPUTED_FIELD_DANGLING_LINK:
+			"El campo calculado {variable} referencia una fila inexistente en la tabla {variable}",
+		COMPUTED_FIELD_ARITHMETIC:
+			"Falló la evaluación del campo calculado {variable} ({variable})",
 	},
 };
 
@@ -926,6 +993,26 @@ export const validateSchema = (
 	for (const field of schema) {
 		validateName(field.key, language);
 		if (field.table) validateName(field.table, language);
+		if (typeof field.computed !== "undefined") {
+			const computed = field.computed;
+			const isValidForm =
+				typeof computed === "string"
+					? computed.length > 0 && computed.length <= COMPUTED_EXPR_MAX_LENGTH
+					: typeof computed === "object" &&
+						computed !== null &&
+						typeof computed.expr === "string" &&
+						typeof computed.ast === "object" &&
+						computed.expr.length > 0 &&
+						computed.expr.length <= COMPUTED_EXPR_MAX_LENGTH;
+			if (!isValidForm)
+				throw createError(language, "COMPUTED_FIELD_SYNTAX", field.key);
+			if (
+				field.required !== undefined ||
+				field.unique !== undefined ||
+				field.regex !== undefined
+			)
+				throw createError(language, "COMPUTED_FIELD_CONFLICT", field.key);
+		}
 		if (field.children && isArrayOfObjects(field.children))
 			validateSchema(field.children, language);
 	}
