@@ -23,10 +23,10 @@ import {
 	type ComputedFunctionName,
 	collectFieldDeps,
 	type FieldRef,
-	flattenRecord,
 	parseExpression,
 	type ResolveContext,
 	resolveExpression,
+	resolveFramePath,
 	topoSortComputedFields,
 } from "./expression.js";
 import * as File from "./file.js";
@@ -217,9 +217,10 @@ interface ComputedEvalEnv {
 	table: string;
 	/** Id index of the current frame's table. */
 	index: Map<number, FieldRef>;
-	/** Flattened frame: dotted keys -> values (element frames strip the
-	 *  array key via `strip`). */
-	flat: Record<string, any>;
+	/** Structured frame paths resolve against in place: the row being
+	 *  written, a raw array element (helper iteration), or a linked row at
+	 *  a hop. No flattened copy is ever built (see `resolveFramePath`). */
+	frame: Record<string, any>;
 	/** Structured row of the table being written (helper iteration). */
 	row: Data;
 	/** Prefix stripped from ref keys inside array-element frames, else "". */
@@ -228,11 +229,6 @@ interface ComputedEvalEnv {
 	ownKey: string;
 	/** Shared cache of linked-table id indexes. */
 	indexCache: Map<string, Map<number, FieldRef>>;
-	/** Per-row cache of flattened array-element frames, keyed by the array
-	 *  field key: every helper of the row shares the same flattened elements
-	 *  so each element is flattened once per row instead of once per helper.
-	 *  (Only present on the top-level row frame; helper args cannot nest.) */
-	elementFrames?: Map<string, Array<Record<string, any>>>;
 }
 
 /**
@@ -1729,21 +1725,19 @@ export default class Inibase {
 		indexCache: Map<string, Map<number, FieldRef>>,
 	): Promise<Record<string, number | string | null>> {
 		const out: Record<string, number | string | null> = {};
-		// One flattened frame per row, shared by every computed field: the
-		// previous per-field re-flatten duplicated the whole row (its arrays
-		// included) once per expression. Freshly evaluated values are injected
-		// into the frame, so dependent fields still see earlier results while
-		// each row costs a single flatten plus a per-array element cache.
-		const flat = flattenRecord(row);
+		// One structured frame per row, shared by every computed field: paths
+		// resolve against the row in place (direct key-path reads), so no
+		// flattened copy is ever built. Freshly evaluated values are written
+		// back into the row — computed fields are top-level keys, so dependent
+		// fields see earlier results through the same key-path reads.
 		const env: ComputedEvalEnv = {
 			table: tableName,
 			index: plan.index,
-			flat,
+			frame: row,
 			row,
 			strip: "",
 			ownKey: "",
 			indexCache,
-			elementFrames: new Map<string, Array<Record<string, any>>>(),
 		};
 		for (const field of plan.fields) {
 			env.strip = "";
@@ -1751,7 +1745,6 @@ export default class Inibase {
 			const value = await this.evaluateNode(field.ast, env);
 			out[field.key] = value;
 			row[field.key] = value;
-			flat[field.key] = value;
 		}
 		return out;
 	}
@@ -1777,34 +1770,24 @@ export default class Inibase {
 				// formatData turns a missing/empty array-of-objects into `{}`;
 				// treat anything that is not an actual array as empty.
 				const elements = Array.isArray(raw) ? (raw as Data[]) : [];
-				// Every helper over the same array shares one flat per element,
-				// cached per row (keyed by the array's field key) so e.g.
-				// sum/avg/min/max/count flatten their elements exactly once.
-				let frames: Array<Record<string, any>> | undefined =
-					elements.length && arrayKey
-						? env.elementFrames?.get(arrayKey)
-						: undefined;
-				if (!frames) {
-					frames = [];
-					if (elements.length)
-						for (const element of elements)
-							if (Utils.isObject(element)) frames.push(flattenRecord(element));
-					if (arrayKey) env.elementFrames?.set(arrayKey, frames);
-				}
 				const values: number[] = [];
-				// Reuse the env object across elements (only flat/strip change)
-				// to avoid allocating a frame per element.
-				const savedFlat = env.flat;
+				// Reuse the env object across elements (only frame/strip
+				// change) to avoid allocating a frame per element. Elements
+				// are walked in place via direct key-path reads, so nothing is
+				// flattened or cached.
+				const savedFrame = env.frame;
 				const savedStrip = env.strip;
-				for (const flat of frames) {
-					env.flat = flat;
-					env.strip = `${arrayKey}.`;
+				const stripPrefix = arrayKey ? `${arrayKey}.` : "";
+				for (const element of elements) {
+					if (!Utils.isObject(element)) continue;
+					env.frame = element;
+					env.strip = stripPrefix;
 					const value = await this.evaluateNode(node.arg, env);
 					if (value === null || value === undefined) continue;
 					const num = this.coerceNumber(value, env.ownKey);
 					values.push(num);
 				}
-				env.flat = savedFlat;
+				env.frame = savedFrame;
 				env.strip = savedStrip;
 				return this.aggregate(node.name, values, elements.length, env.ownKey);
 			}
@@ -1820,7 +1803,7 @@ export default class Inibase {
 		const ids = node.ids;
 		let table = env.table;
 		let index = env.index;
-		let flat = env.flat;
+		let frame = env.frame;
 		let strip = env.strip;
 		let value: any;
 		let ref: FieldRef | undefined;
@@ -1838,7 +1821,8 @@ export default class Inibase {
 					: ref.key;
 
 			if (i === 0) {
-				value = flat[key];
+				// Direct key-path read: walk the structured frame in place.
+				value = resolveFramePath(frame, key);
 				strip = "";
 			} else {
 				// `value` is the id of the row this hop lives in.
@@ -1859,8 +1843,11 @@ export default class Inibase {
 						env.ownKey,
 						table,
 					]);
-				flat = flattenRecord(row);
-				value = flat[ref.key];
+				// The linked row is the next frame, walked in place (no
+				// flattened copy). readLinkedRow already fetched only the
+				// `ref.key` column, so the frame is minimal.
+				frame = row;
+				value = resolveFramePath(frame, ref.key);
 				index = (await this.indexFor(table, env.indexCache)) ?? index;
 			}
 

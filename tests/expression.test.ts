@@ -10,6 +10,7 @@ import {
 	parseExpression,
 	type ResolveContext,
 	resolveExpression,
+	resolveFramePath,
 	topoSortComputedFields,
 } from "../src/expression.js";
 import type { ErrorLang, Schema } from "../src/index.js";
@@ -499,4 +500,39 @@ await test("flattenRecord: nested objects and arrays of objects", async () => {
 	assert.deepEqual(flat["items.quantity"], [2, 5]);
 	assert.deepEqual(flat.empty, []);
 	assert.equal(flat.missing, null);
+});
+
+await test("resolveFramePath: walks structured frames in place", async () => {
+	const row = {
+		name: "ada",
+		meta: { age: 36, city: "paris" },
+		items: [
+			{ product: 1, quantity: 2 },
+			{ product: 2, quantity: 5 },
+		],
+		empty: [],
+		missing: null,
+	};
+	// Leaves match flattenRecord's, but no flattened copy is materialised.
+	assert.equal(resolveFramePath(row, "name"), "ada");
+	assert.equal(resolveFramePath(row, "meta.age"), 36);
+	assert.equal(resolveFramePath(row, "meta.city"), "paris");
+	// Arrays never match a dotted segment (flatten's combined arrays are
+	// expressly not produced on the direct read path)…
+	assert.equal(resolveFramePath(row, "items.product"), undefined);
+	assert.equal(resolveFramePath(row, "items.quantity"), undefined);
+	// …but a leaf that is itself an array (or null) resolves to that value.
+	assert.deepEqual(resolveFramePath(row, "empty"), []);
+	assert.equal(resolveFramePath(row, "missing"), null);
+	assert.equal(resolveFramePath(row, "nope.deep"), undefined);
+	// Scalars and nulls are not walkable.
+	assert.equal(resolveFramePath(row, "name.length"), undefined);
+	assert.equal(resolveFramePath(row, "missing.x"), undefined);
+	// Empty path returns the frame itself.
+	assert.equal(resolveFramePath(row, ""), row);
+	// Helper element frames are just child objects of the array.
+	const element = row.items[0];
+	assert.equal(resolveFramePath(element, "product"), 1);
+	assert.equal(resolveFramePath(element, "quantity"), 2);
+	assert.equal(resolveFramePath(element, "nested.deep"), undefined);
 });

@@ -626,3 +626,30 @@ export function flattenRecord(
 	}
 	return out;
 }
+
+/**
+ * Resolve a dotted key path against a structured frame in place — the direct
+ * read-path counterpart of `flattenRecord`. Walks `obj` segment by segment
+ * and returns `undefined` when any intermediate is null, undefined, a
+ * non-object, or an array (arrays resolve numerically only, so they never
+ * match a dotted segment), mirroring the leaves `flattenRecord` would have
+ * produced without materialising the flattened record.
+ */
+export function resolveFramePath(
+	obj: Record<string, any>,
+	dottedKey: string,
+): any {
+	if (dottedKey.length === 0) return obj;
+	let cur: any = obj;
+	for (const segment of dottedKey.split(".")) {
+		if (
+			cur === null ||
+			cur === undefined ||
+			typeof cur !== "object" ||
+			Array.isArray(cur)
+		)
+			return undefined;
+		cur = (cur as Record<string, any>)[segment];
+	}
+	return cur;
+}

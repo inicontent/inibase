@@ -12,7 +12,9 @@
 import { strict as assert } from "node:assert";
 import { rmSync } from "node:fs";
 
-import Inibase, { type Row, type Schema } from "../src/index.js";
+import Inibase, { type Schema } from "../src/index.js";
+
+type Row = Record<string, any> & { id?: string | number };
 
 const dbPath = "test-db-bench-computed";
 rmSync(dbPath, { recursive: true, force: true });
