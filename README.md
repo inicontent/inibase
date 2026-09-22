@@ -889,8 +889,8 @@ await db.createTable("orders", [
 			{ key: "unitPriceCents", type: "number" },
 		],
 	},
-	{ key: "totalCents", type: "number", computed: "sum(5, 6)" }, // quantity x unitPriceCents
-	{ key: "totalCentsLive", type: "number", computed: "sum(5, 4.2)" }, // quantity x product.price
+	{ key: "totalCents", type: "number", computed: "sum(5 * 6)" }, // quantity x unitPriceCents
+	{ key: "totalCentsLive", type: "number", computed: "sum(5 * 4.2)" }, // quantity x product.price
 ]);
 
 const posted = await db.post(
@@ -912,10 +912,10 @@ const posted = await db.post(
 
 **Expression language (v1, integer-only).**
 
-- Operators: `+` `-` `,` (multiply) `/` `%`; `( )` for grouping. Multiplication
-  binds tighter than addition (`1 , 2 + 3` = `(1*2) + 3`).
+- Operators: `+` `-` `*` `/` `%`; `( )` for grouping. Multiplication
+  binds tighter than addition (`1 * 2 + 3` = `(1*2) + 3`).
 - Helpers: `sum` `count` `avg` `min` `max` iterate an array-of-objects found by
-  the ids inside the parentheses (`sum(5, 6)` = quantity x unit-price per item).
+  the ids inside the parentheses (`sum(5 * 6)` = quantity x unit-price per item).
 - Paths: `id ("." id)*` where `.` hops through a `table` link
   (`4.2` = price of the linked product row).
 - Integers only: there are no decimal literals — `.` is the path separator, so
@@ -982,7 +982,7 @@ const posted = await db.post(
 
 ### Computed fields
 
-Write-time evaluation cost (helpers `sum(3 , 4)`, `avg(4)`, `min(4)`, `max(4)`, `count(3)` over an `items` array with 3 lines, plus an arithmetic field `itemTotal × (314 / 100)`), compared against the identical table without computed fields:
+Write-time evaluation cost (helpers `sum(3 * 4)`, `avg(4)`, `min(4)`, `max(4)`, `count(3)` over an `items` array with 3 lines, plus an arithmetic field `itemTotal × (314 / 100)`), compared against the identical table without computed fields:
 
 | rows | POST bulk (plain / computed) | POST single (plain / computed) | PUT recompute (plain / computed) |
 |------|------------------------------|--------------------------------|----------------------------------|

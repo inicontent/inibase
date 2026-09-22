@@ -60,7 +60,7 @@ const ctxFor = (
 
 await test("parseExpression: precedence and associativity", async () => {
 	// mul/div/mod bind tighter than add/sub
-	assert.deepEqual(parseExpression("1 + 2 , 3"), {
+	assert.deepEqual(parseExpression("1 + 2 * 3"), {
 		kind: "bin",
 		op: "add",
 		left: { kind: "num", value: 1 },
@@ -84,7 +84,7 @@ await test("parseExpression: precedence and associativity", async () => {
 		right: { kind: "num", value: 2 },
 	});
 	// parens override precedence
-	assert.deepEqual(parseExpression("2 , (3 + 4)"), {
+	assert.deepEqual(parseExpression("2 * (3 + 4)"), {
 		kind: "bin",
 		op: "mul",
 		left: { kind: "num", value: 2 },
@@ -95,7 +95,7 @@ await test("parseExpression: precedence and associativity", async () => {
 			right: { kind: "num", value: 4 },
 		},
 	});
-	// `/` and `%` bind at the same level as `,`
+	// `/` and `%` bind at the same level as `*`
 	assert.deepEqual(parseExpression("314 / 100"), {
 		kind: "bin",
 		op: "div",
@@ -116,7 +116,7 @@ await test("parseExpression: paths and helpers", async () => {
 	assert.deepEqual(parseExpression("3.4.5"), { kind: "path", ids: [3, 4, 5] });
 	assert.deepEqual(parseExpression("4"), { kind: "num", value: 4 });
 	// helper argument is a full expression
-	assert.deepEqual(parseExpression("sum(5 , 4.2)"), {
+	assert.deepEqual(parseExpression("sum(5 * 4.2)"), {
 		kind: "fn",
 		name: "sum",
 		arg: {
@@ -124,6 +124,17 @@ await test("parseExpression: paths and helpers", async () => {
 			op: "mul",
 			left: { kind: "num", value: 5 },
 			right: { kind: "path", ids: [4, 2] },
+		},
+	});
+	// ... including `+`/`-`: `sum(2 + 6)` sums field 2 + field 6 per element
+	assert.deepEqual(parseExpression("sum(2 + 6)"), {
+		kind: "fn",
+		name: "sum",
+		arg: {
+			kind: "bin",
+			op: "add",
+			left: { kind: "num", value: 2 },
+			right: { kind: "num", value: 6 },
 		},
 	});
 	// every helper name is recognized
@@ -162,6 +173,9 @@ await test("parseExpression: syntax errors", async () => {
 	syntax(() => parseExpression("a"));
 	syntax(() => parseExpression("1 ! 2"));
 	syntax(() => parseExpression("-1"));
+	// `,` is no longer the multiply operator
+	syntax(() => parseExpression("sum(5, 6)"));
+	syntax(() => parseExpression("1 , 2"));
 });
 
 await test("parseExpression: caps input length and nesting depth", async () => {
@@ -236,7 +250,7 @@ await test("resolveExpression: locative ids and literal fallback", async () => {
 	assert.equal(big.deps.size, 0);
 
 	// arithmetic deps are the union of path roots
-	const bin = await resolveExpression(parseExpression("1 , 314 + 2"), ctx);
+	const bin = await resolveExpression(parseExpression("1 * 314 + 2"), ctx);
 	assert.deepEqual(bin.deps, new Set([1, 2]));
 });
 
@@ -256,7 +270,7 @@ await test("resolveExpression: helpers resolve the array ancestor", async () => 
 	];
 	const ctx = ctxFor(schema);
 
-	const sum = await resolveExpression(parseExpression("sum(4 , 3)"), ctx);
+	const sum = await resolveExpression(parseExpression("sum(4 * 3)"), ctx);
 	assert.deepEqual(sum.ast, {
 		kind: "fn",
 		name: "sum",
@@ -291,7 +305,7 @@ await test("resolveExpression: links resolve into the target table", async () =>
 	];
 	const ctx = ctxFor(orders, { catalog });
 
-	const hop = await resolveExpression(parseExpression("sum(4 , 3.2)"), ctx);
+	const hop = await resolveExpression(parseExpression("sum(4 * 3.2)"), ctx);
 	assert.deepEqual(hop.ast, {
 		kind: "fn",
 		name: "sum",
@@ -369,7 +383,7 @@ await test("resolveExpression: rejected shapes", async () => {
 	);
 	// a helper must reference the exact same array (no bare positives)
 	await assert.rejects(
-		resolveExpression(parseExpression("sum(3 , 1)"), ctx),
+		resolveExpression(parseExpression("sum(3 * 1)"), ctx),
 		(error: unknown) =>
 			(error as Error).name === "COMPUTED_FIELD_INVALID_TARGET",
 	);
@@ -474,7 +488,7 @@ await test("collectFieldDeps reads path roots from a compiled AST", async () => 
 	];
 	const ctx = ctxFor(schema);
 	const resolved = await resolveExpression(
-		parseExpression("1 + 2 , sum(5)"),
+		parseExpression("1 + 2 * sum(5)"),
 		ctx,
 	);
 	assert.deepEqual(resolved.deps, new Set([1, 2, 5]));

@@ -33,13 +33,13 @@ const computedSchema: Schema = [
 			{ key: "price", type: "number" },
 		],
 	},
-	{ key: "itemTotal", type: "number", computed: "sum(3 , 4)" },
+	{ key: "itemTotal", type: "number", computed: "sum(3 * 4)" },
 	{ key: "avgPrice", type: "number", computed: "avg(4)" },
 	{ key: "minPrice", type: "number", computed: "min(4)" },
 	{ key: "maxPrice", type: "number", computed: "max(4)" },
 	{ key: "lineCount", type: "number", computed: "count(3)" },
 	// arithmetic over a computed dependency: itemTotal × (314 / 100)
-	{ key: "grandTotal", type: "number", computed: "5 , 314 / 100" },
+	{ key: "grandTotal", type: "number", computed: "5 * 314 / 100" },
 ] satisfies Schema;
 
 const plainSchema: Schema = [
@@ -76,14 +76,14 @@ const ms = async (fn: () => Promise<unknown>) => {
 
 // --- sanity probe: the helpers evaluate to the expected values -------------
 const probe = (await db.post("computed", row(0), undefined, true)) as Row;
-assert.equal(probe.itemTotal, 1 * 300 + 2 * 199 + 1 * 449, "sum(3 , 4)");
+assert.equal(probe.itemTotal, 1 * 300 + 2 * 199 + 1 * 449, "sum(3 * 4)");
 assert.equal(probe.avgPrice, Math.round((300 + 199 + 449) / 3), "avg(4)");
 assert.equal(probe.minPrice, 199, "min(4)");
 assert.equal(probe.maxPrice, 449, "max(4)");
 assert.equal(probe.lineCount, 3, "count(3)");
 assert.ok(
 	Math.abs(probe.grandTotal - probe.itemTotal * 3.14) < 1e-9,
-	"5 , 314 / 100",
+	"5 * 314 / 100",
 );
 
 const sizes = [10, 100, 1000];
@@ -188,8 +188,8 @@ await db.createTable("lk_orders", [
 	},
 	// ids: customer=1, status=2, items=3, product=4, quantity=5,
 	// unitPriceCents=6, totalCents=7, totalCentsLive=8
-	{ key: "totalCents", type: "number", computed: "sum(5, 6)" },
-	{ key: "totalCentsLive", type: "number", computed: "sum(5, 4.2)" },
+	{ key: "totalCents", type: "number", computed: "sum(5 * 6)" },
+	{ key: "totalCentsLive", type: "number", computed: "sum(5 * 4.2)" },
 ]);
 const catalogSize = 20;
 const catalog = (await db.post(
@@ -232,13 +232,13 @@ const linkProbe = (await db.post(
 		linkProbe.totalCents,
 		(a.quantity as number) * (a.unitPriceCents as number) +
 			(b.quantity as number) * (b.unitPriceCents as number),
-		"sum(5, 6)",
+		"sum(5 * 6)",
 	);
 	assert.equal(
 		linkProbe.totalCentsLive,
 		(a.quantity as number) * (prodA.price as number) +
 			(b.quantity as number) * (prodB.price as number),
-		"sum(5, 4.2) via link hops",
+		"sum(5 * 4.2) via link hops",
 	);
 }
 const linkPost: Partial<Record<number, number>> = {};

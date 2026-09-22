@@ -5,7 +5,7 @@
  * -------
  * ```
  * expression := term (("+" | "-") term)*
- * term       := factor (("," | "/" | "%") factor)*   // "," = multiply
+ * term       := factor (("*" | "/" | "%") factor)*   // "*" = multiply
  * factor     := integer-literal | path | function-call | "(" expression ")"
  * path       := id ( "." id )*                       // "." = link/binding hop
  * function   := "sum" | "count" | "avg" | "min" | "max" "(" expression ")"
@@ -19,7 +19,7 @@
  *
  * A bare integer that **matches a field id in the table's schema** is that
  * field's value (ids are locative); a bare integer that matches no field id
- * is an integer literal. This is what makes both `sum(4, 3.4)` (id 4 =
+ * is an integer literal. This is what makes both `sum(4 * 3.4)` (id 4 =
  * quantity) and `314 / 100` (no such ids) usable.
  *
  * Compiled expressions are persisted with the schema as
@@ -104,7 +104,7 @@ const FN_NAMES: ComputedFunctionName[] = ["sum", "count", "avg", "min", "max"];
 type Token =
 	| { t: "num"; v: number }
 	| { t: "ident"; v: string }
-	| { t: "op"; v: "+" | "-" | "," | "/" | "%" }
+	| { t: "op"; v: "+" | "-" | "*" | "/" | "%" }
 	| { t: "dot" }
 	| { t: "lp" }
 	| { t: "rp" }
@@ -158,7 +158,7 @@ function tokenize(source: string): Token[] {
 				continue;
 			case "+":
 			case "-":
-			case ",":
+			case "*":
 			case "/":
 			case "%":
 				tokens.push({ t: "op", v: ch });
@@ -223,9 +223,9 @@ export function parseExpression(
 	const term = (): RawExpressionNode => {
 		enter();
 		let left = factor();
-		while (peek().t === "op" && [",", "/", "%"].includes((peek() as any).v)) {
-			const op = (next() as { t: "op"; v: "," | "/" | "%" }).v;
-			const binOp: BinaryOp = op === "," ? "mul" : op === "/" ? "div" : "mod";
+		while (peek().t === "op" && ["*", "/", "%"].includes((peek() as any).v)) {
+			const op = (next() as { t: "op"; v: "*" | "/" | "%" }).v;
+			const binOp: BinaryOp = op === "*" ? "mul" : op === "/" ? "div" : "mod";
 			left = { kind: "bin", op: binOp, left, right: factor() };
 		}
 		leave();
@@ -449,7 +449,7 @@ async function resolveNode(
 		case "num":
 			// A bare integer that matches an existing field id is that field
 			// (ids are locative, inside helpers included — this is what makes
-			// `sum(5, 4.2)` and `sum(5, 6)` usable); any other bare integer is
+			// `sum(5 * 4.2)` and `sum(5 * 6)` usable); any other bare integer is
 			// an integer literal (`314 / 100`).
 			if (ctx.index.has(node.value))
 				return resolvePathNode(

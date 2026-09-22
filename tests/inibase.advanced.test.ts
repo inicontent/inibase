@@ -1472,8 +1472,8 @@ await test("Computed fields (v1 id-only expression language)", async (t) => {
 			},
 			// ids: customer=1, status=2, items=3, product=4, quantity=5,
 			// unitPriceCents=6, totalCents=7, totalCentsLive=8
-			{ key: "totalCents", type: "number", computed: "sum(5, 6)" },
-			{ key: "totalCentsLive", type: "number", computed: "sum(5, 4.2)" },
+			{ key: "totalCents", type: "number", computed: "sum(5 * 6)" },
+			{ key: "totalCentsLive", type: "number", computed: "sum(5 * 4.2)" },
 		]);
 
 		const p1 = (await inibase.post("c_product", { name: "widget", price: 199 }, undefined, true)) as Row;
@@ -1516,7 +1516,7 @@ await test("Computed fields (v1 id-only expression language)", async (t) => {
 				],
 			},
 			// ids: customer=1, items=2, product=3, quantity=4, total=5
-			{ key: "total", type: "number", computed: "sum(4, 3.2)" },
+			{ key: "total", type: "number", computed: "sum(4 * 3.2)" },
 		]);
 
 		// Shared catalog: every order below links back to these few rows, so
@@ -1595,7 +1595,7 @@ await test("Computed fields (v1 id-only expression language)", async (t) => {
 		await inibase.createTable("c_put", [
 			{ key: "qty", type: "number" },
 			{ key: "price", type: "number" },
-			{ key: "total", type: "number", computed: "1, 2" },
+			{ key: "total", type: "number", computed: "1 * 2" },
 		]);
 		await seed("c_put", [
 			{ qty: 1, price: 10 },
@@ -1760,8 +1760,8 @@ await test("Computed fields (v1 id-only expression language)", async (t) => {
 			{ key: "p1", type: "number" },
 			{ key: "p2", type: "number" },
 			{ key: "p3", type: "number" },
-			{ key: "x", type: "number", computed: "2 , 3 + 4" },
-			{ key: "y", type: "number", computed: "2 , (3 + 4)" },
+			{ key: "x", type: "number", computed: "2 * 3 + 4" },
+			{ key: "y", type: "number", computed: "2 * (3 + 4)" },
 			{ key: "w", type: "number", computed: "97 % 10" },
 			{ key: "d", type: "number", computed: "2 / 3" },
 		]);
@@ -1791,7 +1791,7 @@ await test("Computed fields (v1 id-only expression language)", async (t) => {
 		// add a computed field: existing rows get backfilled values
 		await inibase.updateTable(tableName, [
 			...(await userSchema(tableName)),
-			{ key: "total", type: "number", computed: "1, 2" },
+			{ key: "total", type: "number", computed: "1 * 2" },
 		]);
 		let rows = (await inibase.get<Row>(tableName)) as Row[];
 		assert.deepEqual(rows.map((r) => r.total), [6, 20], "backfilled totals");
@@ -1800,7 +1800,7 @@ await test("Computed fields (v1 id-only expression language)", async (t) => {
 		// changing the expression re-backfills
 		await inibase.updateTable(tableName, [
 			...(await userSchema(tableName)).map((f) =>
-				f.key === "total" ? { ...f, computed: "1, 2, 2" } : f,
+				f.key === "total" ? { ...f, computed: "1 * 2 * 2" } : f,
 			),
 		]);
 		rows = (await inibase.get<Row>(tableName)) as Row[];
@@ -1817,13 +1817,13 @@ await test("Computed fields (v1 id-only expression language)", async (t) => {
 		await seed(tableName, [{ a: 5 }]);
 		const before = await userSchema(tableName);
 
-		// `1, 2` = a * b but b has no backing column yet: backfill arithmetic error
+		// `1 * 2` = a * b but b has no backing column yet: backfill arithmetic error
 		await assert.rejects(
 			() =>
 				inibase.updateTable(tableName, [
 					...before,
 					{ key: "b", type: "number" },
-					{ key: "s", type: "number", computed: "1, 2" },
+					{ key: "s", type: "number", computed: "1 * 2" },
 				]),
 			(error: unknown) => (error as Error).name === "COMPUTED_FIELD_ARITHMETIC",
 		);
