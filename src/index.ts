@@ -5053,11 +5053,13 @@ export default class Inibase {
 		tableName: string,
 		columns: string,
 		where?: number | string | (number | string)[] | Criteria,
+		options?: AggregateOptions,
 	): Promise<number>;
 	sum(
 		tableName: string,
 		columns: string[],
 		where?: number | string | (number | string)[] | Criteria,
+		options?: AggregateOptions,
 	): Promise<Record<string, number>>;
 	public async sum(
 		tableName: string,
