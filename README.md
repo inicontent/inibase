@@ -798,6 +798,20 @@ await db.sum("user", "age");
 
 // get the sum of column "age" by criteria (where "isActive" is equal to "false") in "user" table
 await db.sum("user", ["age", ...], { isActive: false });
+
+// aggregate over the elements of an array-of-objects column: `items.quantity`
+// counts every element of every row's `items` (single array path per call;
+// `product` here is an *element* predicate, matching elements whose linked
+// product is the given row)
+await db.sum("orders", "items.quantity", { product: "id-of-widget" }, { nested: true });
+
+// multiple columns share one predicate and return a record
+await db.sum(
+	"orders",
+	["items.quantity", "items.lineTotal"],
+	{ product: "id-of-widget" },
+	{ nested: true },
+); // => { "items.quantity": 5, "items.lineTotal": 1295 }
 ```
 
 </blockquote>
@@ -910,6 +924,68 @@ const posted = await db.post(
 // posted.totalCentsLive === 847  (2*price(widget) + 1*price(gadget))
 ```
 
+A child of an array-of-objects column can itself be computed. It is evaluated
+once **per element** and stored in its own element cell, so it works like any
+other element child in queries — including `sum` with `{ nested: true }`:
+
+```ts
+// ids are assigned per table in schema order: status=1, items=2, product=3,
+// quantity=4, lineTotal=5
+await db.createTable("orders", [
+	{ key: "status", type: "number" },
+	{
+		key: "items",
+		type: "array",
+		children: [
+			{ key: "product", type: "table", table: "product" },
+			{ key: "quantity", type: "number" },
+			// lineTotal = quantity × product.price  ("4 * 3.2": id 4 = quantity,
+			// hop to the linked product's price, id 2 in `product`)
+			{ key: "lineTotal", type: "number", computed: "4 * 3.2" },
+		],
+	},
+]);
+
+const posted = await db.post(
+	"orders",
+	{
+		status: 1,
+		items: [
+			{ product: "id-of-widget", quantity: 2 },
+			{ product: "id-of-gadget", quantity: 1 },
+		],
+	},
+	undefined,
+	true,
+);
+// posted.items[0].lineTotal === 2 * price(widget)
+// posted.items[1].lineTotal === 1 * price(gadget)
+
+// per-product revenue without touching the line items yourself:
+await db.sum("orders", "items.lineTotal", { product: "id-of-widget" }, { nested: true });
+```
+
+A top-level computed may read a computed child through a helper
+(`{ key: "totalCents", type: "number", computed: "sum(5)" }`) — the children
+are derived first, in dependency order.
+
+**Element expressions (child computeds).**
+
+- Every reference must be a sibling child of the same array root — top-level
+  columns and siblings of a *different* array are rejected
+  (`COMPUTED_FIELD_INVALID_TARGET`), and helpers (`sum`/`avg`/...) are not
+  allowed inside element expressions.
+- Link hops are supported (`4 * 3.2` = sibling `quantity` × linked
+  `product.price`).
+- The element field must be `type: "number"`.
+- A **missing/null** operand in an element evaluates to `0` for that element
+  (it never aborts the write and never stores null). A genuinely dangling link
+  (a link to a missing row) still raises `COMPUTED_FIELD_DANGLING_LINK`, same
+  as top-level computeds.
+- `updateTable` backfills element cells when a child computed is added or its
+  expression changes; the backfill resolves links from the persisted element
+  values and follows the same missing-operand → `0` rule.
+
 **Expression language (v1, integer-only).**
 
 - Operators: `+` `-` `*` `/` `%`; `( )` for grouping. Multiplication
@@ -941,10 +1017,14 @@ const posted = await db.post(
   `avg`/`min`/`max` over no values throw `COMPUTED_FIELD_ARITHMETIC`.
 - Non-numeric operands, division/modulo by zero, and arithmetic over missing
   (null) values throw `COMPUTED_FIELD_ARITHMETIC`; a link to a missing row
-  throws `COMPUTED_FIELD_DANGLING_LINK`.
-- Only top-level schema fields can be computed in v1; array contents are
-  reachable through helpers. Missing link values make a single bare path
-  evaluate to null (stored empty).
+  throws `COMPUTED_FIELD_DANGLING_LINK`. (Element expressions are the one
+  exception: a missing/null operand there evaluates that element to `0` — see
+  above.)
+- Child computeds (see above) extend the v1 rules to element fields of
+  array-of-objects columns; array contents stay reachable from top-level
+  helpers. Only one level of nesting is computed.
+- Missing link values make a single bare path evaluate to null (stored
+  empty).
 
 </blockquote>
 </details>

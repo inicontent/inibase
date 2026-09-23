@@ -84,6 +84,17 @@ export interface Options {
 		| string;
 }
 
+/** Options for the aggregate actions (`sum`, and later avg/min/max). */
+export interface AggregateOptions {
+	/**
+	 * Aggregate over the *elements* of an array-of-objects column instead of
+	 * whole rows. The summed columns must be single-level child paths of the
+	 * same array root (e.g. `"items.quantity"`); `where` keys that resolve as
+	 * children of that root become per-element predicates.
+	 */
+	nested?: boolean;
+}
+
 export interface TableConfig {
 	compression?: boolean;
 	cache?: boolean;
@@ -209,10 +220,22 @@ interface ComputedPlan {
 
 interface ComputedPlanField {
 	id: number;
+	/** Column path the field flattens to: bare key for top-level computed
+	 *  fields, dotted (`items.lineTotal`) for element computed fields. */
 	key: string;
 	ast: CompiledExpressionNode;
 	deps: Set<number>;
+	/** Set for computed *children* of an array-of-objects field: the field is
+	 *  evaluated per element of that array (frame = element, strip =
+	 *  `${root.key}.`), not per row. */
+	elementRoot?: { id: number; key: string } | null;
 }
+
+/**
+ * Values an evaluation pass produces for one line. Element computed fields
+ * contribute their per-element array under the dotted column key.
+ */
+type ComputedLineValues = Record<string, number | string | null | (number | string | null)[]>;
 
 /** Per-node evaluation environment (frame-aware). */
 interface ComputedEvalEnv {
@@ -241,6 +264,9 @@ interface ComputedEvalEnv {
 	 *  arithmetic over them is not an error — the pass exists solely to
 	 *  discover which linked rows the batch needs. */
 	collect?: boolean;
+	/** Element computed evaluation: missing (null) operands are read as `0`
+	 *  instead of raising `COMPUTED_FIELD_ARITHMETIC`. */
+	nullAsZero?: boolean;
 }
 
 /**
@@ -683,19 +709,16 @@ export default class Inibase {
 			// failed migration (dangling link, arithmetic error, unknown
 			// field, ...) leaves the old schema and column values untouched.
 			const oldComputed = new Map(
-				(table.schema ?? [])
-					.filter((field) => typeof field.computed !== "undefined")
-					.map((field) => [field.key, this.computedExprOf(field)]),
+				this.computedEntries(table.schema ?? []).map(({ key, expr }) => [
+					key,
+					expr,
+				]),
 			);
 			const changedComputedKeys = new Set(
 				totalLines > 0
-					? schema
-							.filter(
-								(field) =>
-									typeof field.computed !== "undefined" &&
-									oldComputed.get(field.key) !== this.computedExprOf(field),
-							)
-							.map((field) => field.key)
+					? this.computedEntries(schema)
+							.filter(({ key, expr }) => oldComputed.get(key) !== expr)
+							.map(({ key }) => key)
 					: [],
 			);
 			const backfillReplacers = changedComputedKeys.size
@@ -1643,44 +1666,120 @@ export default class Inibase {
 	}
 
 	/**
+	 * Every computed field of a schema as dotted keys (computed children of an
+	 * array-of-objects column use their full path, e.g. `items.lineTotal`),
+	 * with its raw expression — used for updateTable change detection.
+	 */
+	private computedEntries(
+		schema: Schema,
+	): { key: string; expr: string }[] {
+		const out: { key: string; expr: string }[] = [];
+		const walk = (fields: Schema, prefix: string): void => {
+			for (const field of fields) {
+				const key = prefix ? `${prefix}.${field.key}` : field.key;
+				if (typeof field.computed !== "undefined")
+					out.push({ key, expr: this.computedExprOf(field) });
+				if (field.children && Utils.isArrayOfObjects(field.children))
+					walk(field.children, key);
+			}
+		};
+		walk(schema, "");
+		return out;
+	}
+
+	/**
 	 * Compile every `computed` expression of a schema (which must already have
 	 * ids assigned) into its persisted `{ expr, ast }` form, in dependency
 	 * order. Throws `COMPUTED_FIELD_CYCLE` on cyclic fields. Used by DDL so the
 	 * on-disk schema always carries compiled ASTs.
 	 */
 	private async compileComputedFields(schema: Schema): Promise<Schema> {
-		const computedFields = schema.filter(
-			(field) => typeof field.computed !== "undefined",
-		);
-		if (!computedFields.length) return schema;
-
+		const entries: {
+			field: Field;
+			key: string;
+			elementRoot: { id: number; key: string } | null;
+		}[] = [];
 		const index = buildFieldIndex(schema);
+		const walk = (fields: Schema, prefix: string): void => {
+			for (const field of fields) {
+				const key = prefix ? `${prefix}.${field.key}` : field.key;
+				if (typeof field.computed !== "undefined") {
+					const ref = index.get(field.id as number);
+					entries.push({
+						field,
+						key,
+						elementRoot: ref?.arrayAncestor
+							? { id: ref.arrayAncestor.id, key: ref.arrayAncestor.key }
+							: null,
+					});
+				}
+				if (field.children && Utils.isArrayOfObjects(field.children))
+					walk(field.children, key);
+			}
+		};
+		walk(schema, "");
+		if (!entries.length) return schema;
+
 		const ctx: ResolveContext = {
 			language: this.language,
 			ownKey: "",
 			index,
 			getTableIndex: async (target: string) => this.tableFieldIndex(target),
+			elementContext: null,
 		};
 
 		const resolved: {
 			field: Field;
+			key: string;
+			elementRoot: { id: number; key: string } | null;
 			ast: CompiledExpressionNode;
 			deps: Set<number>;
 		}[] = [];
-		for (const field of computedFields) {
-			// Computed fields are evaluated from the row of the table they
-			// belong to, so v1 restricts them to top-level schema fields.
-			const ref = index.get(field.id as number);
-			if (!ref || ref.arrayAncestor)
-				throw this.createError("COMPUTED_FIELD_INVALID_TARGET", field.key);
-			ctx.ownKey = field.key;
+		for (const entry of entries) {
+			const ref = index.get(entry.field.id as number);
+			if (!ref)
+				throw this.createError(
+					"COMPUTED_FIELD_INVALID_TARGET",
+					entry.key,
+				);
+			if (entry.elementRoot) {
+				// Element computed field (a child of an array-of-objects
+				// column): must hold a plain value (never a container), and v1
+				// keeps them numeric so writes are always summable.
+				if (
+					(ref.nestedInArrayOfArrays && ref.arrayAncestor) ||
+					entry.field.type !== "number"
+				)
+					throw this.createError(
+						"COMPUTED_FIELD_INVALID_TARGET",
+						entry.key,
+					);
+				ctx.elementContext = {
+					arrayRootId: entry.elementRoot.id,
+				};
+			} else {
+				// Top-level computed field: cannot live inside an array.
+				if (ref.arrayAncestor)
+					throw this.createError(
+						"COMPUTED_FIELD_INVALID_TARGET",
+						entry.key,
+					);
+				ctx.elementContext = null;
+			}
+			ctx.ownKey = entry.key;
 			const raw = parseExpression(
-				this.computedExprOf(field),
+				this.computedExprOf(entry.field),
 				this.language,
-				field.key,
+				entry.key,
 			);
 			const { ast, deps } = await resolveExpression(raw, ctx);
-			resolved.push({ field, ast, deps });
+			resolved.push({
+				field: entry.field,
+				key: entry.key,
+				elementRoot: entry.elementRoot,
+				ast,
+				deps,
+			});
 		}
 
 		const ordered = topoSortComputedFields(
@@ -1696,16 +1795,27 @@ export default class Inibase {
 		for (const meta of ordered) {
 			const entry = resolved.find(({ field }) => field.id === meta.id);
 			if (!entry) continue;
-			specByKey.set(meta.key, {
+			specByKey.set(entry.key, {
 				expr: this.computedExprOf(entry.field),
 				ast: entry.ast,
 			});
 		}
-		return schema.map((field) =>
-			typeof field.computed !== "undefined"
-				? { ...field, computed: specByKey.get(field.key) }
-				: field,
-		);
+		const applySpecs = (fields: Schema, prefix: string): Schema =>
+			fields.map((field) => {
+				const key = prefix ? `${prefix}.${field.key}` : field.key;
+				let next: Field = field;
+				if (typeof field.computed !== "undefined") {
+					const spec = specByKey.get(key);
+					if (spec) next = { ...field, computed: spec };
+				}
+				if (field.children && Utils.isArrayOfObjects(field.children))
+					next = {
+						...next,
+						children: applySpecs(field.children, key),
+					};
+				return next;
+			});
+		return applySpecs(schema, "");
 	}
 
 	/**
@@ -1735,6 +1845,7 @@ export default class Inibase {
 			language: this.language,
 			ownKey: "",
 			index,
+			elementContext: null,
 			getTableIndex: async (target: string) => {
 				let cached = indexCache.get(target);
 				if (!cached) {
@@ -1745,27 +1856,45 @@ export default class Inibase {
 			},
 		};
 
-		for (const field of s) {
-			if (typeof field.computed === "undefined") continue;
-			const computed = field.computed as string | ComputedFieldSpec;
-			if (typeof computed === "string") {
-				ctx.ownKey = field.key;
-				const raw = parseExpression(computed, this.language, field.key);
-				const { ast, deps } = await resolveExpression(raw, ctx);
-				fields.push({
-					id: field.id as number,
-					key: field.key,
-					ast,
-					deps,
-				});
-			} else
-				fields.push({
-					id: field.id as number,
-					key: field.key,
-					ast: computed.ast,
-					deps: collectFieldDeps(computed.ast),
-				});
-		}
+		// Collect every computed field: top-level ones and, when a schema
+		// carries them, the computed children of array-of-objects columns.
+		const walk = async (fieldsSchema: Schema, prefix: string): Promise<void> => {
+			for (const field of fieldsSchema) {
+				const key = prefix ? `${prefix}.${field.key}` : field.key;
+				if (typeof field.computed !== "undefined") {
+					const ref = index.get(field.id as number);
+					const elementRoot = ref?.arrayAncestor
+						? { id: ref.arrayAncestor.id, key: ref.arrayAncestor.key }
+						: null;
+					const computed = field.computed as string | ComputedFieldSpec;
+					if (typeof computed === "string") {
+						ctx.ownKey = key;
+						ctx.elementContext = elementRoot
+							? { arrayRootId: elementRoot.id }
+							: null;
+						const raw = parseExpression(computed, this.language, key);
+						const { ast, deps } = await resolveExpression(raw, ctx);
+						fields.push({
+							id: field.id as number,
+							key,
+							ast,
+							deps,
+							elementRoot,
+						});
+					} else
+						fields.push({
+							id: field.id as number,
+							key,
+							ast: computed.ast,
+							deps: collectFieldDeps(computed.ast),
+							elementRoot,
+						});
+				}
+				if (field.children && Utils.isArrayOfObjects(field.children))
+					await walk(field.children, key);
+			}
+		};
+		await walk(s, "");
 		if (!fields.length) {
 			if (schema === undefined) this.computedPlanCache.set(tableName, null);
 			return null;
@@ -1812,8 +1941,8 @@ export default class Inibase {
 		tableName: string,
 		plan: ComputedPlan,
 		rows: Record<number, Data>,
-	): Promise<Record<number, Record<string, number | string | null>>> {
-		const out: Record<number, Record<string, number | string | null>> = {};
+	): Promise<Record<number, ComputedLineValues>> {
+		const out: Record<number, ComputedLineValues> = {};
 		const indexCache = new Map<string, Map<number, FieldRef>>([
 			[tableName, plan.index],
 		]);
@@ -1857,8 +1986,8 @@ export default class Inibase {
 		indexCache: Map<string, Map<number, FieldRef>>,
 		links?: LinkedRowReader,
 		collect = false,
-	): Promise<Record<string, number | string | null>> {
-		const out: Record<string, number | string | null> = {};
+	): Promise<ComputedLineValues> {
+		const out: ComputedLineValues = {};
 		// One structured frame per row, shared by every computed field: paths
 		// resolve against the row in place (direct key-path reads), so no
 		// flattened copy is ever built. Freshly evaluated values are written
@@ -1876,6 +2005,42 @@ export default class Inibase {
 			collect,
 		};
 		for (const field of plan.fields) {
+			if (field.elementRoot) {
+				// Element computed field (child of an array-of-objects column):
+				// evaluate once per element (frame = element, strip =
+				// `${rootKey}.`), write back into the element so other computed
+				// fields and the flatten pass see it, and report the
+				// per-element array under the dotted column key. Missing
+				// operands read as 0 (`env.nullAsZero`), never an error.
+				const rootKey = field.elementRoot.key;
+				const childKey = field.key.slice(rootKey.length + 1);
+				const elements = Array.isArray(env.row[rootKey])
+					? (env.row[rootKey] as Data[])
+					: [];
+				const savedFrame = env.frame;
+				const savedStrip = env.strip;
+				const savedNullAsZero = env.nullAsZero;
+				env.strip = `${rootKey}.`;
+				env.ownKey = field.key;
+				env.nullAsZero = true;
+				const values: (number | string | null)[] = [];
+				for (const element of elements) {
+					if (!Utils.isObject(element)) {
+						values.push(0);
+						continue;
+					}
+					env.frame = element;
+					const value = await this.evaluateNode(field.ast, env);
+					const written = value === null || value === undefined ? 0 : value;
+					element[childKey] = written;
+					values.push(written);
+				}
+				env.frame = savedFrame;
+				env.strip = savedStrip;
+				env.nullAsZero = savedNullAsZero;
+				out[field.key] = values;
+				continue;
+			}
 			env.strip = "";
 			env.ownKey = field.key;
 			const value = await this.evaluateNode(field.ast, env);
@@ -1897,7 +2062,14 @@ export default class Inibase {
 			case "bin": {
 				const a = await this.evaluateNode(node.left, env);
 				const b = await this.evaluateNode(node.right, env);
-				return this.applyBinaryOp(node.op, a, b, env.ownKey, env.collect);
+				return this.applyBinaryOp(
+					node.op,
+					a,
+					b,
+					env.ownKey,
+					env.collect,
+					env.nullAsZero,
+				);
 			}
 			case "fn": {
 				const arrayRef = env.index.get(node.arrayFieldId);
@@ -1967,7 +2139,12 @@ export default class Inibase {
 				value = resolveFramePath(frame, key);
 				strip = "";
 			} else {
-				// `value` is the id of the row this hop lives in.
+				// `value` is the id of the row this hop lives in. Rows that
+				// came off disk are eagerly resolved by processSchemaData, so
+				// table children may already be linked objects — unwrap those
+				// back to their id before the hop lookup. Nothing else hops.
+				if (typeof value === "object" && value !== null)
+					value = (value as Data & { id?: unknown }).id;
 				if (
 					value === undefined ||
 					value === null ||
@@ -1988,10 +2165,7 @@ export default class Inibase {
 						? (env.links.record(table, ref.key, value), null)
 						: await env.links.read(table, ref.key, value)
 					: await this.readLinkedRow(table, value, ref.key);
-				if (
-					!env.collect &&
-					(row === undefined || row === null)
-				)
+				if (!env.collect && (row === undefined || row === null))
 					throw this.createError("COMPUTED_FIELD_DANGLING_LINK", [
 						env.ownKey,
 						table,
@@ -2062,17 +2236,26 @@ export default class Inibase {
 		b: number | string | null,
 		ownKey: string,
 		collect = false,
+		nullAsZero = false,
 	): number {
 		if (a === null || a === undefined || b === null || b === undefined) {
 			// Collection passes must tolerate unresolved (null) link hops:
 			// the pass only discovers which links are needed, so a neutral
 			// result is fine. Real evaluation still throws.
 			if (collect) return 0;
+			// Element computed evaluation treats a missing operand as the
+			// value 0 (per the element-sum feature), so a single missing
+			// child never aborts the write.
+			if (nullAsZero) {
+				if (a === null || a === undefined) a = 0;
+				if (b === null || b === undefined) b = 0;
+			}
+		}
+		if (a === null || a === undefined || b === null || b === undefined)
 			throw this.createError("COMPUTED_FIELD_ARITHMETIC", [
 				ownKey,
 				"missing or null operand",
 			]);
-		}
 		const an = this.coerceNumber(a, ownKey);
 		const bn = this.coerceNumber(b, ownKey);
 		switch (op) {
@@ -2153,7 +2336,7 @@ export default class Inibase {
 	private mergeComputedLineRecords(
 		tableName: string,
 		plan: ComputedPlan,
-		evaluated: Record<number, Record<string, number | string | null>>,
+		evaluated: Record<number, ComputedLineValues>,
 		pathesContents: Record<string, any>,
 		existing?: Record<number, Data>,
 	): void {
@@ -2171,9 +2354,10 @@ export default class Inibase {
 			if (existing) {
 				let matches = true;
 				for (const [line, values] of entries) {
+					if (!Object.hasOwn(values, field.key)) continue;
+					const lineValue = values[field.key] as number | string | null;
 					const old = existing[Number(line)]?.[field.key];
-					const fresh = File.encode(values[field.key]);
-					if (old === undefined || File.encode(old) !== fresh) {
+					if (old === undefined || !this.sameCellValue(lineValue, old)) {
 						matches = false;
 						break;
 					}
@@ -2186,9 +2370,31 @@ export default class Inibase {
 					string | number | boolean | null
 				>) ?? {};
 			for (const [line, values] of entries)
-				content[Number(line)] = File.encode(values[field.key]);
+				if (Object.hasOwn(values, field.key) && values[field.key] !== undefined)
+					content[Number(line)] = File.encode(
+						values[field.key] as number | string | null,
+					);
 			pathesContents[path] = content;
 		}
+	}
+
+	/** Compare a freshly evaluated cell value against a stored (already
+	 *  decoded) one — both are scalar or index-aligned element arrays. */
+	private sameCellValue(
+		fresh: number | string | null,
+		stored: unknown,
+	): boolean {
+		if (fresh === stored) return true;
+		if (
+			Array.isArray(fresh) &&
+			Array.isArray(stored) &&
+			fresh.length === stored.length
+		) {
+			for (let i = 0; i < fresh.length; i++)
+				if (fresh[i] !== stored[i]) return false;
+			return true;
+		}
+		return File.encode(fresh) === File.encode(stored as any);
 	}
 
 	// Helper function to determine if a field is simple
@@ -4377,10 +4583,7 @@ export default class Inibase {
 							Object.entries(row).filter(([, v]) => v !== "undefined"),
 						),
 					);
-					const evaluated: Record<
-						number,
-						Record<string, number | string | null>
-					> = {};
+					const evaluated: Record<number, ComputedLineValues> = {};
 					const indexCache = new Map<string, Map<number, FieldRef>>([
 						[tableName, computedPlan.index],
 					]);
@@ -4860,15 +5063,30 @@ export default class Inibase {
 		tableName: string,
 		columns: string | string[],
 		where?: number | string | (number | string)[] | Criteria,
+		options?: AggregateOptions,
 	): Promise<number | Record<string, number>> {
 		this.validateName(tableName);
 
 		if (!Array.isArray(columns)) columns = [columns];
-		for (const column of columns) this.validateName(column);
+		for (const column of columns) {
+			// Nested columns are dotted child paths (validated structurally by
+			// `sumNested`); everything else must be a plain safe name.
+			if (!options?.nested) this.validateName(column);
+		}
 
 		await this.throwErrorIfTableEmpty(tableName);
 		const RETURN: Record<string, number> = {};
 		const tablePath = join(this.databasePath, tableName);
+
+		if (options?.nested) {
+			const nested = await this.sumNested(
+				tableName,
+				columns,
+				where,
+				tablePath,
+			);
+			return columns.length > 1 ? nested : Object.values(nested)[0];
+		}
 
 		for await (const column of columns) {
 			const columnPath = join(
@@ -4877,10 +5095,12 @@ export default class Inibase {
 			);
 			if (await File.isExists(columnPath)) {
 				if (where) {
+					// `{ perPage: -1 }` so criteria matching is never capped by
+					// the default page size (15): every matching row counts.
 					const lineNumbers = await this.get(
 						tableName,
 						where,
-						undefined,
+						{ perPage: -1 },
 						undefined,
 						true,
 					);
@@ -4892,6 +5112,202 @@ export default class Inibase {
 			}
 		}
 		return columns.length > 1 ? RETURN : Object.values(RETURN)[0];
+	}
+
+	/**
+	 * Element-wise aggregation over an array-of-objects column (`nested` mode).
+	 *
+	 * `where` keys that resolve as children of the array root become per-element
+	 * predicates (AND); everything else is a row-level filter. Only elements
+	 * passing every element predicate, inside rows passing the row filters, are
+	 * accumulated.
+	 */
+	private async sumNested(
+		tableName: string,
+		columns: string[],
+		where?: number | string | (number | string)[] | Criteria,
+		tablePath?: string,
+	): Promise<Record<string, number>> {
+		const tablePathSafe = tablePath ?? join(this.databasePath, tableName);
+		const schema =
+			globalConfig[this.databasePath].tables?.get(tableName)?.schema ?? [];
+		const RETURN: Record<string, number> = {};
+
+		// Resolve the array-of-objects root from the summed columns (v1: exactly
+		// one nesting level, e.g. "items.quantity" -> root "items").
+		let rootKey: string | null = null;
+		let rootField: Field | null = null;
+		const targetFields = new Map<string, Field>();
+		for (const column of columns) {
+			const dot = column.indexOf(".");
+			if (dot <= 0 || dot === column.length - 1 || column.indexOf(".", dot + 1) !== -1)
+				throw this.createError("INVALID_PARAMETERS", [
+					`sum nested: '${column}' must be a single-level child path of an array-of-objects column`,
+				]);
+			const rk = column.slice(0, dot);
+			if (rootKey !== null && rk !== rootKey)
+				throw this.createError("INVALID_PARAMETERS", [
+					"sum nested: all summed columns must share the same array root",
+				]);
+			rootKey = rk;
+			// NB: `getField` on a single segment that resolves to an
+			// array-of-objects field returns its *first child*, so resolve the
+			// root field directly from the top-level schema.
+			rootField = schema.find((f) => f.key === rk) ?? null;
+			const okRoot =
+				rootField &&
+				rootField.type === "array" &&
+				Array.isArray(rootField.children) &&
+				Utils.isArrayOfObjects(rootField.children);
+			if (!okRoot)
+				throw this.createError("INVALID_PARAMETERS", [
+					`sum nested: '${rk}' is not an array-of-objects column`,
+				]);
+			const child = Utils.getField(column, schema) as Field | null;
+			if (!child || child.type === "array" || child.type === "object")
+				throw this.createError("INVALID_PARAMETERS", [
+					`sum nested: '${column}' does not resolve to a scalar child`,
+				]);
+			targetFields.set(column, child);
+		}
+		if (!rootKey) return RETURN;
+
+		// Split `where` into element predicates (children of the root) and a
+		// row-level filter (everything else, incl. `and`/`or` groups).
+		const elementPredicates: {
+			field: Field;
+			operator: ComparisonOperator;
+			comparedValue:
+				| string
+				| number
+				| boolean
+				| null
+				| (string | number | boolean | null)[];
+		}[] = [];
+		const rowWhere: Criteria = {};
+		let idWhere: number | string | (number | string)[] | undefined;
+		if (where && Utils.isObject(where)) {
+			for (const [key, value] of Object.entries(where as Record<string, any>)) {
+				if (key === "and" || key === "or") {
+					rowWhere[key] = value;
+					continue;
+				}
+				const candidate = key.startsWith(`${rootKey}.`)
+					? key
+					: `${rootKey}.${key}`;
+				const child = Utils.getField(candidate, schema) as Field | null;
+				if (child) {
+					if (Utils.isObject(value))
+						throw this.createError("INVALID_PARAMETERS", [
+							`sum nested: element predicate '${key}' must be a scalar, not an object`,
+						]);
+					const [operator, comparedValue] =
+						typeof value === "string"
+							? Utils.FormatObjectCriteriaValue(value)
+							: (["=", value] as [
+									ComparisonOperator,
+									string | number | boolean | null,
+								]);
+					if (operator === "[]" || operator === "![]")
+						throw this.createError("INVALID_PARAMETERS", [
+							`sum nested: operator '${operator}' is not supported on element predicates`,
+						]);
+					elementPredicates.push({
+						field: child,
+						operator,
+						comparedValue,
+					});
+				} else {
+					if (!Utils.getField(key, schema))
+						throw this.createError("INVALID_PARAMETERS", [
+							`sum nested: criteria key '${key}' matches neither the array root nor a row column`,
+						]);
+					rowWhere[key] = value;
+				}
+			}
+		} else if (
+			typeof where === "number" ||
+			typeof where === "string" ||
+			Array.isArray(where)
+		) {
+			idWhere = where;
+		}
+
+		// Row-level narrowing (ids or criteria). `undefined` lines = whole file.
+		let lines: number[] | null | undefined;
+		if (idWhere !== undefined)
+			lines = (await this.get(tableName, idWhere, { perPage: -1 }, undefined, true)) as
+				| number[]
+				| null;
+		else if (Object.keys(rowWhere).length)
+			lines = (await this.get(tableName, rowWhere, { perPage: -1 }, undefined, true)) as
+				| number[]
+				| null;
+		if (lines === null) {
+			for (const column of columns) RETURN[column] = 0;
+			return RETURN;
+		}
+
+		const fieldOpt = (field: Field): Field & { databasePath?: string } => ({
+			...field,
+			databasePath: this.databasePath,
+		});
+		const ext = this.getFileExtension(tableName);
+
+		// Element predicate cells, read once for every summed column.
+		const predCells = new Map<
+			string,
+			Record<number, any> | null
+		>();
+		for (const p of elementPredicates) {
+			const path = join(
+				tablePathSafe,
+				`${rootKey}.${p.field.key}${ext}`,
+			);
+			if (!(await File.isExists(path))) continue;
+			const cell = (await File.get(path, lines, fieldOpt(p.field))) as
+				| Record<number, any>
+				| null;
+			if (cell) predCells.set(p.field.key, cell);
+		}
+
+		for (const [column, child] of targetFields) {
+			const path = join(tablePathSafe, `${column}${ext}`);
+			if (!(await File.isExists(path))) {
+				RETURN[column] = 0;
+				continue;
+			}
+			const cell = (await File.get(path, lines, fieldOpt(child))) as
+				| Record<number, any>
+				| null;
+			if (!cell) {
+				RETURN[column] = 0;
+				continue;
+			}
+
+			let sum = 0;
+			for (const [lineStr, values] of Object.entries(cell)) {
+				if (!Array.isArray(values)) continue;
+				for (let i = 0; i < values.length; i++) {
+					const v = values[i];
+					if (v === null || v === undefined) continue;
+					let matches = true;
+					for (const p of elementPredicates) {
+						const pv = predCells.get(p.field.key)?.[Number(lineStr)]?.[i];
+						if (pv === undefined || !UtilsServer.compare(p.operator, pv, p.comparedValue, p.field.type)) {
+							matches = false;
+							break;
+						}
+					}
+					if (!matches) continue;
+					const num = Number(v);
+					if (Number.isNaN(num)) continue;
+					sum += num;
+				}
+			}
+			RETURN[column] = sum;
+		}
+		return RETURN;
 	}
 
 	/**
@@ -4936,7 +5352,7 @@ export default class Inibase {
 					const lineNumbers = await this.get(
 						tableName,
 						where,
-						undefined,
+						{ perPage: -1 },
 						undefined,
 						true,
 					);
@@ -4992,7 +5408,7 @@ export default class Inibase {
 					const lineNumbers = await this.get(
 						tableName,
 						where,
-						undefined,
+						{ perPage: -1 },
 						undefined,
 						true,
 					);
@@ -5047,7 +5463,7 @@ export default class Inibase {
 					const lineNumbers = await this.get(
 						tableName,
 						where,
-						undefined,
+						{ perPage: -1 },
 						undefined,
 						true,
 					);

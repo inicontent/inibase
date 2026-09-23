@@ -352,6 +352,13 @@ export interface ResolveContext {
 	getTableIndex: (
 		tableName: string,
 	) => Promise<Map<number, FieldRef> | undefined>;
+	/**
+	 * When set, the expression being compiled belongs to an *element* of the
+	 * array-of-objects field with this id (a child computed field). Every
+	 * referenced field must be a sibling child of that same array; top-level
+	 * fields and helpers are rejected.
+	 */
+	elementContext?: { arrayRootId: number } | null;
 }
 
 const isContainer = (field: Field): boolean =>
@@ -394,14 +401,26 @@ async function resolvePathNode(
 
 	const arrayFieldId: number | null = hop0.arrayAncestor?.id ?? null;
 
-	// A bare (non-helper) reference may only address fields outside arrays;
-	// array contents are reachable exclusively through sum/count/avg/min/max.
-	if (!inHelper && arrayFieldId !== null)
+	if (ctx.elementContext) {
+		// Child computed field: every reference must be a sibling child of the
+		// computed field's own array root (helpers that recurse into other
+		// arrays and reads of top-level columns are invalid here).
+		if (hop0.arrayAncestor?.id !== ctx.elementContext.arrayRootId)
+			throw createError(ctx.language, "COMPUTED_FIELD_INVALID_TARGET", [
+				ctx.ownKey,
+				ids[0],
+			]);
+		if (hop0.nestedInArrayOfArrays)
+			throw createError(ctx.language, "COMPUTED_FIELD_INVALID_TARGET", [
+				ctx.ownKey,
+				ids[0],
+			]);
+	} else if (!inHelper && arrayFieldId !== null)
 		throw createError(ctx.language, "COMPUTED_FIELD_INVALID_TARGET", [
 			ctx.ownKey,
 			ids[0],
 		]);
-	if (inHelper && hop0.arrayAncestor !== null && hop0.nestedInArrayOfArrays)
+	else if (inHelper && hop0.arrayAncestor !== null && hop0.nestedInArrayOfArrays)
 		throw createError(ctx.language, "COMPUTED_FIELD_INVALID_TARGET", [
 			ctx.ownKey,
 			ids[0],
@@ -470,7 +489,7 @@ async function resolveNode(
 			};
 		}
 		case "fn": {
-			if (inHelper)
+			if (inHelper || ctx.elementContext)
 				throw createError(ctx.language, "COMPUTED_FIELD_INVALID_TARGET", [
 					ctx.ownKey,
 				]);
