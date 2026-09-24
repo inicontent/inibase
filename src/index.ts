@@ -235,7 +235,10 @@ interface ComputedPlanField {
  * Values an evaluation pass produces for one line. Element computed fields
  * contribute their per-element array under the dotted column key.
  */
-type ComputedLineValues = Record<string, number | string | null | (number | string | null)[]>;
+type ComputedLineValues = Record<
+	string,
+	number | string | null | (number | string | null)[]
+>;
 
 /** Per-node evaluation environment (frame-aware). */
 interface ComputedEvalEnv {
@@ -510,6 +513,16 @@ export default class Inibase {
 		schema?: Schema,
 		config?: TableConfig,
 	) {
+		return File.runWithLockStore(() =>
+			this._createTable(tableName, schema, config),
+		);
+	}
+
+	private async _createTable(
+		tableName: string,
+		schema?: Schema,
+		config?: TableConfig,
+	) {
 		this.validateName(tableName);
 
 		// DDL does not participate in the write-ahead journal: schema surgery
@@ -599,6 +612,16 @@ export default class Inibase {
 	 * @param {(TableConfig&{name?: string})} [config]
 	 */
 	public async updateTable(
+		tableName: string,
+		schema?: Schema,
+		config?: TableConfig & { name?: string },
+	) {
+		return File.runWithLockStore(() =>
+			this._updateTable(tableName, schema, config),
+		);
+	}
+
+	private async _updateTable(
 		tableName: string,
 		schema?: Schema,
 		config?: TableConfig & { name?: string },
@@ -1670,9 +1693,7 @@ export default class Inibase {
 	 * array-of-objects column use their full path, e.g. `items.lineTotal`),
 	 * with its raw expression — used for updateTable change detection.
 	 */
-	private computedEntries(
-		schema: Schema,
-	): { key: string; expr: string }[] {
+	private computedEntries(schema: Schema): { key: string; expr: string }[] {
 		const out: { key: string; expr: string }[] = [];
 		const walk = (fields: Schema, prefix: string): void => {
 			for (const field of fields) {
@@ -1738,10 +1759,7 @@ export default class Inibase {
 		for (const entry of entries) {
 			const ref = index.get(entry.field.id as number);
 			if (!ref)
-				throw this.createError(
-					"COMPUTED_FIELD_INVALID_TARGET",
-					entry.key,
-				);
+				throw this.createError("COMPUTED_FIELD_INVALID_TARGET", entry.key);
 			if (entry.elementRoot) {
 				// Element computed field (a child of an array-of-objects
 				// column): must hold a plain value (never a container), and v1
@@ -1750,20 +1768,14 @@ export default class Inibase {
 					(ref.nestedInArrayOfArrays && ref.arrayAncestor) ||
 					entry.field.type !== "number"
 				)
-					throw this.createError(
-						"COMPUTED_FIELD_INVALID_TARGET",
-						entry.key,
-					);
+					throw this.createError("COMPUTED_FIELD_INVALID_TARGET", entry.key);
 				ctx.elementContext = {
 					arrayRootId: entry.elementRoot.id,
 				};
 			} else {
 				// Top-level computed field: cannot live inside an array.
 				if (ref.arrayAncestor)
-					throw this.createError(
-						"COMPUTED_FIELD_INVALID_TARGET",
-						entry.key,
-					);
+					throw this.createError("COMPUTED_FIELD_INVALID_TARGET", entry.key);
 				ctx.elementContext = null;
 			}
 			ctx.ownKey = entry.key;
@@ -1858,7 +1870,10 @@ export default class Inibase {
 
 		// Collect every computed field: top-level ones and, when a schema
 		// carries them, the computed children of array-of-objects columns.
-		const walk = async (fieldsSchema: Schema, prefix: string): Promise<void> => {
+		const walk = async (
+			fieldsSchema: Schema,
+			prefix: string,
+		): Promise<void> => {
 			for (const field of fieldsSchema) {
 				const key = prefix ? `${prefix}.${field.key}` : field.key;
 				if (typeof field.computed !== "undefined") {
@@ -3318,6 +3333,10 @@ export default class Inibase {
 	 * locked on first touch, in first-touch order.
 	 */
 	public async begin(tables: string[] = []): Promise<void> {
+		return File.runWithLockStore(() => this._begin(tables));
+	}
+
+	private async _begin(tables: string[] = []): Promise<void> {
 		if (this.transaction) throw this.createError("INVALID_PARAMETERS");
 		await this.ensureDatabaseTmpDir();
 		// The database lock is the transaction mutex: it serializes
@@ -3526,6 +3545,29 @@ export default class Inibase {
 		_whereIsLinesNumbers?: boolean,
 	): Promise<number | null>;
 	public async get<TData extends Record<string, any> & Partial<Data>>(
+		tableName: string,
+		where?: string | number | (string | number)[] | Criteria,
+		options: Options = {
+			page: 1,
+			perPage: 15,
+		},
+		onlyOne?: boolean,
+		onlyLinesNumbers?: boolean,
+		_whereIsLinesNumbers?: boolean,
+	): Promise<(Data & TData) | number | ((Data & TData) | number)[] | null> {
+		return File.runWithLockStore(() =>
+			this._get<TData>(
+				tableName,
+				where,
+				options,
+				onlyOne,
+				onlyLinesNumbers,
+				_whereIsLinesNumbers,
+			),
+		);
+	}
+
+	private async _get<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
 		where?: string | number | (string | number)[] | Criteria,
 		options: Options = {
@@ -3815,9 +3857,13 @@ export default class Inibase {
 		} else if (
 			((Array.isArray(where) && where.every(Utils.isNumber)) ||
 				Utils.isNumber(where)) &&
-			(_whereIsLinesNumbers ||
-				!globalConfig[this.databasePath].tables?.get(tableName)?.config
-					.decodeID)
+			// Numeric where is a line number only through the internal
+			// recursion (flag set). An external numeric where is an id — even
+			// on non-decodeID tables, where ids are NOT line numbers (prepend
+			// layout / rows deleted); using them as lines edited the wrong row
+			// and padded the column file (Sep-2026 rename bug). Ids are
+			// resolved by the next branch.
+			_whereIsLinesNumbers
 		) {
 			// "where" in this case, is the line(s) number(s) and not id(s)
 			let lineNumbers = where as number | number[];
@@ -3841,8 +3887,6 @@ export default class Inibase {
 				RETURN = (RETURN as (Data & TData)[])[0];
 		} else if (
 			(!_whereIsLinesNumbers &&
-				globalConfig[this.databasePath].tables?.get(tableName)?.config
-					.decodeID &&
 				((Array.isArray(where) && where.every(Utils.isNumber)) ||
 					Utils.isNumber(where))) ||
 			(Array.isArray(where) && where.every(Utils.isValidID)) ||
@@ -4102,6 +4146,17 @@ export default class Inibase {
 		options?: Options,
 		returnPostedData?: boolean,
 	): Promise<(Data & TData) | (Data & TData)[] | null | string | string[]> {
+		return File.runWithLockStore(() =>
+			this._post<TData>(tableName, data, options, returnPostedData),
+		);
+	}
+
+	private async _post<TData extends Record<string, any> & Partial<Data>>(
+		tableName: string,
+		data: (Data & TData) | (Data & TData)[],
+		options?: Options,
+		returnPostedData?: boolean,
+	): Promise<(Data & TData) | (Data & TData)[] | null | string | string[]> {
 		if (!options)
 			options = {
 				page: 1,
@@ -4241,7 +4296,7 @@ export default class Inibase {
 					// No read-your-writes yet: return the formatted staged rows
 					// (ids + defaults) instead of a committed-state read.
 					return (Array.isArray(clonedData) ? clonedData : clonedData) as any;
-				return this.get<TData>(
+				return await this.get<TData>(
 					tableName,
 					globalConfig[this.databasePath].tables?.get(tableName)?.config.prepend
 						? Array.isArray(clonedData)
@@ -4279,14 +4334,14 @@ export default class Inibase {
 				if (!txnStaged && renameList.length)
 					await Promise.allSettled(
 						renameList
-							.filter((pair): pair is [string, string] => Boolean(pair[1]))
+							.filter((pair): pair is [string, string] => Boolean(pair[0]))
 							.map(async ([tempPath, _]) => unlink(tempPath)),
 					);
 			} else {
 				if (renameList.length)
 					await Promise.allSettled(
 						renameList
-							.filter((pair): pair is [string, string] => Boolean(pair[1]))
+							.filter((pair): pair is [string, string] => Boolean(pair[0]))
 							.map(async ([tempPath, _]) => unlink(tempPath)),
 					);
 				await File.unlock(join(tablePath, ".tmp"));
@@ -4337,6 +4392,29 @@ export default class Inibase {
 		_whereIsLinesNumbers?: boolean,
 	): Promise<(Data & TData) | (Data & TData)[] | null>;
 	public async put<TData extends Record<string, any> & Partial<Data>>(
+		tableName: string,
+		data: (Data & TData) | (Data & TData)[],
+		where?: number | string | (number | string)[] | Criteria,
+		options: Options = {
+			page: 1,
+			perPage: 15,
+		},
+		returnUpdatedData?: boolean,
+		_whereIsLinesNumbers?: boolean,
+	): Promise<(Data & TData) | (Data & TData)[] | null | undefined | undefined> {
+		return File.runWithLockStore(() =>
+			this._put<TData>(
+				tableName,
+				data,
+				where,
+				options,
+				returnUpdatedData,
+				_whereIsLinesNumbers,
+			),
+		);
+	}
+
+	private async _put<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
 		data: (Data & TData) | (Data & TData)[],
 		where?: number | string | (number | string)[] | Criteria,
@@ -4500,14 +4578,14 @@ export default class Inibase {
 					if (!txnStaged && renameList.length)
 						await Promise.allSettled(
 							renameList
-								.filter((pair): pair is [string, string] => Boolean(pair[1]))
+								.filter((pair): pair is [string, string] => Boolean(pair[0]))
 								.map(async ([tempPath, _]) => unlink(tempPath)),
 						);
 				} else {
 					if (renameList.length)
 						await Promise.allSettled(
 							renameList
-								.filter((pair): pair is [string, string] => Boolean(pair[1]))
+								.filter((pair): pair is [string, string] => Boolean(pair[0]))
 								.map(async ([tempPath, _]) => unlink(tempPath)),
 						);
 					await File.unlock(join(tablePath, ".tmp"));
@@ -4516,9 +4594,13 @@ export default class Inibase {
 		} else if (
 			((Array.isArray(where) && where.every(Utils.isNumber)) ||
 				Utils.isNumber(where)) &&
-			(_whereIsLinesNumbers ||
-				!globalConfig[this.databasePath].tables?.get(tableName)?.config
-					.decodeID)
+			// Numeric where is a line number only through the internal
+			// recursion (flag set). An external numeric where is an id — even
+			// on non-decodeID tables, where ids are NOT line numbers (prepend
+			// layout / rows deleted); using them as lines edited the wrong row
+			// and padded the column file (Sep-2026 rename bug). Ids are
+			// resolved by the next branch.
+			_whereIsLinesNumbers
 		) {
 			// "where" in this case, is the line(s) number(s) and not id(s)
 
@@ -4630,7 +4712,10 @@ export default class Inibase {
 
 				if (returnUpdatedData) {
 					if (this.transaction) throw this.createError("INVALID_PARAMETERS");
-					return this.get(
+					// AWAITED readback: must complete inside the writer lock. An
+					// async-tail `return this.get(...)` lets the finally below
+					// unlock before the readback's file reads resume.
+					return await this.get(
 						tableName,
 						where,
 						options,
@@ -4644,14 +4729,14 @@ export default class Inibase {
 					if (!txnStaged && renameList.length)
 						await Promise.allSettled(
 							renameList
-								.filter((pair): pair is [string, string] => Boolean(pair[1]))
+								.filter((pair): pair is [string, string] => Boolean(pair[0]))
 								.map(async ([tempPath, _]) => unlink(tempPath)),
 						);
 				} else {
 					if (renameList.length)
 						await Promise.allSettled(
 							renameList
-								.filter((pair): pair is [string, string] => Boolean(pair[1]))
+								.filter((pair): pair is [string, string] => Boolean(pair[0]))
 								.map(async ([tempPath, _]) => unlink(tempPath)),
 						);
 					await File.unlock(join(tablePath, ".tmp"));
@@ -4659,35 +4744,50 @@ export default class Inibase {
 			}
 		} else if (
 			(!_whereIsLinesNumbers &&
-				globalConfig[this.databasePath].tables?.get(tableName)?.config
-					.decodeID &&
 				((Array.isArray(where) && where.every(Utils.isNumber)) ||
 					Utils.isNumber(where))) ||
 			(Array.isArray(where) && where.every(Utils.isValidID)) ||
 			Utils.isValidID(where)
 		) {
-			const lineNumbers = await this.get(
-				tableName,
-				where,
-				undefined,
-				undefined,
-				true,
-			);
-			if (lineNumbers)
-				return this.put<TData>(
+			// Resolve id -> line(s) WHILE holding the writer lock: a post
+			// landing between the resolution and the write would shift every
+			// line of a prepend table and the update would hit the wrong row.
+			// The recursive call re-takes the lock reentrantly (same task), so
+			// the lock is held continuously from resolution to publish.
+			let inlineLock = false;
+			try {
+				if (this.transaction) await this.ensureTxnLock(tableName);
+				else {
+					await File.lock(join(tablePath, ".tmp"));
+					inlineLock = true;
+				}
+				const lineNumbers = await this.get(
 					tableName,
-					clonedData as TData & Data,
-					// get() with onlyLinesNumbers always returns an array; a
-					// single-id update must keep the scalar so the recursive
-					// line-numbers branch returns a single row (matching the
-					// shape of get(singleId)) instead of a one-element array.
-					!Array.isArray(where) && Array.isArray(lineNumbers)
-						? lineNumbers[0]
-						: lineNumbers,
-					options,
-					returnUpdatedData as boolean,
+					where,
+					undefined,
+					undefined,
 					true,
 				);
+				if (lineNumbers)
+					return await this.put<TData>(
+						tableName,
+						clonedData as TData & Data,
+						// get() with onlyLinesNumbers always returns an array; a
+						// single-id update must keep the scalar so the recursive
+						// line-numbers branch returns a single row (matching the
+						// shape of get(singleId)) instead of a one-element array.
+						!Array.isArray(where) && Array.isArray(lineNumbers)
+							? lineNumbers[0]
+							: lineNumbers,
+						options,
+						returnUpdatedData as boolean,
+						true,
+					);
+			} finally {
+				// The recursion released its own (reentrant) acquisition;
+				// release ours too (transactions keep the lock until commit).
+				if (inlineLock) await File.unlock(join(tablePath, ".tmp"));
+			}
 		} else if (Utils.isObject(where)) {
 			const lineNumbers = await this.get(
 				tableName,
@@ -4716,6 +4816,17 @@ export default class Inibase {
 	 * @return {boolean | null}  {(Promise<boolean | null>)}
 	 */
 	public async delete(
+		tableName: string,
+		where?: number | string | (number | string)[] | Criteria,
+		_whereIsLinesNumbers?: boolean,
+		_cascadeGuard?: Set<string>,
+	): Promise<boolean | null> {
+		return File.runWithLockStore(() =>
+			this._delete(tableName, where, _whereIsLinesNumbers, _cascadeGuard),
+		);
+	}
+
+	private async _delete(
 		tableName: string,
 		where?: number | string | (number | string)[] | Criteria,
 		_whereIsLinesNumbers?: boolean,
@@ -4784,14 +4895,14 @@ export default class Inibase {
 					if (!txnStaged && renameList.length)
 						await Promise.allSettled(
 							renameList
-								.filter((pair): pair is [string, string] => Boolean(pair[1]))
+								.filter((pair): pair is [string, string] => Boolean(pair[0]))
 								.map(async ([tempPath, _]) => unlink(tempPath)),
 						);
 				} else {
 					if (renameList.length)
 						await Promise.allSettled(
 							renameList
-								.filter((pair): pair is [string, string] => Boolean(pair[1]))
+								.filter((pair): pair is [string, string] => Boolean(pair[0]))
 								.map(async ([tempPath, _]) => unlink(tempPath)),
 						);
 					await File.unlock(join(tablePath, ".tmp"));
@@ -4801,9 +4912,13 @@ export default class Inibase {
 		if (
 			((Array.isArray(where) && where.every(Utils.isNumber)) ||
 				Utils.isNumber(where)) &&
-			(_whereIsLinesNumbers ||
-				!globalConfig[this.databasePath].tables?.get(tableName)?.config
-					.decodeID)
+			// Numeric where is a line number only through the internal
+			// recursion (flag set). An external numeric where is an id — even
+			// on non-decodeID tables, where ids are NOT line numbers (prepend
+			// layout / rows deleted); using them as lines edited the wrong row
+			// and padded the column file (Sep-2026 rename bug). Ids are
+			// resolved by the next branch.
+			_whereIsLinesNumbers
 		) {
 			// "where" in this case, is the line(s) number(s) and not id(s)
 			const files = (await readdir(tablePath))?.filter((fileName: string) =>
@@ -4892,14 +5007,14 @@ export default class Inibase {
 						if (!txnStaged && renameList.length)
 							await Promise.allSettled(
 								renameList
-									.filter((pair): pair is [string, string] => Boolean(pair[1]))
+									.filter((pair): pair is [string, string] => Boolean(pair[0]))
 									.map(async ([tempPath, _]) => unlink(tempPath)),
 							);
 					} else {
 						if (renameList.length)
 							await Promise.allSettled(
 								renameList
-									.filter((pair): pair is [string, string] => Boolean(pair[1]))
+									.filter((pair): pair is [string, string] => Boolean(pair[0]))
 									.map(async ([tempPath, _]) => unlink(tempPath)),
 							);
 						await File.unlock(join(tablePath, ".tmp"));
@@ -4909,32 +5024,43 @@ export default class Inibase {
 		}
 		if (
 			(!_whereIsLinesNumbers &&
-				globalConfig[this.databasePath].tables?.get(tableName)?.config
-					.decodeID &&
 				((Array.isArray(where) && where.every(Utils.isNumber)) ||
 					Utils.isNumber(where))) ||
 			(Array.isArray(where) && where.every(Utils.isValidID)) ||
 			Utils.isValidID(where)
 		) {
-			const lineNumbers = await this.get(
-				tableName,
-				where,
-				undefined,
-				undefined,
-				true,
-			);
-			// Deleting a non-existent id must not fall through to the
-			// "delete all rows" branch (this.delete(_, null, _) would truncate
-			// the whole table), so resolve the id to line numbers first and
-			// only delegate when something actually matched.
-			if (lineNumbers)
-				return this.delete(
+			// Resolve id -> line(s) WHILE holding the writer lock (see put():
+			// a concurrent post between resolution and delete would shift the
+			// lines of a prepend table and remove the wrong row).
+			let inlineLock = false;
+			try {
+				if (this.transaction) await this.ensureTxnLock(tableName);
+				else {
+					await File.lock(join(tablePath, ".tmp"));
+					inlineLock = true;
+				}
+				const lineNumbers = await this.get(
 					tableName,
-					lineNumbers,
+					where,
+					undefined,
+					undefined,
 					true,
-					_cascadeGuard ?? new Set(),
 				);
-			return false;
+				// Deleting a non-existent id must not fall through to the
+				// "delete all rows" branch (this.delete(_, null, _) would truncate
+				// the whole table), so resolve the id to line numbers first and
+				// only delegate when something actually matched.
+				if (lineNumbers)
+					return await this.delete(
+						tableName,
+						lineNumbers,
+						true,
+						_cascadeGuard ?? new Set(),
+					);
+				return false;
+			} finally {
+				if (inlineLock) await File.unlock(join(tablePath, ".tmp"));
+			}
 		}
 		if (Utils.isObject(where)) {
 			const lineNumbers = await this.get(
@@ -5081,12 +5207,7 @@ export default class Inibase {
 		const tablePath = join(this.databasePath, tableName);
 
 		if (options?.nested) {
-			const nested = await this.sumNested(
-				tableName,
-				columns,
-				where,
-				tablePath,
-			);
+			const nested = await this.sumNested(tableName, columns, where, tablePath);
 			return columns.length > 1 ? nested : Object.values(nested)[0];
 		}
 
@@ -5238,13 +5359,21 @@ export default class Inibase {
 		// Row-level narrowing (ids or criteria). `undefined` lines = whole file.
 		let lines: number[] | null | undefined;
 		if (idWhere !== undefined)
-			lines = (await this.get(tableName, idWhere, { perPage: -1 }, undefined, true)) as
-				| number[]
-				| null;
+			lines = (await this.get(
+				tableName,
+				idWhere,
+				{ perPage: -1 },
+				undefined,
+				true,
+			)) as number[] | null;
 		else if (Object.keys(rowWhere).length)
-			lines = (await this.get(tableName, rowWhere, { perPage: -1 }, undefined, true)) as
-				| number[]
-				| null;
+			lines = (await this.get(
+				tableName,
+				rowWhere,
+				{ perPage: -1 },
+				undefined,
+				true,
+			)) as number[] | null;
 		if (lines === null) {
 			for (const column of columns) RETURN[column] = 0;
 			return RETURN;
@@ -5257,19 +5386,14 @@ export default class Inibase {
 		const ext = this.getFileExtension(tableName);
 
 		// Element predicate cells, read once for every summed column.
-		const predCells = new Map<
-			string,
-			Record<number, any> | null
-		>();
+		const predCells = new Map<string, Record<number, any> | null>();
 		for (const p of elementPredicates) {
-			const path = join(
-				tablePathSafe,
-				`${rootKey}.${p.field.key}${ext}`,
-			);
+			const path = join(tablePathSafe, `${rootKey}.${p.field.key}${ext}`);
 			if (!(await File.isExists(path))) continue;
-			const cell = (await File.get(path, lines, fieldOpt(p.field))) as
-				| Record<number, any>
-				| null;
+			const cell = (await File.get(path, lines, fieldOpt(p.field))) as Record<
+				number,
+				any
+			> | null;
 			if (cell) predCells.set(p.field.key, cell);
 		}
 
@@ -5279,9 +5403,10 @@ export default class Inibase {
 				RETURN[column] = 0;
 				continue;
 			}
-			const cell = (await File.get(path, lines, fieldOpt(child))) as
-				| Record<number, any>
-				| null;
+			const cell = (await File.get(path, lines, fieldOpt(child))) as Record<
+				number,
+				any
+			> | null;
 			if (!cell) {
 				RETURN[column] = 0;
 				continue;

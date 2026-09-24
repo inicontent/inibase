@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { WriteStream } from "node:fs";
 import {
 	access,
@@ -65,6 +66,91 @@ const LOCK_RETRY_MS = 13;
 // multiple times (e.g. post() -> get() -> sort-cache). Depth 1 is a real
 // filesystem acquisition; deeper acquisitions just bump the counter.
 const lockDepths = new Map<string, number>();
+// In-process serialization: sibling tasks (e.g. two concurrent HTTP requests
+// posting to the same table) must QUEUE behind the holder instead of passing
+// straight through the depth counter. That bypass is exactly what let
+// concurrent writers share the fixed `.tmp/<column>` staging path and race the
+// pagination rename (diverged column files, duplicate ids, lost rows in the
+// Sep-2026 pteam incident). Reentrancy from the *same* logical task (post() ->
+// get() -> ensureTableRecovered re-lock, transaction flows) still bumps the
+// depth without touching the filesystem, proven by the AsyncLocalStorage
+// context recorded at acquisition time.
+const lockReleaseWaiters = new Map<string, Set<() => void>>();
+const lockOwners = new Map<string, Set<unknown>>();
+// Upper bound on in-process wait time: converts a wedged or undetectable
+// holder into a visible error instead of a silent hang. 0 disables it.
+const LOCK_WAIT_TIMEOUT_MS = Number(
+	process.env.INIBASE_LOCK_WAIT_TIMEOUT_MS ?? 120_000,
+);
+const lockContext = new AsyncLocalStorage<Set<unknown>>();
+
+// Resolve once the holder releases so the waiter can re-race for the lock.
+const waitForLockRelease = (resolvedPath: string) =>
+	new Promise<void>((resolveWaiter, rejectWaiter) => {
+		let waiters = lockReleaseWaiters.get(resolvedPath);
+		if (!waiters) {
+			waiters = new Set();
+			lockReleaseWaiters.set(resolvedPath, waiters);
+		}
+		let timer: NodeJS.Timeout | null = null;
+		const wake = (error?: Error) => {
+			waiters.delete(wake);
+			if (timer) clearTimeout(timer);
+			error ? rejectWaiter(error) : resolveWaiter();
+		};
+		waiters.add(wake);
+		if (LOCK_WAIT_TIMEOUT_MS > 0)
+			timer = setTimeout(
+				() => wake(new Error(`LOCK_WAIT_TIMEOUT: ${resolvedPath}`)),
+				LOCK_WAIT_TIMEOUT_MS,
+			);
+	});
+
+// The AsyncLocalStorage store of this task chain (created on first acquire).
+const currentLockStore = () => {
+	let store = lockContext.getStore();
+	if (!store) {
+		store = new Set();
+		lockContext.enterWith(store);
+	}
+	return store;
+};
+/**
+ * Run `fn` with a per-logical-task lock-owner store on its AsyncLocalStorage
+ * context. Every await continuation below `fn` then shares that store, so
+ * nested/reentrant acquisitions (put/delete id->line recursion, journal
+ * recovery re-locks, transaction flows) see the SAME store the outermost
+ * acquisition recorded as owner.
+ *
+ * Do NOT replace this with an enterWith() from inside lock(): that store is
+ * created in lock()'s own frame and (a) never propagates back to the caller's
+ * await continuation — every recursion then waits on its OWN lock until the
+ * watchdog (LOCK_WAIT_TIMEOUT) — and (b) can leak into sibling tasks, which
+ * then pass the writer lock as "reentrant" and re-race the Sep-2026 commit
+ * interleave (ENOENT renames, duplicate ids). `run()` gives clean per-op
+ * isolation and correct same-chain propagation.
+ */
+export const runWithLockStore = <T>(fn: () => T): T => {
+	if (lockContext.getStore()) return fn();
+	const store = new Set();
+	return lockContext.run(store, fn);
+};
+
+// True when this task already owns the lock (depth > 0 and the recorded owner
+// context is this task's context). Bumps the depth and returns.
+const isReentrant = (resolvedPath: string) => {
+	if (!lockDepths.get(resolvedPath)) return false;
+	if (lockOwners.get(resolvedPath) !== lockContext.getStore()) return false;
+	lockDepths.set(resolvedPath, lockDepths.get(resolvedPath)! + 1);
+	return true;
+};
+
+const notifyLockReleased = (resolvedPath: string) => {
+	const waiters = lockReleaseWaiters.get(resolvedPath);
+	if (!waiters) return;
+	lockReleaseWaiters.delete(resolvedPath);
+	for (const wake of waiters) wake();
+};
 
 const lockFilePathFor = (folderPath: string, prefix?: string) =>
 	join(folderPath, `${prefix ?? ""}.locked`);
@@ -122,13 +208,15 @@ export const lock = async (
 	const lockFilePath = lockFilePathFor(folderPath, prefix);
 	const resolvedPath = resolve(lockFilePath);
 
-	const depth = lockDepths.get(resolvedPath);
-	if (depth) {
-		lockDepths.set(resolvedPath, depth + 1);
-		return;
-	}
-
 	for (;;) {
+		// Same logical task already holds it -> reentrant depth bump.
+		if (isReentrant(resolvedPath)) return;
+		// A different in-process task holds it -> wait for the release, then
+		// re-race for the filesystem lock like any process.
+		if (lockDepths.get(resolvedPath)) {
+			await waitForLockRelease(resolvedPath);
+			continue;
+		}
 		try {
 			const lockFile = await open(lockFilePath, "wx");
 			try {
@@ -156,6 +244,7 @@ export const lock = async (
 				}
 			}
 			lockDepths.set(resolvedPath, 1);
+			lockOwners.set(resolvedPath, currentLockStore());
 			return;
 		} catch (error: any) {
 			const message = String(error?.message ?? error);
@@ -193,11 +282,8 @@ export const tryLock = async (
 	const lockFilePath = lockFilePathFor(folderPath, prefix);
 	const resolvedPath = resolve(lockFilePath);
 
-	const depth = lockDepths.get(resolvedPath);
-	if (depth) {
-		lockDepths.set(resolvedPath, depth + 1);
-		return true;
-	}
+	if (isReentrant(resolvedPath)) return true;
+	if (lockDepths.get(resolvedPath)) return false; // held by another in-process task: non-blocking
 
 	for (let attempt = 0; attempt < 2; attempt++) {
 		try {
@@ -222,6 +308,7 @@ export const tryLock = async (
 				}
 			}
 			lockDepths.set(resolvedPath, 1);
+			lockOwners.set(resolvedPath, currentLockStore());
 			return true;
 		} catch (error: any) {
 			if (String(error?.message ?? error).split(":")[0] !== "EEXIST")
@@ -250,11 +337,14 @@ export const unlock = async (folderPath: string, prefix?: string) => {
 		return;
 	}
 	lockDepths.delete(resolvedPath);
+	lockOwners.delete(resolvedPath);
 	try {
 		await unlink(lockFilePath);
 	} catch {
 		// Already released (stolen by a foreign-host stealer or cleaned up).
 	}
+	// Wake in-process waiters so they re-race for the released lock.
+	notifyLockReleased(resolvedPath);
 };
 
 export const write = async (filePath: string, data: any) => {
@@ -310,6 +400,22 @@ export function escapeShellPath(filePath: string) {
 	// Escape double quotes and special shell characters
 	return `"${resolvedPath.replace(/(["\\$`])/g, "\\$1")}"`;
 }
+
+/**
+ * Unique-per-operation staging path: concurrent writers must never share the
+ * `.tmp/<column>` file. The fixed name let sibling operations clobber each
+ * other's in-progress temp and publish a temp that only contained one writer's
+ * content (column files following different winners -> diverged line counts).
+ * A pid + per-process counter suffix keeps every temp private; each pair is
+ * carried through the rename list and the journal, so commit/rollback/recovery
+ * still know exactly which files to move.
+ */
+let tempSeq = 0;
+const tempPathFor = (filePath: string) =>
+	filePath.replace(
+		/([^/]+)\/?$/,
+		`.tmp/$1.${process.pid}-${(tempSeq++).toString(36)}`,
+	);
 
 const _pipeline = async (
 	filePath: string,
@@ -714,7 +820,7 @@ export const replace = async (
 		  >,
 	totalItems?: number,
 ): Promise<(string | null)[]> => {
-	const fileTempPath = filePath.replace(/([^/]+)\/?$/, ".tmp/$1");
+	const fileTempPath = tempPathFor(filePath);
 	const isReplacementsObject = isObject(replacements);
 	const isReplacementsLineNumbered =
 		isReplacementsObject && !Number.isNaN(Number(Object.keys(replacements)[0]));
@@ -802,24 +908,46 @@ export const replace = async (
 
 				await write(
 					fileTempPath,
-					`${
-						"\n".repeat(replacementsKeys[0] - 1) +
-						replacementsKeys
-							.map((lineNumber, index) =>
-								index === 0 ||
-								lineNumber - replacementsKeys[index - 1] - 1 === 0
-									? replacements[lineNumber]
-									: "\n".repeat(lineNumber - replacementsKeys[index - 1] - 1) +
-										replacements[lineNumber],
+					// First-write for a compressed column: see append() — the
+					// unique temp path hides the ".gz" suffix from write().
+					filePath.endsWith(".gz")
+						? await gzip(
+								`${
+									"\n".repeat(replacementsKeys[0] - 1) +
+									replacementsKeys
+										.map((lineNumber, index) =>
+											index === 0 ||
+											lineNumber - replacementsKeys[index - 1] - 1 === 0
+												? replacements[lineNumber]
+												: "\n".repeat(
+														lineNumber - replacementsKeys[index - 1] - 1,
+													) + replacements[lineNumber],
+										)
+										.join("\n")
+								}\n`,
 							)
-							.join("\n")
-					}\n`,
+						: `${
+								"\n".repeat(replacementsKeys[0] - 1) +
+								replacementsKeys
+									.map((lineNumber, index) =>
+										index === 0 ||
+										lineNumber - replacementsKeys[index - 1] - 1 === 0
+											? replacements[lineNumber]
+											: "\n".repeat(
+													lineNumber - replacementsKeys[index - 1] - 1,
+												) + replacements[lineNumber],
+									)
+									.join("\n")
+							}\n`,
 				);
 			} else {
 				if (!totalItems) throw new Error("INVALID_PARAMETERS");
 				await write(
 					fileTempPath,
-					`${`${replacements}\n`.repeat(totalItems)}\n`,
+					// First-write for a compressed column: see append().
+					filePath.endsWith(".gz")
+						? await gzip(`${`${replacements}\n`.repeat(totalItems)}\n`)
+						: `${`${replacements}\n`.repeat(totalItems)}\n`,
 				);
 			}
 			return [fileTempPath, filePath];
@@ -842,7 +970,7 @@ export const append = async (
 	filePath: string,
 	data: string | number | (string | number)[],
 ): Promise<(string | null)[]> => {
-	const fileTempPath = filePath.replace(/([^/]+)\/?$/, ".tmp/$1");
+	const fileTempPath = tempPathFor(filePath);
 	try {
 		if (await isExists(filePath)) {
 			await copyFile(filePath, fileTempPath);
@@ -862,7 +990,14 @@ export const append = async (
 		} else
 			await write(
 				fileTempPath,
-				`${Array.isArray(data) ? data.join("\n") : data}\n`,
+				// Unique temp paths no longer end with the original extension
+				// (.tmp/<col>.<pid>-<seq>), so write()'s suffix check can't
+				// gzip a first-write for a compressed column. Do it here.
+				filePath.endsWith(".gz")
+					? await gzip(
+							`${Array.isArray(data) ? data.join("\n") : data}\n`,
+						)
+					: `${Array.isArray(data) ? data.join("\n") : data}\n`,
 			);
 		return [fileTempPath, filePath];
 	} catch {
@@ -882,7 +1017,7 @@ export const prepend = async (
 	filePath: string,
 	data: string | number | (string | number)[],
 ): Promise<(string | null)[]> => {
-	const fileTempPath = filePath.replace(/([^/]+)\/?$/, ".tmp/$1");
+	const fileTempPath = tempPathFor(filePath);
 	if (await isExists(filePath)) {
 		if (!filePath.endsWith(".gz")) {
 			let fileHandle = null;
@@ -918,7 +1053,7 @@ export const prepend = async (
 				await fileTempHandle?.close();
 			}
 		} else {
-			const fileChildTempPath = filePath.replace(/([^/]+)\/?$/, ".tmp/tmp_$1");
+			const fileChildTempPath = `${tempPathFor(filePath)}.child`;
 			try {
 				await write(
 					fileChildTempPath,
@@ -942,7 +1077,13 @@ export const prepend = async (
 		try {
 			await write(
 				fileTempPath,
-				`${Array.isArray(data) ? data.join("\n") : data}\n`,
+				// First-write for a compressed column: see append() — the
+				// unique temp path hides the ".gz" suffix from write().
+				filePath.endsWith(".gz")
+					? await gzip(
+							`${Array.isArray(data) ? data.join("\n") : data}\n`,
+						)
+					: `${Array.isArray(data) ? data.join("\n") : data}\n`,
 			);
 		} catch {
 			return [fileTempPath, null];
@@ -970,7 +1111,7 @@ export const remove = async (
 
 	if (linesToDelete.some(Number.isNaN)) throw new Error("UNVALID_LINE_NUMBERS");
 
-	const fileTempPath = filePath.replace(/([^/]+)\/?$/, ".tmp/$1");
+	const fileTempPath = tempPathFor(filePath);
 	try {
 		const escapedFilePath = escapeShellPath(filePath);
 		const escapedFileTempPath = escapeShellPath(fileTempPath);
