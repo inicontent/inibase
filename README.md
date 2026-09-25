@@ -206,7 +206,7 @@ interface {
 
 ```ts
 interface Field {
-  id: number; // stored as a Number but displayed as a hashed ID
+  id: number; // position in the schema; 0 = the row id, -1 = createdAt, -2 = updatedAt
   key: string;
   required?: boolean;
   unique?: boolean | string; // boolean for simple uniqueness, string for grouped uniqueness
@@ -401,6 +401,30 @@ const userTableSchema = [
 
 await db.createTable("user", userTableSchema, userTableConfig);
 ```
+
+#### `decodeID`
+
+By default a row's `id` is stored as a number but only ever handed back as an
+encrypted (`aes-256-cbc`, hex) string, so ids can't be guessed by incrementing.
+Set `decodeID: true` and the id is exposed as the **plain number** everywhere —
+`get` rows, `get`/`put`/`delete` by id, relation lookups, and the id returned by
+`post`:
+
+```js
+const db = new Inibase("/databaseName");
+await db.createTable("item", [{ key: "name", type: "string" }], {
+  decodeID: true,
+});
+
+const id = await db.post("item", { name: "widget" }); // => 1  (a number)
+await db.get("item", 1); // works with the raw number
+```
+
+So `post` returns a `number` on a `decodeID` table and an encrypted `string` on
+every other table — in TypeScript its return type is `string | number`
+(`(string | number)[]` for a bulk post). Encrypted ids stay valid inputs on a
+`decodeID` table too, so existing clients that round-trip an id keep working
+either way. `decodeID` can be toggled later with `updateTable`.
 
 </blockquote>
 </details>

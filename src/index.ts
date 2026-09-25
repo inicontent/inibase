@@ -4115,19 +4115,23 @@ export default class Inibase {
 	 * @param {Options} [options] Pagination options, useful when the returnPostedData param is true
 	 * @param {boolean} [returnPostedData] By default function returns void, if you want to get the posted data, set this param to true
 	 * @return {*}  {Promise<Data | Data[] | null | void>}
+	 *
+	 * @remarks Without `returnPostedData` the return value is the new id: a
+	 * `number` on a table created with `decodeID: true`, an encrypted
+	 * `string` on every other table.
 	 */
 	post<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
 		data: Data & TData,
 		options?: Options,
 		returnPostedData?: boolean,
-	): Promise<string>;
+	): Promise<string | number>;
 	post<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
 		data: (Data & TData)[],
 		options?: Options,
 		returnPostedData?: boolean,
-	): Promise<string[]>;
+	): Promise<(string | number)[]>;
 	post<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
 		data: Data & TData,
@@ -4145,7 +4149,14 @@ export default class Inibase {
 		data: (Data & TData) | (Data & TData)[],
 		options?: Options,
 		returnPostedData?: boolean,
-	): Promise<(Data & TData) | (Data & TData)[] | null | string | string[]> {
+	): Promise<
+		| (Data & TData)
+		| (Data & TData)[]
+		| null
+		| string
+		| number
+		| (string | number)[]
+	> {
 		return File.runWithLockStore(() =>
 			this._post<TData>(tableName, data, options, returnPostedData),
 		);
@@ -4156,7 +4167,14 @@ export default class Inibase {
 		data: (Data & TData) | (Data & TData)[],
 		options?: Options,
 		returnPostedData?: boolean,
-	): Promise<(Data & TData) | (Data & TData)[] | null | string | string[]> {
+	): Promise<
+		| (Data & TData)
+		| (Data & TData)[]
+		| null
+		| string
+		| number
+		| (string | number)[]
+	> {
 		if (!options)
 			options = {
 				page: 1,
@@ -4317,15 +4335,23 @@ export default class Inibase {
 				);
 			}
 
+			// On a decodeID table the id *is* the plain number — that is the
+			// whole point of the config: get(), put(), delete() and the
+			// returnPostedData read all hand back raw numbers, so post() must
+			// not encode it here. Every other table keeps returning the
+			// encrypted id.
+			const tableConfig =
+				globalConfig[this.databasePath].tables?.get(tableName)?.config;
+			const postedID = (id: string | number) =>
+				tableConfig?.decodeID === true
+					? Number(id)
+					: UtilsServer.encodeID(id);
+
 			return Array.isArray(clonedData)
-				? (globalConfig[this.databasePath].tables?.get(tableName)?.config
-						.prepend
-						? clonedData.toReversed()
-						: clonedData
-					).map(({ id }) => UtilsServer.encodeID(id as string | number))
-				: UtilsServer.encodeID(
-						(clonedData as Data & TData).id as string | number,
-					);
+				? (tableConfig?.prepend ? clonedData.toReversed() : clonedData).map(
+						({ id }) => postedID(id as string | number),
+					)
+				: postedID((clonedData as Data & TData).id as string | number);
 		} finally {
 			if (this.transaction) {
 				// Staged temps belong to the journal op; commit()/rollback()

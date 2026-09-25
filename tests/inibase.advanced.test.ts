@@ -574,6 +574,61 @@ await test("decodeID config (numeric IDs end to end)", async (t) => {
 		})) as Row[];
 		assert.equal(allPosts[0].user.id, created.id);
 	});
+
+	await t.test("post returns a plain numeric id (not an encoded one)", async () => {
+		const returning = "decoded_returning_id";
+		await inibase.createTable(returning, [{ key: "name", type: "string" }], {
+			decodeID: true,
+		});
+		const returned = await inibase.post(returning, { name: "D" });
+		assert.equal(typeof returned, "number");
+		assert.equal(returned, 1);
+		// The returned id is the one every other accessor uses.
+		const row = await inibase.get<Row>(returning, returned);
+		assert.equal(row?.name, "D");
+	});
+
+	await t.test("bulk post returns plain numeric ids", async () => {
+		const bulk = "decoded_bulk";
+		await inibase.createTable(bulk, [{ key: "name", type: "string" }], {
+			decodeID: true,
+		});
+		const returned = await inibase.post(bulk, [
+			{ name: "X" },
+			{ name: "Y" },
+		]);
+		assert.deepEqual(returned, [1, 2]);
+		assert.deepEqual(
+			((await inibase.get<Row>(bulk, undefined, { perPage: -1 })) as Row[]).map(
+				(r) => r.id,
+			),
+			returned,
+		);
+	});
+
+	await t.test("post id matches the returnPostedData id", async () => {
+		const bulk = "decoded_bulk"; // ids 1 and 2 so far
+		const returnedId = await inibase.post(bulk, { name: "Z" });
+		const returnedData = (await inibase.post(
+			bulk,
+			{ name: "W" },
+			undefined,
+			true,
+		)) as Row;
+		assert.equal(returnedId, 3);
+		assert.equal(returnedId, returnedData.id - 1);
+	});
+
+	await t.test("non-decodeID tables still return an encoded id", async () => {
+		const encrypted = "encoded_ids";
+		await inibase.createTable(encrypted, [{ key: "name", type: "string" }]);
+		const returned = await inibase.post(encrypted, { name: "A" });
+		assert.equal(typeof returned, "string");
+		assert.equal(returned, "e5d3e5ab8d0ea3927066ff408b36a186");
+		// ... and the encoded id still resolves back to the row.
+		const row = await inibase.get<Row>(encrypted, returned);
+		assert.equal(row?.name, "A");
+	});
 });
 
 await test("Cache config keeps criteria results fresh after writes", async (t) => {
