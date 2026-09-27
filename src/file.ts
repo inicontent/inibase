@@ -458,7 +458,42 @@ export const isExists = async (path: string) => {
 };
 
 /**
- * Secures input by encoding/escaping characters.
+ * Marks a cell written with the lossless string escaping below. It is a
+ * control character that never starts a legacy cell in practice, is not
+ * `[`/`{` (so the value is never mistaken for Inison) and is not numeric.
+ */
+const ESCAPED_STRING_PREFIX = "\u0001";
+
+/**
+ * Lossless escaping for strings that the legacy newline-only escaping cannot
+ * round-trip: `\` becomes `\\`, CR becomes `\r`, LF becomes `\n`.
+ */
+const escapeString = (input: string): string =>
+	ESCAPED_STRING_PREFIX +
+	input.replace(/[\\\r\n]/g, (char) =>
+		char === "\\" ? "\\\\" : char === "\r" ? "\\r" : "\\n",
+	);
+
+/** Reverses {@link escapeString} (input includes the prefix). */
+const unescapeString = (input: string): string =>
+	input
+		.slice(ESCAPED_STRING_PREFIX.length)
+		.replace(/\\([\\rn])/g, (_match, char: string) =>
+			char === "\\" ? "\\" : char === "r" ? "\r" : "\n",
+		);
+
+/**
+ * Secures input by encoding/escaping characters so a value fits on one line
+ * of a column file and reads back exactly as it was written.
+ *
+ * - The string is stored as given: it is NOT URI-decoded (`%20`, `50%`,
+ *   `%D8%A7` are data, not transport encoding).
+ * - Strings without `\` or CR keep the legacy format (LF stored as `\n`), so
+ *   existing files, native whole-line search and most new writes are
+ *   byte-identical to before.
+ * - Strings containing `\` or CR (or starting with the marker) use the
+ *   lossless format, because in the legacy format a literal `\n` typed by the
+ *   user is indistinguishable from an escaped line break.
  *
  * @param input - String, number, boolean, or null.
  * @returns Encoded string for true/false, special characters in strings, or original input.
@@ -473,17 +508,14 @@ const secureString = (
 		return input;
 	}
 
-	let decodedInput = null;
-	try {
-		decodedInput = decodeURIComponent(input);
-	} catch (_error) {
-		decodedInput = decodeURIComponent(
-			input.replace(/%(?![0-9][0-9a-fA-F]+)/g, ""),
-		);
-	}
+	if (
+		input.includes("\\") ||
+		input.includes("\r") ||
+		input.startsWith(ESCAPED_STRING_PREFIX)
+	)
+		return escapeString(input);
 
-	// Replace characters using a single regular expression.
-	return decodedInput.replace(/\r\n|\r|\n/g, "\\n");
+	return input.replace(/\n/g, "\\n");
 };
 
 /**
@@ -524,8 +556,11 @@ const unSecureString = (input: string): string | number | null => {
 	if (isNumber(input))
 		return String(input).at(0) === "0" ? input : Number(input);
 
-	// Fast path: the common case has no `\n` escape sequence, so avoid
-	// allocating a replacement string (and a fresh RegExp) per cell.
+	if (typeof input === "string" && input.startsWith(ESCAPED_STRING_PREFIX))
+		return unescapeString(input);
+
+	// Legacy format. Fast path: the common case has no `\n` escape sequence,
+	// so avoid allocating a replacement string (and a fresh RegExp) per cell.
 	if (typeof input === "string")
 		return input.includes("\\n")
 			? input.replaceAll("\\n", "\n") || null
