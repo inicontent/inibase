@@ -394,7 +394,7 @@ export default class Inibase {
 	 * per-table writer lock of every table it mutates, so mutations stage into
 	 * the database journal and publish only on commit().
 	 */
-	private transaction: {
+	private activeTransaction: {
 		id: string;
 		journal: DatabaseJournal;
 		tables: Map<string, TxnTableEntry>;
@@ -527,7 +527,7 @@ export default class Inibase {
 
 		// DDL does not participate in the write-ahead journal: schema surgery
 		// inside a transaction would escape the atomic publish/rollback scope.
-		if (this.transaction) throw this.createError("INVALID_PARAMETERS");
+		if (this.activeTransaction) throw this.createError("INVALID_PARAMETERS");
 		await this.ensureDatabaseRecovered();
 
 		if (schema) this.validateSchema(schema);
@@ -630,7 +630,7 @@ export default class Inibase {
 
 		// DDL does not participate in the write-ahead journal: schema surgery
 		// inside a transaction would escape the atomic publish/rollback scope.
-		if (this.transaction) throw this.createError("INVALID_PARAMETERS");
+		if (this.activeTransaction) throw this.createError("INVALID_PARAMETERS");
 		await this.ensureDatabaseRecovered();
 
 		if (config?.name) this.validateName(config.name);
@@ -2169,7 +2169,7 @@ export default class Inibase {
 					return null;
 				// A transaction cannot read a dependency table it has already
 				// staged (no read-your-writes past its commit point).
-				if (this.transaction?.tables.has(table))
+				if (this.activeTransaction?.tables.has(table))
 					throw this.createError("INVALID_PARAMETERS");
 				// Batched link-hop reads: during the collection pass a hop
 				// only records its (table, column, id) triple; the real pass
@@ -3218,7 +3218,7 @@ export default class Inibase {
 
 	/** Staged per-table entry of the open transaction, or null when none. */
 	private txnTableEntry(tableName: string): TxnTableEntry | null {
-		const txn = this.transaction;
+		const txn = this.activeTransaction;
 		if (!txn) return null;
 		let entry = txn.tables.get(tableName);
 		if (!entry) {
@@ -3289,7 +3289,7 @@ export default class Inibase {
 		renameList: (string | null)[][],
 		pagination: { from: string; to: string } | null,
 	): Promise<void> {
-		const txn = this.transaction;
+		const txn = this.activeTransaction;
 		const entry = this.txnTableEntry(tableName);
 		if (!txn || !entry) throw this.createError("INVALID_PARAMETERS");
 		if (entry.staged.length) throw this.createError("INVALID_PARAMETERS");
@@ -3337,7 +3337,7 @@ export default class Inibase {
 	}
 
 	private async _begin(tables: string[] = []): Promise<void> {
-		if (this.transaction) throw this.createError("INVALID_PARAMETERS");
+		if (this.activeTransaction) throw this.createError("INVALID_PARAMETERS");
 		await this.ensureDatabaseTmpDir();
 		// The database lock is the transaction mutex: it serializes
 		// transactions and its acquisition runs crash recovery on any journal
@@ -3353,17 +3353,17 @@ export default class Inibase {
 			}
 
 			const id = randomUUID();
-			this.transaction = {
+			this.activeTransaction = {
 				id,
 				journal: new DatabaseJournal(this.databasePath, id),
 				tables: new Map(),
 			};
-			await this.transaction.journal.begin(uniqueTables);
+			await this.activeTransaction.journal.begin(uniqueTables);
 
 			for (const name of uniqueTables) {
 				await File.lock(join(this.databasePath, name, ".tmp"));
 				acquired.push(name);
-				this.transaction.tables.set(name, {
+				this.activeTransaction.tables.set(name, {
 					locked: true,
 					paginationFrom: "",
 					lastId: 0,
@@ -3379,7 +3379,7 @@ export default class Inibase {
 				await File.unlock(join(this.databasePath, name, ".tmp")).catch(
 					() => {},
 				);
-			this.transaction = null;
+			this.activeTransaction = null;
 			await File.unlock(join(this.databasePath, ".tmp")).catch(() => {});
 			throw error;
 		}
@@ -3394,7 +3394,7 @@ export default class Inibase {
 	 * tables, marker -> roll forward all tables).
 	 */
 	public async commit(): Promise<void> {
-		const txn = this.transaction;
+		const txn = this.activeTransaction;
 		if (!txn) throw this.createError("INVALID_PARAMETERS");
 		try {
 			for (const tableName of [...txn.tables.keys()].sort()) {
@@ -3424,6 +3424,27 @@ export default class Inibase {
 				await File.syncDir(join(this.databasePath, tableName));
 				await File.syncDir(join(this.databasePath, tableName, ".tmp"));
 			}
+
+			// A staged table's row count and derived caches were deliberately
+			// left untouched while the transaction was open (nothing is
+			// published before commit), so they must be refreshed here — the
+			// single-table fast path does the same right after commitFiles().
+			// Without this a committed `put` (row count unchanged) would keep
+			// serving sorted/criteria .cache entries built before the write.
+			for (const tableName of txn.tables.keys()) {
+				const entry = txn.tables.get(tableName);
+				if (!entry?.staged.length) continue; // pre-locked but untouched
+				// Only trust entry.total when resolvePagination() recorded it.
+				// A `put` selected by `where` never reads the pagination file
+				// (its row count cannot change), so entry.total is still its
+				// initial 0 — publishing that would corrupt the live counter.
+				if (entry.paginationFrom)
+					this.totalItems.set(`${tableName}-*`, entry.total);
+				if (
+					globalConfig[this.databasePath].tables?.get(tableName)?.config.cache
+				)
+					await this.clearCache(tableName);
+			}
 		} catch (error) {
 			await txn.journal.rollback().catch(() => {});
 			throw error;
@@ -3431,7 +3452,7 @@ export default class Inibase {
 			for (const tableName of [...txn.tables.keys()].sort().reverse())
 				await File.unlock(join(this.databasePath, tableName, ".tmp"));
 			await File.unlock(join(this.databasePath, ".tmp"));
-			this.transaction = null;
+			this.activeTransaction = null;
 		}
 	}
 
@@ -3440,7 +3461,7 @@ export default class Inibase {
 	 * live file is touched (nothing is published before commit()).
 	 */
 	public async rollback(): Promise<void> {
-		const txn = this.transaction;
+		const txn = this.activeTransaction;
 		if (!txn) throw this.createError("INVALID_PARAMETERS");
 		try {
 			await txn.journal.rollback().catch(() => {});
@@ -3448,7 +3469,55 @@ export default class Inibase {
 			for (const tableName of [...txn.tables.keys()].sort().reverse())
 				await File.unlock(join(this.databasePath, tableName, ".tmp"));
 			await File.unlock(join(this.databasePath, ".tmp"));
-			this.transaction = null;
+			this.activeTransaction = null;
+		}
+	}
+
+	/**
+	 * Run `callback` inside a transaction, committing when it resolves and
+	 * rolling back when it throws. Prefer this over a bare begin/commit pair:
+	 * the database lock taken by begin() is held for the transaction's whole
+	 * lifetime, so an exception between begin() and commit() would otherwise
+	 * block every later write on this database for the full lock-wait timeout.
+	 *
+	 * @param tablesOrCallback Pre-lock list (sorted, deadlock-free) or the callback
+	 * @param maybeCallback The callback, when tables were passed first
+	 * @param tables Pre-lock list when the callback was passed first
+	 * @return {*} Whatever the callback resolves to
+	 */
+	public async transaction<T>(
+		tablesOrCallback: string[] | ((db: Inibase) => Promise<T>),
+		maybeCallback?: (db: Inibase) => Promise<T>,
+		tables: string[] = [],
+	): Promise<T> {
+		return File.runWithLockStore(() =>
+			this._transaction(tablesOrCallback, maybeCallback, tables),
+		);
+	}
+
+	private async _transaction<T>(
+		tablesOrCallback: string[] | ((db: Inibase) => Promise<T>),
+		maybeCallback?: (db: Inibase) => Promise<T>,
+		tables: string[] = [],
+	): Promise<T> {
+		const callback =
+			typeof tablesOrCallback === "function" ? tablesOrCallback : maybeCallback;
+		if (!callback) throw this.createError("INVALID_PARAMETERS");
+		if (Array.isArray(tablesOrCallback)) tables = tablesOrCallback;
+
+		await this.begin(tables);
+		let committed = false;
+		try {
+			const result = await callback(this);
+			await this.commit();
+			committed = true;
+			return result;
+		} finally {
+			// commit() already rolled back and cleared the transaction when it
+			// failed, so this only fires for a throwing callback (or one that
+			// never committed) — the case that would otherwise leak the lock.
+			if (!committed && this.activeTransaction)
+				await this.rollback().catch(() => {});
 		}
 	}
 
@@ -4190,7 +4259,7 @@ export default class Inibase {
 			);
 
 		const tablePath = join(this.databasePath, tableName);
-		if (!this.transaction) await this.ensureDatabaseRecovered();
+		if (!this.activeTransaction) await this.ensureDatabaseRecovered();
 		await this.getTable(tableName);
 
 		if (!globalConfig[this.databasePath].tables?.get(tableName)?.schema)
@@ -4207,7 +4276,7 @@ export default class Inibase {
 		try {
 			// Inside a transaction the table lock is taken once per txn (and
 			// held until commit/rollback); otherwise the usual writer lock.
-			if (this.transaction) await this.ensureTxnLock(tableName);
+			if (this.activeTransaction) await this.ensureTxnLock(tableName);
 			else await File.lock(join(tablePath, ".tmp"));
 
 			const {
@@ -4217,7 +4286,8 @@ export default class Inibase {
 			} = await this.resolvePagination(tableName);
 			let lastIdValue = lastId;
 
-			if (!this.transaction) this.totalItems.set(`${tableName}-*`, _totalItems);
+			if (!this.activeTransaction)
+				this.totalItems.set(`${tableName}-*`, _totalItems);
 
 			if (Utils.isArrayOfObjects(clonedData))
 				for (let index = 0; index < clonedData.length; index++) {
@@ -4287,7 +4357,7 @@ export default class Inibase {
 				to: join(tablePath, `${lastIdValue}-${newTotal}.pagination`),
 			};
 
-			if (this.transaction) {
+			if (this.activeTransaction) {
 				// Stage: journal the intent (fsynced op entry); the live files
 				// only change when commit() publishes.
 				await this.stageTxnOp(tableName, renameList, pagination);
@@ -4310,7 +4380,7 @@ export default class Inibase {
 			}
 
 			if (returnPostedData) {
-				if (this.transaction)
+				if (this.activeTransaction)
 					// No read-your-writes yet: return the formatted staged rows
 					// (ids + defaults) instead of a committed-state read.
 					return (Array.isArray(clonedData) ? clonedData : clonedData) as any;
@@ -4343,9 +4413,7 @@ export default class Inibase {
 			const tableConfig =
 				globalConfig[this.databasePath].tables?.get(tableName)?.config;
 			const postedID = (id: string | number) =>
-				tableConfig?.decodeID === true
-					? Number(id)
-					: UtilsServer.encodeID(id);
+				tableConfig?.decodeID === true ? Number(id) : UtilsServer.encodeID(id);
 
 			return Array.isArray(clonedData)
 				? (tableConfig?.prepend ? clonedData.toReversed() : clonedData).map(
@@ -4353,7 +4421,7 @@ export default class Inibase {
 					)
 				: postedID((clonedData as Data & TData).id as string | number);
 		} finally {
-			if (this.transaction) {
+			if (this.activeTransaction) {
 				// Staged temps belong to the journal op; commit()/rollback()
 				// owns them. Temps from a failed pre-stage attempt are cleaned
 				// here so nothing leaks.
@@ -4463,7 +4531,7 @@ export default class Inibase {
 			);
 
 		const tablePath = join(this.databasePath, tableName);
-		if (!this.transaction) await this.ensureDatabaseRecovered();
+		if (!this.activeTransaction) await this.ensureDatabaseRecovered();
 		await this.throwErrorIfTableEmpty(tableName);
 
 		let clonedData: (Data & TData) | (Data & TData)[] = structuredClone(data);
@@ -4518,7 +4586,7 @@ export default class Inibase {
 			const computedPlan = await this.buildComputedPlan(tableName);
 
 			try {
-				if (this.transaction) await this.ensureTxnLock(tableName);
+				if (this.activeTransaction) await this.ensureTxnLock(tableName);
 				else await File.lock(join(tablePath, ".tmp"));
 
 				const { total } = await this.resolvePagination(tableName);
@@ -4575,7 +4643,7 @@ export default class Inibase {
 					),
 				);
 
-				if (this.transaction) {
+				if (this.activeTransaction) {
 					// Stage instead of publishing: row count is unchanged so
 					// there is no pagination rename to journal.
 					await this.stageTxnOp(tableName, renameList, null);
@@ -4591,14 +4659,14 @@ export default class Inibase {
 				}
 
 				if (returnUpdatedData) {
-					if (this.transaction)
+					if (this.activeTransaction)
 						// Reading the committed state would miss the staged
 						// write (no read-your-writes yet).
 						throw this.createError("INVALID_PARAMETERS");
 					return await this.get<TData>(tableName, undefined, options);
 				}
 			} finally {
-				if (this.transaction) {
+				if (this.activeTransaction) {
 					// Staged temps belong to the journal op; commit()/rollback()
 					// owns them.
 					if (!txnStaged && renameList.length)
@@ -4668,7 +4736,7 @@ export default class Inibase {
 			try {
 				// One global lock per table serializes every writer; inside a
 				// transaction the lock is held for the whole txn.
-				if (this.transaction) await this.ensureTxnLock(tableName);
+				if (this.activeTransaction) await this.ensureTxnLock(tableName);
 				else await File.lock(join(tablePath, ".tmp"));
 
 				if (computedPlan) {
@@ -4724,7 +4792,7 @@ export default class Inibase {
 					),
 				);
 
-				if (this.transaction) {
+				if (this.activeTransaction) {
 					await this.stageTxnOp(tableName, renameList, null);
 					txnStaged = true;
 				} else {
@@ -4737,7 +4805,8 @@ export default class Inibase {
 				}
 
 				if (returnUpdatedData) {
-					if (this.transaction) throw this.createError("INVALID_PARAMETERS");
+					if (this.activeTransaction)
+						throw this.createError("INVALID_PARAMETERS");
 					// AWAITED readback: must complete inside the writer lock. An
 					// async-tail `return this.get(...)` lets the finally below
 					// unlock before the readback's file reads resume.
@@ -4751,7 +4820,7 @@ export default class Inibase {
 					);
 				}
 			} finally {
-				if (this.transaction) {
+				if (this.activeTransaction) {
 					if (!txnStaged && renameList.length)
 						await Promise.allSettled(
 							renameList
@@ -4782,7 +4851,7 @@ export default class Inibase {
 			// the lock is held continuously from resolution to publish.
 			let inlineLock = false;
 			try {
-				if (this.transaction) await this.ensureTxnLock(tableName);
+				if (this.activeTransaction) await this.ensureTxnLock(tableName);
 				else {
 					await File.lock(join(tablePath, ".tmp"));
 					inlineLock = true;
@@ -4860,7 +4929,7 @@ export default class Inibase {
 	): Promise<boolean | null> {
 		this.validateName(tableName);
 
-		if (!this.transaction) await this.ensureDatabaseRecovered();
+		if (!this.activeTransaction) await this.ensureDatabaseRecovered();
 		const tablePath = join(this.databasePath, tableName);
 		await this.throwErrorIfTableEmpty(tableName);
 
@@ -4870,7 +4939,7 @@ export default class Inibase {
 			// ops) and publish the empty row count in one journaled commit.
 			const renameList: (string | null)[][] = [];
 			try {
-				if (this.transaction) await this.ensureTxnLock(tableName);
+				if (this.activeTransaction) await this.ensureTxnLock(tableName);
 				else await File.lock(join(tablePath, ".tmp"));
 
 				const files = (await readdir(tablePath)) ?? [];
@@ -4893,7 +4962,7 @@ export default class Inibase {
 					to: join(tablePath, `${lastId}-0.pagination`),
 				};
 
-				if (this.transaction) {
+				if (this.activeTransaction) {
 					await this.stageTxnOp(tableName, renameList, pagination);
 					txnStaged = true;
 					const stagedEntry = this.txnTableEntry(tableName);
@@ -4917,7 +4986,7 @@ export default class Inibase {
 
 				return true;
 			} finally {
-				if (this.transaction) {
+				if (this.activeTransaction) {
 					if (!txnStaged && renameList.length)
 						await Promise.allSettled(
 							renameList
@@ -4955,7 +5024,7 @@ export default class Inibase {
 				const renameList: (string | null)[][] = [];
 				let txnStaged = false;
 				try {
-					if (this.transaction) await this.ensureTxnLock(tableName);
+					if (this.activeTransaction) await this.ensureTxnLock(tableName);
 					else await File.lock(join(tablePath, ".tmp"));
 
 					const {
@@ -4980,7 +5049,7 @@ export default class Inibase {
 							from: paginationFilePath,
 							to: join(tablePath, `${lastId}-${remaining}.pagination`),
 						};
-						if (this.transaction) {
+						if (this.activeTransaction) {
 							await this.stageTxnOp(tableName, renameList, pagination);
 							txnStaged = true;
 							const stagedEntry = this.txnTableEntry(tableName);
@@ -5001,7 +5070,7 @@ export default class Inibase {
 							from: paginationFilePath,
 							to: join(tablePath, `${lastId}-0.pagination`),
 						};
-						if (this.transaction) {
+						if (this.activeTransaction) {
 							await this.stageTxnOp(tableName, truncateList, pagination);
 							txnStaged = true;
 							const stagedEntry = this.txnTableEntry(tableName);
@@ -5014,7 +5083,7 @@ export default class Inibase {
 					// Cache still describes the committed state while a
 					// transaction is open, so only clear it outside one.
 					if (
-						!this.transaction &&
+						!this.activeTransaction &&
 						globalConfig[this.databasePath].tables?.get(tableName)?.config.cache
 					)
 						await this.clearCache(tableName);
@@ -5029,7 +5098,7 @@ export default class Inibase {
 
 					return true;
 				} finally {
-					if (this.transaction) {
+					if (this.activeTransaction) {
 						if (!txnStaged && renameList.length)
 							await Promise.allSettled(
 								renameList
@@ -5060,7 +5129,7 @@ export default class Inibase {
 			// lines of a prepend table and remove the wrong row).
 			let inlineLock = false;
 			try {
-				if (this.transaction) await this.ensureTxnLock(tableName);
+				if (this.activeTransaction) await this.ensureTxnLock(tableName);
 				else {
 					await File.lock(join(tablePath, ".tmp"));
 					inlineLock = true;
@@ -5169,7 +5238,7 @@ export default class Inibase {
 						// Unreadable/unsupported column -> skip this reference.
 						// Inside a transaction a broken reference must abort the
 						// whole cascade (all-or-nothing).
-						if (this.transaction) throw error;
+						if (this.activeTransaction) throw error;
 					}
 				}
 
@@ -5187,7 +5256,7 @@ export default class Inibase {
 					// Cascade is best-effort outside a transaction: never break
 					// the parent delete. Inside a transaction a cascade failure
 					// must abort the whole txn (all-or-nothing).
-					if (this.transaction) throw error;
+					if (this.activeTransaction) throw error;
 				}
 			}
 		}
@@ -5289,7 +5358,11 @@ export default class Inibase {
 		const targetFields = new Map<string, Field>();
 		for (const column of columns) {
 			const dot = column.indexOf(".");
-			if (dot <= 0 || dot === column.length - 1 || column.indexOf(".", dot + 1) !== -1)
+			if (
+				dot <= 0 ||
+				dot === column.length - 1 ||
+				column.indexOf(".", dot + 1) !== -1
+			)
 				throw this.createError("INVALID_PARAMETERS", [
 					`sum nested: '${column}' must be a single-level child path of an array-of-objects column`,
 				]);
@@ -5447,7 +5520,15 @@ export default class Inibase {
 					let matches = true;
 					for (const p of elementPredicates) {
 						const pv = predCells.get(p.field.key)?.[Number(lineStr)]?.[i];
-						if (pv === undefined || !UtilsServer.compare(p.operator, pv, p.comparedValue, p.field.type)) {
+						if (
+							pv === undefined ||
+							!UtilsServer.compare(
+								p.operator,
+								pv,
+								p.comparedValue,
+								p.field.type,
+							)
+						) {
 							matches = false;
 							break;
 						}

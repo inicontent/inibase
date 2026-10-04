@@ -460,6 +460,148 @@ await test("computed link-hops reject transaction-staged dependency tables", asy
 	assert.equal((await readAll("wallet_t")).length, 2, "rejected write staged nothing");
 });
 
+await test("transaction() commits on resolve and returns the callback value", async () => {
+	const usersBefore = (await readAll("user_t")).length;
+	const postsBefore = (await readAll("post_t")).length;
+
+	const returned = await db.transaction(async (tx) => {
+		await tx.post("user_t", { name: "hopper" });
+		await tx.post("post_t", { title: "from-txn", author: { id: 3 } });
+		return "committed-value";
+	});
+
+	assert.equal(returned, "committed-value", "callback return value is forwarded");
+	const users = await readAll("user_t");
+	const posts = await readAll("post_t");
+	assert.equal(users.length, usersBefore + 1, "both staged writes published");
+	assert.equal(users[users.length - 1].name, "hopper");
+	assert.equal(posts.length, postsBefore + 1);
+	assert.equal(posts[posts.length - 1].title, "from-txn");
+	assert.deepEqual(await dbTmpLeftovers(), [], "journal cleaned up");
+});
+
+await test("transaction() accepts a pre-lock table list", async () => {
+	const before = (await readAll("user_t")).length;
+
+	await db.transaction(["user_t", "post_t"], async (tx) => {
+		await tx.post("user_t", { name: "prelocked" });
+	});
+
+	const users = await readAll("user_t");
+	assert.equal(users.length, before + 1);
+	assert.equal(users[users.length - 1].name, "prelocked");
+});
+
+await test("transaction() rolls back on throw and releases the database lock", async () => {
+	const before = (await readAll("user_t")).length;
+
+	await assert.rejects(
+		() =>
+			db.transaction(async (tx) => {
+				await tx.post("user_t", { name: "doomed" });
+				await tx.post("post_t", { title: "doomed", author: { id: 4 } });
+				throw new Error("callback failed");
+			}),
+		/callback failed/,
+		"the callback error propagates to the caller",
+	);
+
+	assert.equal(
+		(await readAll("user_t")).length,
+		before,
+		"no partial writes survived the rollback",
+	);
+	assert.deepEqual(await dbTmpLeftovers(), [], "journal removed by the rollback");
+
+	// The whole point: the database lock must be free again. A leaked lock
+	// would make this write block for the full INIBASE_LOCK_WAIT_TIMEOUT_MS.
+	await db.transaction(async (tx) => {
+		await tx.post("user_t", { name: "after-failure" });
+	});
+	assert.equal((await readAll("user_t")).length, before + 1, "lock was released");
+});
+
+await test("transaction() rolls back when a staged write itself fails", async () => {
+	const before = (await readAll("user_t")).length;
+
+	await assert.rejects(() =>
+		db.transaction(async (tx) => {
+			await tx.post("user_t", { name: "will-fail" });
+			// `name` is required — this throws before anything is staged.
+			await tx.post("user_t", {} as never);
+		}),
+	);
+
+	assert.equal(
+		(await readAll("user_t")).length,
+		before,
+		"a validation failure discards the whole transaction",
+	);
+
+	// Lock released even though the failure came from inside the engine.
+	await db.transaction(async (tx) => {
+		await tx.post("user_t", { name: "recovered" });
+	});
+});
+
+await test("transaction() rejects misuse", async () => {
+	// no callback at all
+	await assert.rejects(
+		() => (db as never as { transaction: () => Promise<unknown> }).transaction(),
+		(error: any) => error?.name === "INVALID_PARAMETERS",
+	);
+	// nested transaction — begin() refuses a second open transaction
+	await assert.rejects(
+		() =>
+			db.transaction(async () => {
+				await db.transaction(async (tx) => tx.post("user_t", { name: "x" }));
+			}),
+		(error: any) => error?.name === "INVALID_PARAMETERS",
+	);
+	// the failed outer attempt must still have released the lock
+	await db.transaction(async (tx) => {
+		await tx.post("user_t", { name: "after-misuse" });
+	});
+});
+
+await test("commit() refreshes row counts and drops derived caches", async () => {
+	// A put leaves the row count unchanged, so a sort/criteria .cache entry
+	// built before the transaction would survive it — that is the regression
+	// this guards: commit() must clear caches for every table it published.
+	await db.createTable("cached_t", userSchema, { cache: true });
+	await db.post("cached_t", { name: "before" });
+
+	const cacheDir = join(tableDir("cached_t"), ".cache");
+	await mkdir(cacheDir, { recursive: true });
+	await writeFile(join(cacheDir, "stale-entry"), "stale");
+
+	await db.transaction(async (tx) => {
+		await tx.put("cached_t", { name: "after" }, 1);
+	});
+
+	assert.equal(
+		existsSync(join(cacheDir, "stale-entry")),
+		false,
+		"stale .cache entry dropped by commit()",
+	);
+
+	const rows = (await db.get("cached_t", undefined, {
+		page: 1,
+		perPage: -1,
+	})) as any[];
+	assert.equal(rows.length, 1, "no phantom row from the cached table");
+	assert.equal(rows[0].name, "after", "the staged put is visible after commit");
+
+	// A post changes the row count, so the in-memory counter must be refreshed
+	// too — otherwise a subsequent pageInfo/total read is stale.
+	await db.transaction(async (tx) => {
+		await tx.post("cached_t", { name: "second" });
+	});
+	assert.equal(db.totalItems.get("cached_t-*"), 2, "row count refreshed on commit");
+
+	await db.delete("cached_t");
+});
+
 await test("Cleanup transaction database", async () => {
 	removeDatabase();
 });
