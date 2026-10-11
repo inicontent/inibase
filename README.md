@@ -2,22 +2,36 @@
 
 > A file-based & memory-efficient, serverless relational database with **crash-atomic ACID: single-table DML + multi-table transactions** :fire: — per-table writer locks, write-ahead journal + crash recovery, fsync-backed durability, and a `begin`/`commit`/`rollback` transaction API (exact scope in [Durability & crash safety](#durability--crash-safety)).
 
-[![Inibase banner](./.github/assets/banner.jpg)](https://github.com/inicontent/inibase)
+[![Inibase: TypeScript API, column-file storage, relations, transactions, and durability](./.github/assets/overview.svg)](#usage)
 
 [![npmjs](https://img.shields.io/npm/dm/inibase.svg?style=flat)](https://www.npmjs.org/package/inibase) [![License](https://img.shields.io/github/license/inicontent/inibase.svg?style=flat&colorA=18181B&colorB=28CF8D)](./LICENSE) [![Activity](https://img.shields.io/github/commit-activity/m/inicontent/inibase)](https://github.com/inicontent/inibase/pulse) [![GitHub stars](https://img.shields.io/github/stars/inicontent/inibase?style=social)](https://github.com/inicontent/inibase)
+
+**[Quick start](#usage) · [How it works](#how-it-works) · [Durability](#durability--crash-safety) · [Benchmarks](#benchmark)**
+
+## Small footprint. Real benchmark results.
+
+Inibase is a file-based TypeScript database designed for **fast data access and low memory usage**, with column selection, built-in caching, and optional gzip compression.
+
+In the **100,000-record CMS benchmark**, Inibase **3.7.0 with gzip** used **1.64 MiB of allocated disk** — **89.4% less than LevelDB** and **98.7% less than SQLite**. Reading two selected columns took **44.3 ms** in the same workload.
+
+[![Database storage comparison for 100,000 CMS records: Inibase gzip uses 1.64 MiB of allocated disk; lower is better](./.github/assets/storage-benchmark-100k.png)](https://github.com/inicontent/benchmarks/blob/a6c4a644aa5472192fefefe0f3d93b56edc9726a/results/large-cms/REPORT.md)
+
+*Source: [inicontent/benchmarks](https://github.com/inicontent/benchmarks/blob/a6c4a644aa5472192fefefe0f3d93b56edc9726a/results/large-cms/REPORT.md), median of three trials on Apple M5 with repetitive synthetic CMS content and full durability. The chart measures disk storage, not RAM. Results depend on the workload; indexed competitors were faster for key lookups.*
+
+[Explore the full results](https://github.com/inicontent/benchmarks/blob/a6c4a644aa5472192fefefe0f3d93b56edc9726a/results/large-cms/REPORT.md) · [Read the methodology](https://github.com/inicontent/benchmarks/blob/a6c4a644aa5472192fefefe0f3d93b56edc9726a/METHODOLOGY.md)
 
 ## Features
 
 - **Lightweight** 🪶
 - **Minimalist** :white_circle: (but powerful)
 - **100% TypeScript** :large_blue_diamond:
-- **Super-Fast** :zap: (built-in caching system)
+- **Built for fast access** :zap: Built-in caching and column projection
 - **ATOMIC** :lock: Per-table writer locks, write-ahead journal + crash recovery, fsync-backed durability, and multi-table transactions (`begin`/`commit`/`rollback`) for atomic cascades (exact scope below)
 - **Built-in** form validation (+unique values :new: ) :sunglasses:
 - **Suitable for large data** :page_with_curl: (tested with 4M records)
 - **Support Compression** :eight_spoked_asterisk: (using built-in nodejs zlib)
 - **Support Table Joins** :link:
-- **Low memory-usage** :chart_with_downwards_trend: (3-5mb)
+- **Memory-conscious design** :chart_with_downwards_trend: File-based storage and streaming reads
 - **Safe** :lock: (no sql or javascript injections)
 - **Easy to use** :bread:
 - **...** and much more :rocket:
@@ -1085,6 +1099,10 @@ are derived first, in dependency order.
 > > The numbers above were measured **before** always-on fsync + write-ahead journaling landed (they no longer reflect current hot-path write costs). Run `pnpm benchmark:durability` for the crash-atomic numbers.
 
 ### Computed fields
+
+![Bulk POST benchmark comparing plain and computed fields for 10, 100, and 1,000 rows; lower is better](./.github/assets/computed-benchmark.svg)
+
+*Charted from the results below, with fsync and journaling enabled. These are recorded sample measurements, not a new benchmark run; hardware and version were not recorded with this table.*
 
 Write-time evaluation cost (helpers `sum(3 * 4)`, `avg(4)`, `min(4)`, `max(4)`, `count(3)` over an `items` array with 3 lines, plus an arithmetic field `itemTotal × (314 / 100)`), compared against the identical table without computed fields:
 
