@@ -29,6 +29,7 @@ In the **100,000-record CMS benchmark**, Inibase **3.7.0 with gzip** used **1.64
 - **ATOMIC** :lock: Per-table writer locks, write-ahead journal + crash recovery, fsync-backed durability, and multi-table transactions (`begin`/`commit`/`rollback`) for atomic cascades (exact scope below)
 - **Built-in** form validation (+unique values :new: ) :sunglasses:
 - **Suitable for large data** :page_with_curl: (tested with 4M records)
+- **Incremental updates** :recycle: Opt-in update log (`log: true`) appends small frames instead of rewriting whole columns
 - **Support Compression** :eight_spoked_asterisk: (using built-in nodejs zlib)
 - **Support Table Joins** :link:
 - **Memory-conscious design** :chart_with_downwards_trend: File-based storage and streaming reads
@@ -84,7 +85,7 @@ const users = await db.get("user", { favoriteFoods: "![]Pizza,Burger" });
 
 - **POST**: New data is appended to column files efficiently.
 - **GET**: Data retrieval is optimized by reading files line-by-line.
-- **PUT**: Updates are streamlined, with only the relevant file being modified.
+- **PUT**: Updates are streamlined: on a plain table only the relevant column file is rewritten, while a table with the [update log](#incremental-update-log) enabled appends a small frame instead.
 - **DELETE**: Removes lines from column files for swift deletion.
 
 This structure ensures efficient storage, retrieval, and updates, making our system scalable and high-performing for diverse datasets and applications.
@@ -180,6 +181,50 @@ Run `pnpm test:durability` for the journal-recovery, multi-process writer,
 live-reader and stale-lock test suite, `pnpm test:transaction` for the
 transaction/cascade/crash-recovery suite, and `pnpm benchmark:durability` for
 the `full` vs `none` throughput comparison.
+
+## Incremental update log
+
+Opt a table into the append-only **update log** (on-disk format 2) to make `put`
+cheap when a table is large but each update touches few rows:
+
+```js
+await db.createTable("user", userTableSchema, { log: true });
+// or migrate an existing table in place:
+await db.updateTable("user", undefined, { log: true });
+```
+
+- **Writes.** `put` appends one length-prefixed, `crc32`-checked frame
+  (`{ id, cols, updatedAt }`) to `updates.log` instead of rewriting column
+  files, so the fast path is proportional to the number of updated rows rather
+  than the table size. `post` and `delete` still rewrite the base columns.
+- **Reads.** Every read — `get`, criteria, `columns`, sort, pagination,
+  aggregates, and uniqueness checks — merges the log over the base columns, so
+  results match an un-logged table. With an empty log the merge is a no-op.
+- **Compaction.** `await db.compact(tableName)` folds the log into the base
+  columns and resets it, returning the new `baseGen` — or `null` when there was
+  nothing to fold. Compaction is crash-safe and semantically neutral: it only
+  materializes already-acknowledged updates. It also runs automatically under
+  backpressure so the overlay and log stay bounded
+  (`INIBASE_MAX_OVERLAY_RECORDS`, default `100000`; `INIBASE_MAX_LOG_BYTES`,
+  default 64 MiB); if the bound is hit and compaction cannot run, the write
+  fails with `MAINTENANCE_REQUIRED` rather than growing without limit.
+- **Requirements.** The table must use the append layout (no `prepend`) and a
+  schema of simple top-level fields. Transactions, schema changes, and
+  disabling the log on a log table throw `MAINTENANCE_REQUIRED` for now (they
+  need compaction rewiring, planned for 3.9).
+- **On disk.** A `.format` marker records `format`, `baseGen`, and the
+  compatibility contract (`minReader`); `updates.log` holds the frames. A table
+  with no `.format` is legacy format 1 and behaves exactly as before.
+- **Downgrade safety.** A reader older than the log format ignores the marker
+  and would silently serve **stale** base columns. The marker's `minReader`
+  makes a conforming engine refuse such a table with `UNSUPPORTED_FORMAT`
+  instead of mis-reading it.
+
+> [!WARNING]
+> **Backups.** A raw directory copy is only a valid backup when writes are
+> quiesced or the copy is a filesystem snapshot. Copying a logged table *during*
+> writes can capture base columns paired with a mismatched `updates.log` /
+> `baseGen`. Running `compact` first does not remove the need to quiesce writes.
 
 ## Inibase CLI
 
