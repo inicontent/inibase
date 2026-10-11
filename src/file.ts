@@ -1547,6 +1547,13 @@ export const search = async (
 	offset?: number,
 	readWholeFile?: boolean,
 	earlyStop?: boolean,
+	/**
+	 * Per-line raw cell overrides (update-log overlay). When a line is present
+	 * the overridden raw value is decoded and compared instead of the file's
+	 * line, so a search reflects un-compacted `put`s. The native whole-line
+	 * grep fast path is bypassed whenever overrides are supplied.
+	 */
+	overrides?: Map<number, string | number | boolean | null>,
 ): Promise<
 	[
 		Record<
@@ -1564,6 +1571,7 @@ export const search = async (
 > => {
 	// Native fast path for exact-equality searches (whole-line `grep -x -F`).
 	if (
+		!overrides?.size &&
 		operator === "=" &&
 		!Array.isArray(operator) &&
 		!logicalOperator &&
@@ -1643,8 +1651,14 @@ export const search = async (
 			)
 				continue;
 
-			// Decode the line for comparison.
-			const decodedLine = decode(line, config);
+			// Decode the line for comparison. A per-line overlay override (raw
+			// cell) wins over the file content so searches see un-compacted puts.
+			const decodedLine = decode(
+				overrides?.has(linesCount)
+					? (overrides.get(linesCount) as string | number | null)
+					: line,
+				config,
+			);
 
 			// Check if the line meets the specified conditions based on comparison and logical operators.
 			const doesMeetCondition =
@@ -1703,6 +1717,7 @@ async function reduceNumbers(
 	filePath: string,
 	wanted: "sum" | "avg" | "min" | "max" = "sum",
 	lineNumbers?: number | number[],
+	overrides?: Map<number, string | number | boolean | null>,
 ): Promise<number> {
 	/* optional subset */
 	const filter = lineNumbers
@@ -1727,7 +1742,15 @@ async function reduceNumbers(
 			/* skip unwanted lines */
 			if (filter && !filter.has(line)) continue;
 
-			const num = Number(decode(txt, { key: "BLABLA", type: "number" }));
+			// A per-line overlay override (raw cell) wins over the base file so
+			// aggregates reflect un-compacted puts.
+			const raw = overrides?.has(line) ? overrides.get(line) : txt;
+			const num = Number(
+				decode(raw as string | number | null, {
+					key: "BLABLA",
+					type: "number",
+				}),
+			);
 			if (Number.isNaN(num)) continue;
 
 			processed++;
@@ -1759,17 +1782,29 @@ async function reduceNumbers(
 }
 
 /* Optional convenience wrappers (signatures unchanged) */
-export const sum = (fp: string, ln?: number | number[]) =>
-	reduceNumbers(fp, "sum", ln);
+export const sum = (
+	fp: string,
+	ln?: number | number[],
+	overrides?: Map<number, string | number | boolean | null>,
+) => reduceNumbers(fp, "sum", ln, overrides);
 
-export const avg = (fp: string, ln?: number | number[]) =>
-	reduceNumbers(fp, "avg", ln);
+export const avg = (
+	fp: string,
+	ln?: number | number[],
+	overrides?: Map<number, string | number | boolean | null>,
+) => reduceNumbers(fp, "avg", ln, overrides);
 
-export const min = (fp: string, ln?: number | number[]) =>
-	reduceNumbers(fp, "min", ln);
+export const min = (
+	fp: string,
+	ln?: number | number[],
+	overrides?: Map<number, string | number | boolean | null>,
+) => reduceNumbers(fp, "min", ln, overrides);
 
-export const max = (fp: string, ln?: number | number[]) =>
-	reduceNumbers(fp, "max", ln);
+export const max = (
+	fp: string,
+	ln?: number | number[],
+	overrides?: Map<number, string | number | boolean | null>,
+) => reduceNumbers(fp, "max", ln, overrides);
 
 export const getFileDate = (path: string) =>
 	stat(path)

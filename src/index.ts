@@ -30,9 +30,36 @@ import {
 	topoSortComputedFields,
 } from "./expression.js";
 import * as File from "./file.js";
+import {
+	CURRENT_FORMAT_VERSION,
+	FORMAT_FILE,
+	readFormat,
+	serializeFormat,
+	type TableFormat,
+	writeFormat,
+} from "./format.js";
 import { DatabaseJournal, Journal, type JournalFileOp } from "./journal.js";
+import { TableOverlay } from "./overlay.js";
+import {
+	buildFrames,
+	DEFAULT_MAX_FRAME_BYTES,
+	UPDATES_LOG_NAME,
+	type UpdateRecord,
+} from "./updatelog.js";
 import * as Utils from "./utils.js";
 import * as UtilsServer from "./utils.server.js";
+
+/**
+ * Default accumulation bounds for a format-2 table. Before each append the
+ * writer compacts when the log would exceed `maxLogBytes()` bytes or the
+ * overlay would exceed `maxOverlayRecords()` distinct rows; the log resets to
+ * empty on compaction, so these bound *between* compactions, not total writes.
+ * Both are overridable per deployment via environment for large tables.
+ */
+const maxLogBytes = () =>
+	Number(process.env.INIBASE_MAX_LOG_BYTES) || 64 * 1024 * 1024;
+const maxOverlayRecords = () =>
+	Number(process.env.INIBASE_MAX_OVERLAY_RECORDS) || 100_000;
 
 export interface Data {
 	id?: string | number;
@@ -100,6 +127,14 @@ export interface TableConfig {
 	cache?: boolean;
 	prepend?: boolean;
 	decodeID?: boolean;
+	/**
+	 * Opt a table into the incremental update log (format 2): `put` appends a
+	 * small frame instead of rewriting whole columns, and reads merge the log
+	 * over the base columns. Requires a schema of simple top-level fields and
+	 * is incompatible with `prepend`, transactions and DDL on the table
+	 * (those need compaction, shipped in 3.9).
+	 */
+	log?: boolean;
 }
 
 export interface TableObject {
@@ -190,6 +225,10 @@ export const ERROR_CODES = [
 	"COMPUTED_FIELD_SETTABLE",
 	"COMPUTED_FIELD_DANGLING_LINK",
 	"COMPUTED_FIELD_ARITHMETIC",
+	"UPDATE_LOG_CORRUPT",
+	"UPDATE_LOG_FRAME_TOO_LARGE",
+	"MAINTENANCE_REQUIRED",
+	"UNSUPPORTED_FORMAT",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 export type ErrorLang = "en" | "ar" | "fr" | "es";
@@ -397,6 +436,15 @@ export default class Inibase {
 	 *  changes: see the invalidation in `getTable`'s reload branch,
 	 *  `createTable` and `updateTableLocked`. Bounded by the number of tables. */
 	private readonly computedPlanCache = new Map<string, ComputedPlan | null>();
+	/** Per-table `.format` marker + live update-log overlays (format 2 tables).
+	 *  Keyed by `databasePath\0tableName` so two databases in one process never
+	 *  share state. Populated lazily by `getOverlay`. */
+	private readonly tableFormats = new Map<string, TableFormat>();
+	private readonly overlays = new Map<string, TableOverlay>();
+	/** Last observed identity of each table's `.format` file (`mtime:size:ino`),
+	 *  used to detect a compaction by another process without re-reading the
+	 *  marker on every access. */
+	private readonly formatStamps = new Map<string, string>();
 	private databasePath: string;
 	private uniqueMap: Map<
 		string | number,
@@ -573,6 +621,25 @@ export default class Inibase {
 				await File.write(join(tablePath, ".prepend.config"), "");
 			if (config.decodeID)
 				await File.write(join(tablePath, ".decodeID.config"), "");
+			if (config.log) {
+				if (config.prepend)
+					throw this.createError(
+						"UNSUPPORTED_FORMAT",
+						"append layout (no prepend)",
+					);
+				if (schema) this.assertLogCompatibleSchema(schema);
+				await File.write(join(tablePath, UPDATES_LOG_NAME), "");
+				await writeFormat(tablePath, {
+					format: CURRENT_FORMAT_VERSION,
+					log: true,
+					baseGen: 0,
+				});
+				this.tableFormats.set(tableName, {
+					format: CURRENT_FORMAT_VERSION,
+					log: true,
+					baseGen: 0,
+				});
+			}
 		}
 		if (schema) {
 			const lastSchemaID = { value: 0 };
@@ -679,6 +746,45 @@ export default class Inibase {
 		schema?: Schema,
 		config?: TableConfig & { name?: string },
 	) {
+		// A log table cannot be reshaped in place yet: its log frames reference
+		// column names and its overlay would have to be materialised into the
+		// base columns first (compaction, 3.9). Rename/other config are fine.
+		if (this.isLogTable(tableName)) {
+			if (schema)
+				throw this.createError(
+					"MAINTENANCE_REQUIRED",
+					`${tableName} (schema change on update-log table)`,
+				);
+			if (config?.prepend)
+				throw this.createError(
+					"MAINTENANCE_REQUIRED",
+					`${tableName} (prepend layout on update-log table)`,
+				);
+			if (config?.log === false)
+				throw this.createError(
+					"MAINTENANCE_REQUIRED",
+					`${tableName} (disabling the update log needs compaction)`,
+				);
+		} else if (config?.log) {
+			if (config.prepend || table.config.prepend)
+				throw this.createError(
+					"UNSUPPORTED_FORMAT",
+					"append layout (no prepend)",
+				);
+			if (table.schema?.length) this.assertLogCompatibleSchema(table.schema);
+			await File.write(join(tablePath, UPDATES_LOG_NAME), "");
+			await writeFormat(tablePath, {
+				format: CURRENT_FORMAT_VERSION,
+				log: true,
+				baseGen: 0,
+			});
+			this.tableFormats.set(tableName, {
+				format: CURRENT_FORMAT_VERSION,
+				log: true,
+				baseGen: 0,
+			});
+		}
+
 		if (schema) {
 			this.validateSchema(schema);
 			// remove id from schema
@@ -962,6 +1068,13 @@ export default class Inibase {
 		this.computedPlanCache.delete(tableName);
 		if (config?.name && config.name !== tableName)
 			this.computedPlanCache.delete(config.name);
+		// Drop log/format caches for the touched table(s) so next access re-reads
+		// the (possibly moved) marker and overlay from disk.
+		for (const name of config?.name ? [tableName, config.name] : [tableName]) {
+			this.tableFormats.delete(name);
+			this.formatStamps.delete(name);
+			this.overlays.delete(this.overlayKey(name));
+		}
 	}
 
 	/**
@@ -984,25 +1097,352 @@ export default class Inibase {
 				(await File.getFileDate(
 					join(tablePath, `schema.${this.schemaFileExtension}`),
 				))
-		)
+		) {
+			const format = await readFormat(tablePath);
+			this.tableFormats.set(tableName, format);
+			await this.stampFormat(tableName);
+			const config: TableConfig = {
+				compression: await File.isExists(
+					join(tablePath, ".compression.config"),
+				),
+				cache: await File.isExists(join(tablePath, ".cache.config")),
+				prepend: await File.isExists(join(tablePath, ".prepend.config")),
+				decodeID: await File.isExists(join(tablePath, ".decodeID.config")),
+			};
+			// Only surface `log` when enabled, so the public config shape of a
+			// legacy table is byte-for-byte what it was before 3.8.
+			if (format.log) config.log = true;
 			globalConfig[this.databasePath].tables?.set(tableName, {
 				schema: await this.getTableSchema(tableName),
-				config: {
-					compression: await File.isExists(
-						join(tablePath, ".compression.config"),
-					),
-					cache: await File.isExists(join(tablePath, ".cache.config")),
-					prepend: await File.isExists(join(tablePath, ".prepend.config")),
-					decodeID: await File.isExists(join(tablePath, ".decodeID.config")),
-				},
+				config,
 				timestamp: await File.getFileDate(
 					join(tablePath, `schema.${this.schemaFileExtension}`),
 				),
 			});
+		}
 		// A reload means the on-disk schema changed (create/update/external
 		// edit): the cached computed plan is derived from it.
 		this.computedPlanCache.delete(tableName);
 		return globalConfig[this.databasePath].tables?.get(tableName);
+	}
+
+	/* -----------------------------------------------------------------------
+	 * Update-log overlay (format 2 tables)
+	 * --------------------------------------------------------------------- */
+
+	private overlayKey(tableName: string): string {
+		return `${this.databasePath}\u0000${tableName}`;
+	}
+
+	/** True when the table opted into the incremental update log. */
+	private isLogTable(tableName: string): boolean {
+		const cached = this.tableFormats.get(tableName);
+		if (cached) return cached.log;
+		return (
+			globalConfig[this.databasePath].tables?.get(tableName)?.config.log ===
+			true
+		);
+	}
+
+	/**
+	 * Resolve a table's format marker, revalidating a cached *log* table when
+	 * its `.format` file changed underneath us. A compaction by another process
+	 * bumps `baseGen` and empties the log; without re-reading the marker this
+	 * process would scan the new (empty) log with the old `baseGen`, and once a
+	 * post-compaction frame appears the generation gap would look like
+	 * corruption. Legacy tables never change format implicitly, so they skip
+	 * the stat entirely and keep the pre-3.8 read path cost.
+	 */
+	private async currentFormat(tableName: string): Promise<TableFormat | null> {
+		const cached = this.tableFormats.get(tableName);
+		if (cached && !cached.log) return cached;
+
+		const tablePath = join(this.databasePath, tableName);
+		let stamp = "none";
+		try {
+			const stat_ = await stat(join(tablePath, FORMAT_FILE));
+			stamp = `${stat_.mtimeMs}:${stat_.size}:${stat_.ino}`;
+		} catch {
+			stamp = "none";
+		}
+		if (cached && this.formatStamps.get(tableName) === stamp) return cached;
+
+		const format = await readFormat(tablePath);
+		this.tableFormats.set(tableName, format);
+		this.formatStamps.set(tableName, stamp);
+		// A changed baseGen invalidates the cached overlay: rebuild from the
+		// (possibly now empty) log at the new generation.
+		const key = this.overlayKey(tableName);
+		const overlay = this.overlays.get(key);
+		if (overlay && overlay.baseGen !== format.baseGen)
+			this.overlays.delete(key);
+		return format;
+	}
+
+	/**
+	 * Load (or refresh) a table's live overlay. Returns null for legacy tables
+	 * (no `.format` marker) so every existing code path stays untouched. With
+	 * `forWrite`, repairs a torn tail and rebuilds to the committed boundary;
+	 * the caller must already hold the table writer lock.
+	 */
+	private async getOverlay(
+		tableName: string,
+		forWrite = false,
+	): Promise<TableOverlay | null> {
+		const format = await this.currentFormat(tableName);
+		if (!format?.log) return null;
+
+		const key = this.overlayKey(tableName);
+		let overlay = this.overlays.get(key);
+		if (!overlay || overlay.baseGen !== format.baseGen) {
+			overlay = new TableOverlay(
+				join(this.databasePath, tableName),
+				format.baseGen,
+			);
+			this.overlays.set(key, overlay);
+		}
+		if (forWrite) await overlay.refreshForWrite();
+		else await overlay.refresh();
+		return overlay;
+	}
+
+	private async stampFormat(tableName: string): Promise<void> {
+		let stamp = "none";
+		try {
+			const stat_ = await stat(join(this.databasePath, tableName, FORMAT_FILE));
+			stamp = `${stat_.mtimeMs}:${stat_.size}:${stat_.ino}`;
+		} catch {
+			stamp = "none";
+		}
+		this.formatStamps.set(tableName, stamp);
+	}
+
+	/**
+	 * The format-2 update log stores one encoded cell per changed *top-level
+	 * simple* column; nested (object/array/table) and computed fields are not
+	 * representable without a compaction step (3.9). A log table whose schema
+	 * violates this is rejected at DDL time so the write path can always take
+	 * the log and never needs to interleave a whole-column rewrite.
+	 */
+	private assertLogCompatibleSchema(schema: Schema): void {
+		for (const field of schema) {
+			if (["id", "createdAt", "updatedAt"].includes(field.key)) continue;
+			if (typeof field.computed !== "undefined")
+				throw this.createError(
+					"UNSUPPORTED_FORMAT",
+					`simple top-level fields (computed field "${field.key}" is not supported with log)`,
+				);
+			if (!this.isSimpleField(field.type))
+				throw this.createError(
+					"UNSUPPORTED_FORMAT",
+					`simple top-level fields (field "${field.key}" is ${field.type})`,
+				);
+		}
+	}
+
+	private idFieldOf(tableName: string): Field {
+		const schema =
+			globalConfig[this.databasePath].tables?.get(tableName)?.schema ?? [];
+		return (
+			schema.find((field) => field.key === "id") ?? { key: "id", type: "id" }
+		);
+	}
+
+	/** Read the internal numeric id for each requested line (stable overlay key). */
+	private async overlayLineIds(
+		tableName: string,
+		lines: number[],
+	): Promise<Map<number, number>> {
+		const map = new Map<number, number>();
+		if (!lines.length) return map;
+		const filePath = join(
+			this.databasePath,
+			tableName,
+			`id${this.getFileExtension(tableName)}`,
+		);
+		// Streaming reader (no shell spawn): like the sparse column read path,
+		// stop at the last requested line instead of shelling out to `sed -n`,
+		// which costs ~ms per call on a log-table read.
+		const values = await File.getLines(filePath, lines, {
+			...this.idFieldOf(tableName),
+			key: "id",
+			type: "number",
+		});
+		for (const [line, value] of Object.entries(values))
+			map.set(Number(line), Number(value));
+		return map;
+	}
+
+	/** Internal id -> current line number(s), built from the id column. */
+	private async overlayIdToLines(
+		tableName: string,
+	): Promise<Map<number, number[]>> {
+		const filePath = join(
+			this.databasePath,
+			tableName,
+			`id${this.getFileExtension(tableName)}`,
+		);
+		const values = await File.get(filePath, undefined, {
+			...this.idFieldOf(tableName),
+			key: "id",
+			type: "number",
+		});
+		const map = new Map<number, number[]>();
+		for (const [line, value] of Object.entries(values)) {
+			if (typeof value === "undefined" || value === null) continue;
+			const id = Number(value);
+			const bucket = map.get(id);
+			if (bucket) bucket.push(Number(line));
+			else map.set(id, [Number(line)]);
+		}
+		return map;
+	}
+
+	/**
+	 * Per-line raw-cell overrides for one column, from the overlay. Used by
+	 * `File.search` so criteria, uniqueness and aggregate scans see the merged
+	 * (un-compacted) values. Returns undefined when the table has no overlay or
+	 * the column is never overlaid.
+	 */
+	private async overlayColumnOverrides(
+		tableName: string,
+		columnKey: string,
+	): Promise<Map<number, string | number | boolean | null> | undefined> {
+		const overlay = await this.getOverlay(tableName);
+		if (!overlay || overlay.size === 0) return undefined;
+
+		const entries: [number, unknown][] = [];
+		for (const [id, entry] of overlay.byId)
+			if (Object.hasOwn(entry.cols, columnKey))
+				entries.push([Number(id), entry.cols[columnKey]]);
+		if (!entries.length) return undefined;
+
+		const idToLines = await this.overlayIdToLines(tableName);
+		const overrides = new Map<number, string | number | boolean | null>();
+		for (const [id, encoded] of entries) {
+			const lines = idToLines.get(id);
+			if (!lines) continue;
+			for (const line of lines)
+				overrides.set(line, encoded as string | number | boolean | null);
+		}
+		return overrides.size ? overrides : undefined;
+	}
+
+	/**
+	 * Fold every logged update into the base columns and reset the log.
+	 *
+	 * Safe to call on any table: legacy tables (no `.format` marker) are a
+	 * no-op. Semantically neutral — it only materializes already-acknowledged
+	 * updates, so a failure never makes an acknowledged `put` disappear.
+	 * Returns the new `baseGen` for a compacted table, or `null` when there was
+	 * nothing to fold.
+	 */
+	public async compact(tableName: string): Promise<number | null> {
+		this.validateName(tableName);
+		if (this.activeTransaction)
+			throw this.createError(
+				"MAINTENANCE_REQUIRED",
+				`${tableName} (compaction inside a transaction)`,
+			);
+		await this.ensureDatabaseRecovered();
+
+		const tablePath = join(this.databasePath, tableName);
+		if (!(await File.isExists(tablePath)))
+			throw this.createError("TABLE_NOT_EXISTS", tableName);
+
+		const format = await this.currentFormat(tableName);
+		if (!format?.log) return null; // legacy table: nothing to fold
+
+		await File.lock(join(tablePath, ".tmp"));
+		try {
+			return await this.compactLogTable(tableName);
+		} finally {
+			await File.unlock(join(tablePath, ".tmp"));
+		}
+	}
+
+	/**
+	 * Compaction core. The caller must hold the table writer lock. Streams each
+	 * overlaid base column through `File.replace` (which handles compression),
+	 * then publishes the new columns, an empty `updates.log`, and a `.format`
+	 * marker with the bumped generation in one journaled commit, so a crash
+	 * either rolls every file back (old base + old log + old `baseGen`) or
+	 * forward (new base + empty log + new `baseGen`). No acknowledged update is
+	 * ever lost.
+	 */
+	private async compactLogTable(tableName: string): Promise<number | null> {
+		const tablePath = join(this.databasePath, tableName);
+		const overlay = await this.getOverlay(tableName, true);
+		if (!overlay || overlay.size === 0) return null; // already compact
+
+		const schema = (await this.getTable(tableName))?.schema ?? [];
+		const schemaKeys = new Set(schema.map((field) => field.key));
+
+		// Only columns that some frame actually overlaid need rewriting; the
+		// untouched base columns are left exactly as they are.
+		const overlaidKeys = new Set<string>();
+		for (const entry of overlay.byId.values())
+			for (const key of Object.keys(entry.cols))
+				if (schemaKeys.has(key)) overlaidKeys.add(key);
+		if (!overlaidKeys.size) return null;
+
+		const idToLines = await this.overlayIdToLines(tableName);
+		const extension = this.getFileExtension(tableName);
+		const renameList: (string | null)[][] = [];
+
+		for (const key of overlaidKeys) {
+			const record: Record<number, string | number | boolean | null> = {};
+			for (const [id, entry] of overlay.byId) {
+				if (!Object.hasOwn(entry.cols, key)) continue;
+				const lines = idToLines.get(Number(id));
+				if (!lines) continue;
+				const encoded = entry.cols[key] as string | number | boolean | null;
+				for (const line of lines) record[line] = encoded;
+			}
+			if (!Object.keys(record).length) continue;
+			renameList.push(
+				await File.replace(join(tablePath, `${key}${extension}`), record),
+			);
+		}
+		if (!renameList.length) return null;
+
+		const newGen = overlay.committedGen;
+		const staging = (name: string) =>
+			join(
+				tablePath,
+				".tmp",
+				`${name}.compact-${process.pid}-${randomUUID().slice(0, 8)}`,
+			);
+
+		// Empty log (frames are now folded into base) and the bumped marker,
+		// committed atomically with the column swaps.
+		const logTmp = staging(UPDATES_LOG_NAME);
+		await File.write(logTmp, "");
+		renameList.push([logTmp, join(tablePath, UPDATES_LOG_NAME)]);
+
+		const fmtTmp = staging(FORMAT_FILE);
+		await File.write(
+			fmtTmp,
+			serializeFormat({
+				format: CURRENT_FORMAT_VERSION,
+				log: true,
+				baseGen: newGen,
+			}),
+		);
+		renameList.push([fmtTmp, join(tablePath, FORMAT_FILE)]);
+
+		await this.commitFiles(tablePath, renameList, null);
+
+		// In-memory: the base now carries every update; drop the overlay so the
+		// next access rebuilds an empty one at the new generation.
+		this.tableFormats.set(tableName, {
+			format: CURRENT_FORMAT_VERSION,
+			log: true,
+			baseGen: newGen,
+		});
+		await this.stampFormat(tableName);
+		this.overlays.delete(this.overlayKey(tableName));
+		return newGen;
 	}
 
 	public async getTableSchema(tableName: string) {
@@ -1352,6 +1792,8 @@ export default class Inibase {
 					1,
 					undefined,
 					false,
+					undefined,
+					await this.overlayColumnOverrides(tableName, field.key),
 				);
 				if (totalLines > 0) {
 					if (
@@ -1708,12 +2150,59 @@ export default class Inibase {
 			}
 		}
 
+		await this.mergeOverlayIntoRows(tableName, schema, RETURN);
+
 		return RETURN;
 	}
 
-	/* -----------------------------------------------------------------------
-	 * Computed fields
-	 * --------------------------------------------------------------------- */
+	/**
+	 * Fold the table's un-compacted update-log overlay onto decoded rows.
+	 *
+	 * `RETURN` is keyed by line number and its `id` is the user-facing id, so
+	 * the overlay (keyed by the internal numeric id) is matched through a fresh
+	 * id-column read of just the requested lines. Only columns present in
+	 * `schema` (which is already narrowed to the requested `columns`) are
+	 * written, so a partial projection never grows extra keys. Legacy tables
+	 * (no `.format` marker) return immediately.
+	 */
+	private async mergeOverlayIntoRows(
+		tableName: string,
+		schema: Schema,
+		RETURN: Record<number, any>,
+	): Promise<void> {
+		if (!this.isLogTable(tableName)) return;
+		const lines = Object.keys(RETURN).map(Number);
+		if (!lines.length) return;
+
+		const overlay = await this.getOverlay(tableName);
+		if (!overlay || overlay.size === 0) return;
+
+		const lineIds = await this.overlayLineIds(tableName, lines);
+		if (!lineIds.size) return;
+
+		const allowed = new Map<string, Field>();
+		for (const field of schema) allowed.set(field.key, field);
+		const hasUpdatedAt = allowed.has("updatedAt");
+
+		for (const line of lines) {
+			const id = lineIds.get(line);
+			if (id === undefined) continue;
+			const entry = overlay.get(id);
+			if (!entry) continue;
+			const row = RETURN[line];
+			if (!row) continue;
+			for (const [key, encoded] of Object.entries(entry.cols)) {
+				const field = allowed.get(key);
+				if (!field) continue;
+				row[key] = File.decode(encoded as string | number, {
+					...field,
+					databasePath: this.databasePath,
+				});
+			}
+			if (hasUpdatedAt && entry.updatedAt !== undefined)
+				row.updatedAt = entry.updatedAt;
+		}
+	}
 
 	/**
 	 * Extract the raw expression from a field's `computed` property (string or
@@ -2915,6 +3404,8 @@ export default class Inibase {
 						: ((options.page as number) - 1) * (options.perPage as number) +
 								((options.page ?? 1) > 1 ? 1 : 0),
 					true,
+					undefined,
+					await this.overlayColumnOverrides(tableName, key),
 				);
 				if (!searchResult) {
 					if (allTrue) return null;
@@ -3679,6 +4170,21 @@ export default class Inibase {
 			where = undefined;
 
 		if (options.sort) {
+			// With an un-compacted overlay the shell `paste | sort | awk` path
+			// would read stale base cells. Fall back to an in-process sort of
+			// the merged rows, which is correct for every sort shape.
+			if (this.isLogTable(tableName)) {
+				const overlay = await this.getOverlay(tableName);
+				if (overlay?.size)
+					return await this.getOnceSortedWithOverlay<TData>(
+						tableName,
+						schema,
+						where,
+						options,
+						onlyOne,
+					);
+			}
+
 			let sortArray: [string, boolean][];
 			let awkCommand = "";
 
@@ -4011,8 +4517,16 @@ export default class Inibase {
 				RETURN = (RETURN as (Data & TData)[])[0];
 		} else if (Utils.isObject(where)) {
 			let cachedFilePath = "";
+			// The criteria cache is versioned by the row count only; a put
+			// changes matching rows without changing the count, so a cached
+			// line set would go stale. Bypass it entirely while an overlay
+			// exists.
+			const overlayActive =
+				this.isLogTable(tableName) &&
+				((await this.getOverlay(tableName))?.size ?? 0) > 0;
 			// Criteria
 			if (
+				!overlayActive &&
 				globalConfig[this.databasePath].tables?.get(tableName)?.config.cache
 			) {
 				// Cache entries are versioned by the pagination row count so a
@@ -4098,6 +4612,7 @@ export default class Inibase {
 						this.totalItems.delete(key);
 
 				if (
+					!overlayActive &&
 					globalConfig[this.databasePath].tables?.get(tableName)?.config.cache
 				)
 					await writeFile(
@@ -4129,6 +4644,91 @@ export default class Inibase {
 			total,
 		};
 		return onlyOne && Array.isArray(RETURN) ? RETURN[0] : RETURN;
+	}
+
+	/**
+	 * In-process sort fallback for log tables with a non-empty overlay: the
+	 * shell `paste | sort | awk` path reads base cells and would miss puts.
+	 * Reads the merged rows for the (optionally filtered) lines, sorts them by
+	 * the requested keys with type-aware comparison, then paginates.
+	 */
+	private async getOnceSortedWithOverlay<
+		TData extends Record<string, any> & Partial<Data>,
+	>(
+		tableName: string,
+		schema: Schema,
+		where: string | number | (string | number)[] | Criteria | undefined,
+		options: Options,
+		onlyOne?: boolean,
+	): Promise<(Data & TData) | (Data & TData)[] | null> {
+		let sortArray: [string, boolean][];
+		if (Utils.isObject(options.sort) && !Array.isArray(options.sort))
+			sortArray = Object.entries(options.sort).map(([key, value]) => [
+				key,
+				typeof value === "string" ? value.toLowerCase() === "asc" : value > 0,
+			]);
+		else
+			sortArray = ([] as string[])
+				.concat(options.sort as string | string[])
+				.map((column) => [column, true]);
+
+		let lines: number[];
+		if (where) {
+			const found = await this.get(
+				tableName,
+				where,
+				undefined,
+				undefined,
+				true,
+			);
+			if (!found) return null;
+			lines = Array.isArray(found) ? (found as number[]) : [found as number];
+		} else {
+			const { total } = await this.resolvePagination(tableName);
+			lines = Array.from({ length: total }, (_, index) => index + 1);
+		}
+		if (!lines.length) return null;
+
+		const rows = Object.values(
+			await this.processSchemaData<TData>(tableName, schema, lines, options),
+		) as (Data & TData)[];
+
+		const comparator = (a: Data & TData, b: Data & TData): number => {
+			for (const [key, ascending] of sortArray) {
+				const field = Utils.getField(key, Utils.flattenSchema(schema));
+				const aValue = (a as Record<string, any>)?.[key];
+				const bValue = (b as Record<string, any>)?.[key];
+				let comparison: number;
+				if (field && Utils.isFieldType(field, ["id", "number", "date"]))
+					comparison = (Number(aValue) || 0) - (Number(bValue) || 0);
+				else
+					comparison = String(aValue ?? "").localeCompare(String(bValue ?? ""));
+				if (comparison) return ascending ? comparison : -comparison;
+			}
+			// Deterministic tiebreak (legacy `sort` leaves ties unspecified).
+			return (Number(a?.id) || 0) - (Number(b?.id) || 0);
+		};
+		rows.sort(comparator);
+
+		const total = rows.length;
+		const perPage = options.perPage as number;
+		const pageRows =
+			perPage < 0
+				? rows
+				: rows.slice(
+						((options.page as number) - 1) * perPage,
+						(options.page as number) * perPage,
+					);
+		if (!pageRows.length) return null;
+
+		this.totalItems.set(`${tableName}-*`, total);
+		this.pageInfo[tableName] = {
+			...(({ columns, ...restOfOptions }) => restOfOptions)(options),
+			perPage: pageRows.length,
+			totalPages: perPage < 0 ? 1 : Math.ceil(total / perPage),
+			total,
+		};
+		return onlyOne ? pageRows[0] : pageRows;
 	}
 
 	/**
@@ -4465,6 +5065,168 @@ export default class Inibase {
 		);
 	}
 
+	/**
+	 * Incremental `put` for format-2 (log) tables.
+	 *
+	 * Resolves the target rows to their stable internal ids, validates the
+	 * payload against the merged view (uniqueness included), and appends one
+	 * bounded frame instead of rewriting whole columns. The base files are left
+	 * untouched; readers merge the overlay. Returns `undefined` when nothing
+	 * matches, matching the legacy `put` contract.
+	 */
+	private async putViaLog<TData extends Record<string, any> & Partial<Data>>(
+		tableName: string,
+		data: (Data & TData) | (Data & TData)[],
+		where?: number | string | (number | string)[] | Criteria,
+		options: Options = { page: 1, perPage: 15 },
+		returnUpdatedData?: boolean,
+		_whereIsLinesNumbers?: boolean,
+	): Promise<(Data & TData) | (Data & TData)[] | null | undefined> {
+		const tablePath = join(this.databasePath, tableName);
+		const schema =
+			globalConfig[this.databasePath].tables?.get(tableName)?.schema ?? [];
+		const payloads: (Data & TData)[] = Array.isArray(data) ? data : [data];
+		const isWhereLess = !where;
+		const isLines = _whereIsLinesNumbers === true;
+		const scalarWhere = !isWhereLess && !isLines && !Array.isArray(where);
+
+		await this.throwErrorIfTableEmpty(tableName);
+
+		let overlay: TableOverlay | null = null;
+		let resolvedLines: number[] = [];
+		let inlineLock = false;
+		try {
+			await File.lock(join(tablePath, ".tmp"));
+			inlineLock = true;
+
+			// Writer-side refresh: repairs a torn tail so the next frame is
+			// never appended behind unreadable bytes, and gives us the current
+			// committed generation.
+			overlay = await this.getOverlay(tableName, true);
+			if (!overlay) return undefined;
+
+			// Backpressure before the write: if the log or the overlay has grown
+			// past its bound, fold it into the base first. Compaction is
+			// maintenance (it only materializes acknowledged frames), so a
+			// failure surfaces as MAINTENANCE_REQUIRED without losing any
+			// committed update.
+			if (
+				overlay.size >= maxOverlayRecords() ||
+				(await overlay.log.bytes()) >= maxLogBytes()
+			) {
+				try {
+					await this.compactLogTable(tableName);
+				} catch (error: any) {
+					throw this.createError(
+						"MAINTENANCE_REQUIRED",
+						`${tableName} (compaction failed: ${error?.message ?? error})`,
+					);
+				}
+				overlay = await this.getOverlay(tableName, true);
+				if (overlay.size >= maxOverlayRecords())
+					throw this.createError(
+						"MAINTENANCE_REQUIRED",
+						`${tableName} (overlay still exceeds ${maxOverlayRecords()} rows after compaction)`,
+					);
+			}
+
+			if (isWhereLess) {
+				const { total } = await this.resolvePagination(tableName);
+				resolvedLines = Array.from({ length: total }, (_, index) => index + 1);
+			} else if (isLines) {
+				resolvedLines = Array.isArray(where)
+					? (where as number[])
+					: [where as number];
+			} else {
+				const lines = await this.get(
+					tableName,
+					where,
+					undefined,
+					undefined,
+					true,
+				);
+				if (!lines) return undefined;
+				resolvedLines = Array.isArray(lines)
+					? (lines as number[])
+					: [lines as number];
+			}
+			if (!resolvedLines.length) return undefined;
+
+			const lineIds = await this.overlayLineIds(tableName, resolvedLines);
+
+			// Validate against the merged view: `checkUnique` searches the base
+			// columns through `File.search` overrides, so this sees un-compacted
+			// puts. Required fields are skipped (partial update).
+			await this.validateTableData(
+				tableName,
+				structuredClone(payloads) as (Data & TData)[],
+				true,
+			);
+
+			const now = Date.now();
+			const records: UpdateRecord[] = [];
+			for (let index = 0; index < resolvedLines.length; index++) {
+				const id = lineIds.get(resolvedLines[index]);
+				if (id === undefined) continue;
+				const payload =
+					payloads.length === 1
+						? payloads[0]
+						: (payloads[index % payloads.length] ?? payloads[0]);
+				const formatted = this.formatData(payload, schema, true) as Record<
+					string,
+					any
+				>;
+				const cols: Record<string, unknown> = {};
+				for (const [key, value] of Object.entries(formatted)) {
+					if (key === "id" || key === "createdAt" || key === "updatedAt")
+						continue;
+					// Only columns the caller actually supplied are overlaid, so a
+					// partial `put` never blanks untouched fields.
+					if (!Object.hasOwn(payload, key)) continue;
+					cols[key] = File.encode(value);
+				}
+				cols.updatedAt = now;
+				records.push({ id, cols, updatedAt: now });
+			}
+
+			if (records.length) {
+				const frames = buildFrames(
+					records,
+					overlay.committedGen + 1,
+					DEFAULT_MAX_FRAME_BYTES,
+					overlay.log.path,
+				);
+				for (const frame of frames) await overlay.log.append(frame);
+				await overlay.applyLocal(frames);
+			}
+		} finally {
+			if (inlineLock) await File.unlock(join(tablePath, ".tmp"));
+		}
+
+		if (returnUpdatedData) {
+			if (isWhereLess)
+				return await this.get<TData>(tableName, undefined, options);
+			if (scalarWhere)
+				return await this.get<TData>(
+					tableName,
+					resolvedLines[0],
+					options,
+					true,
+					undefined,
+					true,
+				);
+			return await this.get<TData>(
+				tableName,
+				resolvedLines,
+				options,
+				undefined,
+				undefined,
+				true,
+			);
+		}
+		return undefined;
+	}
+
 	private async _put<TData extends Record<string, any> & Partial<Data>>(
 		tableName: string,
 		data: (Data & TData) | (Data & TData)[],
@@ -4490,6 +5252,27 @@ export default class Inibase {
 		const tablePath = join(this.databasePath, tableName);
 		if (!this.activeTransaction) await this.ensureDatabaseRecovered();
 		await this.throwErrorIfTableEmpty(tableName);
+
+		// Format-2 tables route every put through the append-only log, which
+		// is proportional to the changed data. Transactions and DDL need a
+		// compaction that 3.9 ships, so they are refused loudly rather than
+		// silently falling back to a whole-column rewrite that would leave the
+		// overlay shadowing newer base values.
+		if (this.isLogTable(tableName)) {
+			if (this.activeTransaction)
+				throw this.createError(
+					"MAINTENANCE_REQUIRED",
+					`${tableName} (put inside a transaction on update-log table)`,
+				);
+			return this.putViaLog<TData>(
+				tableName,
+				data,
+				where,
+				options,
+				returnUpdatedData,
+				_whereIsLinesNumbers,
+			);
+		}
 
 		let clonedData: (Data & TData) | (Data & TData)[] = structuredClone(data);
 
@@ -4894,6 +5677,17 @@ export default class Inibase {
 		const tablePath = join(this.databasePath, tableName);
 		await this.throwErrorIfTableEmpty(tableName);
 
+		if (this.isLogTable(tableName) && this.activeTransaction)
+			throw this.createError(
+				"MAINTENANCE_REQUIRED",
+				`${tableName} (delete inside a transaction on update-log table)`,
+			);
+
+		// Fold any pending puts into the base before a tombstone rewrite, so the
+		// log is empty and the rewritten base carries every acknowledged value.
+		// `compact` is a no-op when there is nothing to fold.
+		if (this.isLogTable(tableName)) await this.compact(tableName);
+
 		if (!where) {
 			let txnStaged = false;
 			// Crash-atomic truncate: park every column file (pure removal
@@ -5287,9 +6081,18 @@ export default class Inibase {
 					);
 
 					RETURN[column] = lineNumbers
-						? await File.sum(columnPath, lineNumbers)
+						? await File.sum(
+								columnPath,
+								lineNumbers,
+								await this.overlayColumnOverrides(tableName, column),
+							)
 						: 0;
-				} else RETURN[column] = await File.sum(columnPath);
+				} else
+					RETURN[column] = await File.sum(
+						columnPath,
+						undefined,
+						await this.overlayColumnOverrides(tableName, column),
+					);
 			}
 		}
 		return columns.length > 1 ? RETURN : Object.values(RETURN)[0];
@@ -5555,9 +6358,18 @@ export default class Inibase {
 					);
 
 					RETURN[column] = lineNumbers
-						? await File.avg(columnPath, lineNumbers)
+						? await File.avg(
+								columnPath,
+								lineNumbers,
+								await this.overlayColumnOverrides(tableName, column),
+							)
 						: 0;
-				} else RETURN[column] = await File.avg(columnPath);
+				} else
+					RETURN[column] = await File.avg(
+						columnPath,
+						undefined,
+						await this.overlayColumnOverrides(tableName, column),
+					);
 			}
 		}
 		return columns.length > 1 ? RETURN : Object.values(RETURN)[0];
@@ -5610,9 +6422,18 @@ export default class Inibase {
 						true,
 					);
 					RETURN[column] = lineNumbers
-						? await File.max(columnPath, lineNumbers)
+						? await File.max(
+								columnPath,
+								lineNumbers,
+								await this.overlayColumnOverrides(tableName, column),
+							)
 						: 0;
-				} else RETURN[column] = await File.max(columnPath);
+				} else
+					RETURN[column] = await File.max(
+						columnPath,
+						undefined,
+						await this.overlayColumnOverrides(tableName, column),
+					);
 			}
 		}
 		return RETURN;
@@ -5665,9 +6486,18 @@ export default class Inibase {
 						true,
 					);
 					RETURN[column] = lineNumbers
-						? await File.min(columnPath, lineNumbers)
+						? await File.min(
+								columnPath,
+								lineNumbers,
+								await this.overlayColumnOverrides(tableName, column),
+							)
 						: 0;
-				} else RETURN[column] = await File.min(columnPath);
+				} else
+					RETURN[column] = await File.min(
+						columnPath,
+						undefined,
+						await this.overlayColumnOverrides(tableName, column),
+					);
 			}
 		}
 		return RETURN;

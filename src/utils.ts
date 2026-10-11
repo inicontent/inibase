@@ -790,6 +790,13 @@ export const ERROR_MESSAGES: Record<ErrorLang, Record<ErrorCode, string>> = {
 			"Computed field {variable} references a missing row in table {variable}",
 		COMPUTED_FIELD_ARITHMETIC:
 			"Computed field {variable} failed evaluation ({variable})",
+		UPDATE_LOG_CORRUPT:
+			"Update log for table {variable} is corrupt and needs manual recovery",
+		UPDATE_LOG_FRAME_TOO_LARGE:
+			"Update log frame for table {variable} exceeds the maximum frame size",
+		MAINTENANCE_REQUIRED:
+			"Table {variable} needs compaction before it can accept more writes",
+		UNSUPPORTED_FORMAT: "Unsupported database format (requires {variable})",
 	},
 	ar: {
 		TABLE_EMPTY: "الجدول {variable} فارغ",
@@ -823,6 +830,13 @@ export const ERROR_MESSAGES: Record<ErrorLang, Record<ErrorCode, string>> = {
 			"الحقل المحسوب {variable} يشير إلى صف غير موجود في الجدول {variable}",
 		COMPUTED_FIELD_ARITHMETIC:
 			"فشل تقييم الحقل المحسوب {variable} ({variable})",
+		UPDATE_LOG_CORRUPT:
+			"سجل التحديثات للجدول {variable} تالف ويحتاج إلى استرداد يدوي",
+		UPDATE_LOG_FRAME_TOO_LARGE:
+			"إطار سجل التحديثات للجدول {variable} يتجاوز الحجم الأقصى للإطار",
+		MAINTENANCE_REQUIRED:
+			"يحتاج الجدول {variable} إلى ضغط قبل أن يتمكن من قبول المزيد من الكتابات",
+		UNSUPPORTED_FORMAT: "تنسيق قاعدة بيانات غير مدعوم (يتطلب {variable})",
 	},
 	fr: {
 		TABLE_EMPTY: "La table {variable} est vide",
@@ -859,6 +873,14 @@ export const ERROR_MESSAGES: Record<ErrorLang, Record<ErrorCode, string>> = {
 			"Le champ calculé {variable} référence une ligne manquante dans la table {variable}",
 		COMPUTED_FIELD_ARITHMETIC:
 			"L'évaluation du champ calculé {variable} a échoué ({variable})",
+		UPDATE_LOG_CORRUPT:
+			"Le journal de mises à jour de la table {variable} est corrompu et nécessite une récupération manuelle",
+		UPDATE_LOG_FRAME_TOO_LARGE:
+			"Une trame du journal de mises à jour de la table {variable} dépasse la taille maximale",
+		MAINTENANCE_REQUIRED:
+			"La table {variable} doit être compactée avant de pouvoir accepter d'autres écritures",
+		UNSUPPORTED_FORMAT:
+			"Format de base de données non pris en charge (nécessite {variable})",
 	},
 	es: {
 		TABLE_EMPTY: "La tabla {variable} está vacía",
@@ -895,6 +917,14 @@ export const ERROR_MESSAGES: Record<ErrorLang, Record<ErrorCode, string>> = {
 			"El campo calculado {variable} referencia una fila inexistente en la tabla {variable}",
 		COMPUTED_FIELD_ARITHMETIC:
 			"Falló la evaluación del campo calculado {variable} ({variable})",
+		UPDATE_LOG_CORRUPT:
+			"El registro de actualizaciones de la tabla {variable} está corrupto y necesita recuperación manual",
+		UPDATE_LOG_FRAME_TOO_LARGE:
+			"Un marco del registro de actualizaciones de la tabla {variable} supera el tamaño máximo",
+		MAINTENANCE_REQUIRED:
+			"La tabla {variable} necesita compactarse antes de aceptar más escrituras",
+		UNSUPPORTED_FORMAT:
+			"Formato de base de datos no compatible (requiere {variable})",
 	},
 };
 

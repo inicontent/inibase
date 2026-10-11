@@ -51,6 +51,14 @@ const benchmarkTables: {
 		config: { decodeID: true },
 		suffix: " (decode id)",
 	},
+	{
+		// 3.8: incremental update log (format 2). PUT appends a frame instead of
+		// rewriting every column; GET merges the overlay over base. The delta
+		// vs. `user` is the populated-overlay budget (Gate B).
+		table: "user_log",
+		config: { log: true },
+		suffix: " (log)",
+	},
 ];
 
 // Re-create a table from scratch so every measurement runs against a
