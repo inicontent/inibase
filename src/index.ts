@@ -629,12 +629,14 @@ export default class Inibase {
 						"append layout (no prepend)",
 					);
 				if (schema) this.assertLogCompatibleSchema(schema);
-				await File.write(join(tablePath, UPDATES_LOG_NAME), "");
+				// Publish the marker before the log: a missing log reads as an
+				// empty log, whereas a log without a marker would be legacy.
 				await writeFormat(tablePath, {
 					format: CURRENT_FORMAT_VERSION,
 					log: true,
 					baseGen: 0,
 				});
+				await File.write(join(tablePath, UPDATES_LOG_NAME), "");
 				this.tableFormats.set(tableName, {
 					format: CURRENT_FORMAT_VERSION,
 					log: true,
@@ -773,12 +775,30 @@ export default class Inibase {
 					"append layout (no prepend)",
 				);
 			if (table.schema?.length) this.assertLogCompatibleSchema(table.schema);
-			await File.write(join(tablePath, UPDATES_LOG_NAME), "");
-			await writeFormat(tablePath, {
-				format: CURRENT_FORMAT_VERSION,
-				log: true,
-				baseGen: 0,
-			});
+			// Durable migration (§9): publish the marker durably and atomically
+			// *before* the table is treated as log-format. Format 2 shares the
+			// format-1 base layout, so no column rewrite is needed. A missing
+			// `updates.log` reads as an empty log, so creating it after the
+			// marker is safe.
+			try {
+				await writeFormat(tablePath, {
+					format: CURRENT_FORMAT_VERSION,
+					log: true,
+					baseGen: 0,
+				});
+				await File.write(join(tablePath, UPDATES_LOG_NAME), "");
+				await File.syncDir(tablePath);
+			} catch (error) {
+				// Re-read the marker to decide: if it never became visible the
+				// table is unchanged and must stay legacy; if it did become
+				// visible, keep treating it as log-format rather than writing
+				// through the legacy path over a log-format table.
+				const landed = await readFormat(tablePath);
+				if (!landed.log) {
+					this.tableFormats.delete(tableName);
+					throw error;
+				}
+			}
 			this.tableFormats.set(tableName, {
 				format: CURRENT_FORMAT_VERSION,
 				log: true,

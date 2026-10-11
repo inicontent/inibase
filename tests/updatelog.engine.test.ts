@@ -3,7 +3,7 @@
 // uniqueness against the merged view, and the loud DDL/transaction guards.
 import { strict as assert } from "node:assert";
 import { existsSync, rmSync } from "node:fs";
-import { appendFile, readFile, writeFile } from "node:fs/promises";
+import { appendFile, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 import { compareVersions, unsupportedFormatReason } from "../src/format.js";
@@ -322,6 +322,46 @@ test("legacy tables are unaffected by the log machinery", async () => {
 	// Legacy table has no .format marker and no updates.log.
 	assert.ok(!existsSync(join(dbPath, "legacy", ".format")));
 	assert.ok(!existsSync(join(dbPath, "legacy", "updates.log")));
+	rmSync(dbPath, { recursive: true, force: true });
+});
+
+test("a legacy table migrates to the log atomically, preserving rows", async () => {
+	const db = freshDb();
+	await db.createTable("legacy", schema, { decodeID: true });
+	await db.post("legacy", seed(3));
+
+	// In-place upgrade format 1 -> 2: no base rewrite, rows untouched.
+	await db.updateTable("legacy", undefined, { log: true });
+
+	const marker = JSON.parse(
+		await readFile(join(dbPath, "legacy", ".format"), "utf8"),
+	);
+	assert.equal(marker.format, 2);
+	assert.equal(marker.log, true);
+	assert.ok(existsSync(join(dbPath, "legacy", "updates.log")));
+	assert.equal(((await db.get("legacy", 1)) as any).score, 10);
+
+	// A post-upgrade put goes through the log: the base column stays stale
+	// until compaction, while reads merge.
+	await db.put("legacy", { score: 99 }, 1);
+	assert.equal(
+		(await readFile(join(dbPath, "legacy", "score.txt"), "utf8"))
+			.trimEnd()
+			.split("\n")[0],
+		"10",
+	);
+	assert.equal(((await db.get("legacy", 1)) as any).score, 99);
+
+	// A fresh instance opens the migrated table and merges the log.
+	assert.equal(((await new Inibase(dbPath).get("legacy", 1)) as any).score, 99);
+
+	// The atomic marker write leaves no staging leftovers in the table root.
+	assert.deepEqual(
+		(await readdir(join(dbPath, "legacy"))).filter((entry) =>
+			entry.startsWith(".format."),
+		),
+		[],
+	);
 	rmSync(dbPath, { recursive: true, force: true });
 });
 

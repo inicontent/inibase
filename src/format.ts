@@ -1,4 +1,5 @@
-import { readFile, unlink } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { readFile, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import * as File from "./file.js";
 
@@ -108,12 +109,28 @@ export const serializeFormat = (format: TableFormat): string =>
 		baseGen: format.baseGen,
 	})}\n`;
 
-/** Write (or replace) the format marker, fsync-backed. */
+/**
+ * Write (or replace) the format marker durably and atomically (§9): stage the
+ * bytes in the table's `.tmp` dir, fsync the temp, rename it into place, then
+ * fsync the table directory. A crash can therefore leave either the old marker
+ * or the new one, never a partial file — a torn marker would read back as
+ * legacy and silently drop the log.
+ */
 export const writeFormat = async (
 	tablePath: string,
 	format: TableFormat,
 ): Promise<void> => {
-	await File.write(formatPath(tablePath), serializeFormat(format));
+	const path = formatPath(tablePath);
+	const tmp = join(tablePath, ".tmp", `${FORMAT_FILE}.${randomUUID()}`);
+	try {
+		await File.write(tmp, serializeFormat(format));
+		await File.syncFile(tmp);
+		await rename(tmp, path);
+		await File.syncDir(tablePath);
+	} catch (error) {
+		await unlink(tmp).catch(() => {});
+		throw error;
+	}
 };
 
 /** Remove the marker (used when downgrading a table back to legacy). */
