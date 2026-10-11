@@ -36,6 +36,7 @@ import {
 	readFormat,
 	serializeFormat,
 	type TableFormat,
+	unsupportedFormatReason,
 	writeFormat,
 } from "./format.js";
 import { DatabaseJournal, Journal, type JournalFileOp } from "./journal.js";
@@ -1098,7 +1099,7 @@ export default class Inibase {
 					join(tablePath, `schema.${this.schemaFileExtension}`),
 				))
 		) {
-			const format = await readFormat(tablePath);
+			const format = await this.readValidatedFormat(tableName, tablePath);
 			this.tableFormats.set(tableName, format);
 			await this.stampFormat(tableName);
 			const config: TableConfig = {
@@ -1153,6 +1154,23 @@ export default class Inibase {
 	 * corruption. Legacy tables never change format implicitly, so they skip
 	 * the stat entirely and keep the pre-3.8 read path cost.
 	 */
+	/**
+	 * Read a table's `.format` marker and refuse a table written by a newer
+	 * engine (§4.1) *before* any column is read: a higher `format`, or a
+	 * `minReader` above this build, throws UNSUPPORTED_FORMAT rather than being
+	 * silently mis-read as format 2/legacy.
+	 */
+	private async readValidatedFormat(
+		tableName: string,
+		tablePath: string,
+	): Promise<TableFormat> {
+		const format = await readFormat(tablePath);
+		const reason = unsupportedFormatReason(format);
+		if (reason)
+			throw this.createError("UNSUPPORTED_FORMAT", `${tableName} (${reason})`);
+		return format;
+	}
+
 	private async currentFormat(tableName: string): Promise<TableFormat | null> {
 		const cached = this.tableFormats.get(tableName);
 		if (cached && !cached.log) return cached;
@@ -1167,7 +1185,7 @@ export default class Inibase {
 		}
 		if (cached && this.formatStamps.get(tableName) === stamp) return cached;
 
-		const format = await readFormat(tablePath);
+		const format = await this.readValidatedFormat(tableName, tablePath);
 		this.tableFormats.set(tableName, format);
 		this.formatStamps.set(tableName, stamp);
 		// A changed baseGen invalidates the cached overlay: rebuild from the

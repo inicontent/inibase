@@ -3,10 +3,10 @@
 // uniqueness against the merged view, and the loud DDL/transaction guards.
 import { strict as assert } from "node:assert";
 import { existsSync, rmSync } from "node:fs";
-import { appendFile, readFile } from "node:fs/promises";
+import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
-
+import { compareVersions, unsupportedFormatReason } from "../src/format.js";
 import Inibase, { type Schema } from "../src/index.js";
 
 const dbPath = "test-db-updatelog-engine";
@@ -339,6 +339,88 @@ test("the format marker carries the compatibility contract", async () => {
 	assert.equal(marker.log, true);
 	assert.equal(marker.baseGen, 0);
 	rmSync(dbPath, { recursive: true, force: true });
+});
+
+test("a newer-format marker is refused, never mis-read", async () => {
+	const db = freshDb();
+	await db.createTable("records", schema, { log: true, decodeID: true });
+	await db.post("records", seed(3));
+	await db.put("records", { score: 100 }, 1);
+
+	const markerPath = join(dbPath, "records", ".format");
+	const valid = await readFile(markerPath, "utf8");
+	const writeMarker = (marker: Record<string, unknown>) =>
+		writeFile(markerPath, `${JSON.stringify(marker)}\n`);
+
+	// A format above what this engine writes must be refused (not treated as a
+	// format-2 table and merged).
+	await writeMarker({
+		engine: "inibase",
+		format: 3,
+		minReader: "3.9.0",
+		log: true,
+		baseGen: 0,
+	});
+	await assert.rejects(
+		() => db.get("records", 1),
+		(error: any) => error?.name === "UNSUPPORTED_FORMAT",
+	);
+	await assert.rejects(
+		() => db.put("records", { score: 1 }, 1),
+		(error: any) => error?.name === "UNSUPPORTED_FORMAT",
+	);
+
+	// A format-2 marker that demands a newer reader is refused as well.
+	await writeMarker({
+		engine: "inibase",
+		format: 2,
+		minReader: "9.9.9",
+		log: true,
+		baseGen: 0,
+	});
+	await assert.rejects(
+		() => db.get("records", 1),
+		(error: any) => error?.name === "UNSUPPORTED_FORMAT",
+	);
+
+	// Restoring the real marker opens again, and the log still merges.
+	await writeFile(markerPath, valid);
+	assert.equal(((await db.get("records", 1)) as any).score, 100);
+	rmSync(dbPath, { recursive: true, force: true });
+});
+
+test("version-compat helpers classify markers correctly", () => {
+	assert.equal(compareVersions("3.8.0", "3.8.0"), 0);
+	assert.equal(compareVersions("3.8.1", "3.8.0"), 1);
+	assert.equal(compareVersions("3.7.9", "3.8.0"), -1);
+	assert.equal(compareVersions("3.10.0", "3.9.0"), 1);
+
+	assert.equal(
+		unsupportedFormatReason({ format: 2, log: true, baseGen: 0 }),
+		null,
+	);
+	assert.equal(
+		unsupportedFormatReason({
+			format: 2,
+			log: true,
+			baseGen: 0,
+			minReader: "3.8.0",
+		}),
+		null,
+	);
+	assert.match(
+		unsupportedFormatReason({ format: 3, log: true, baseGen: 0 }) ?? "",
+		/format 3/,
+	);
+	assert.match(
+		unsupportedFormatReason({
+			format: 2,
+			log: true,
+			baseGen: 0,
+			minReader: "9.9.9",
+		}) ?? "",
+		/minReader 9\.9\.9/,
+	);
 });
 
 test("a fresh instance rebuilds the overlay from disk", async () => {

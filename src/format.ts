@@ -23,6 +23,8 @@ export interface TableFormat {
 	format: number;
 	log: boolean;
 	baseGen: number;
+	/** Oldest engine that may open the table, as written into the marker. */
+	minReader?: string;
 }
 
 export const LEGACY_FORMAT: TableFormat = {
@@ -33,10 +35,39 @@ export const LEGACY_FORMAT: TableFormat = {
 
 export const CURRENT_FORMAT_VERSION = 2;
 export const ENGINE_NAME = "inibase";
+/** This build's engine version, compared against a marker's `minReader`. */
+export const ENGINE_VERSION = "3.8.0";
 /** Oldest reader that understands format 2. */
 export const MIN_READER = "3.8.0";
 /** Release expected to detect (and refuse) format 2 rather than mis-read it. */
 export const DETECTOR = "3.7.1";
+
+/** Compare dotted numeric versions: >0 when `a > b`, <0 when `a < b`, else 0. */
+export const compareVersions = (a: string, b: string): number => {
+	const pa = a.split(".");
+	const pb = b.split(".");
+	for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+		const diff = (Number(pa[i]) || 0) - (Number(pb[i]) || 0);
+		if (diff !== 0) return diff > 0 ? 1 : -1;
+	}
+	return 0;
+};
+
+/**
+ * Why this engine cannot open a marker, or null when it can.
+ *
+ * Refusing *before* any column is read keeps a newer-format table from being
+ * silently mis-read as format 2 (or legacy). Two independent conditions:
+ * a `format` above what this build writes, or a `minReader` above the running
+ * engine version.
+ */
+export const unsupportedFormatReason = (format: TableFormat): string | null => {
+	if (format.format > CURRENT_FORMAT_VERSION)
+		return `format ${format.format} (this engine reads up to ${CURRENT_FORMAT_VERSION})`;
+	if (format.minReader && compareVersions(format.minReader, ENGINE_VERSION) > 0)
+		return `minReader ${format.minReader} (this engine is ${ENGINE_VERSION})`;
+	return null;
+};
 
 const formatPath = (tablePath: string) => join(tablePath, FORMAT_FILE);
 
@@ -55,6 +86,7 @@ export const readFormat = async (tablePath: string): Promise<TableFormat> => {
 			format: Number(raw?.format ?? raw?.version) || LEGACY_FORMAT.format,
 			log: raw?.log === true,
 			baseGen: Number(raw?.baseGen) || 0,
+			minReader: typeof raw?.minReader === "string" ? raw.minReader : undefined,
 		};
 	} catch {
 		// A corrupt marker means we cannot trust "no log": refusing to write
