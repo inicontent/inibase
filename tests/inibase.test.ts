@@ -436,6 +436,122 @@ await test("Compression Configuration", async (t) => {
 	});
 });
 
+await test("Compressed columns: multiple large batches survive a reopen", async () => {
+	initializeDatabase();
+	const tableName = "compressed_big";
+	const schema: Schema = [
+		{ key: "payload", type: "string", required: true },
+		{ key: "seq", type: "number" },
+	];
+	await inibase.createTable(tableName, schema, { compression: true });
+
+	const batches = 3;
+	const perBatch = 200;
+	// ~4KB per cell: a whole column batch is ~800KB, well past the per-argument
+	// shell limit the old `echo '…' | gzip - >> file` append would have hit.
+	const filler = "x".repeat(4096);
+	const big = (batch: number, i: number) => `batch-${batch}-row-${i}-${filler}`;
+
+	const expected: string[] = [];
+	for (let batch = 0; batch < batches; batch++) {
+		const rows = Array.from({ length: perBatch }, (_, i) => {
+			const payload = big(batch, i);
+			expected.push(payload);
+			return { payload, seq: expected.length };
+		});
+		await inibase.post(tableName, rows);
+	}
+
+	// Reopen with a fresh instance: each append wrote a separate gzip member,
+	// so this proves the concatenated stream reads back exactly.
+	const reopened = new Inibase(dbPath);
+	const all = (await reopened.get(tableName, undefined, {
+		page: 1,
+		perPage: -1,
+	})) as { payload: string; seq: number }[];
+
+	assert.equal(all.length, batches * perBatch, "all appended rows present");
+	assert.deepEqual(
+		all.map((row) => row.payload),
+		expected,
+		"every payload reads back byte-for-byte",
+	);
+	assert.deepEqual(
+		all.map((row) => row.seq),
+		expected.map((_, index) => index + 1),
+		"numeric column stays aligned with the payload column",
+	);
+});
+
+await test("Sparse point lookups read the requested rows (plain and compressed)", async () => {
+	initializeDatabase();
+	const total = 500;
+
+	for (const config of [undefined, { compression: true }] as const) {
+		const tableName = config ? "sparse_gz" : "sparse_plain";
+		await inibase.createTable(
+			tableName,
+			[
+				{ key: "label", type: "string", required: true },
+				{ key: "n", type: "number" },
+			],
+			config,
+		);
+		await inibase.post(
+			tableName,
+			Array.from({ length: total }, (_, i) => ({
+				label: `row-${i + 1}`,
+				n: i + 1,
+			})),
+		);
+		// A literal tab is stored unescaped; the old `paste -d '\t'` batch
+		// reader split on it and misaligned columns. The streaming reader
+		// decodes each column independently, so it must survive.
+		await inibase.post(tableName, { label: "a\tb", n: 0 });
+
+		const reopened = new Inibase(dbPath);
+
+		// early row, middle row and last row: the reader must stop after the
+		// last requested line instead of scanning to EOF.
+		for (const line of [1, 250, total]) {
+			const row = (await reopened.get(
+				tableName,
+				encodeID(line),
+				undefined,
+				true,
+			)) as { label: string; n: number };
+			assert.equal(row.label, `row-${line}`, `${tableName} line ${line}`);
+			assert.equal(row.n, line, `${tableName} n ${line}`);
+		}
+
+		// paged selection
+		const page = (await reopened.get(tableName, undefined, {
+			page: 2,
+			perPage: 10,
+		})) as { label: string }[];
+		assert.equal(page.length, 10, `${tableName} page size`);
+		assert.equal(page[0].label, "row-11", `${tableName} page offset`);
+
+		// requested-columns selection
+		const partial = (await reopened.get(
+			tableName,
+			encodeID(5),
+			{ columns: ["label"] },
+			true,
+		)) as { label: string };
+		assert.equal(partial.label, "row-5", `${tableName} column selection`);
+
+		// tab-containing cell
+		const tabRow = (await reopened.get(
+			tableName,
+			encodeID(total + 1),
+			undefined,
+			true,
+		)) as { label: string };
+		assert.equal(tabRow.label, "a\tb", `${tableName} tab cell`);
+	}
+});
+
 await test("Prepend Configuration", async (t) => {
 	initializeDatabase();
 

@@ -9,6 +9,7 @@ import {
 	readdir,
 	readFile,
 	rename,
+	rm,
 	unlink,
 	utimes,
 	writeFile,
@@ -451,6 +452,60 @@ await test("Concurrent readers never observe torn rows while writers write", asy
 	assert.ok(
 		(verdict.out?.iterations ?? 0) > 0,
 		"reader actually sampled the table",
+	);
+});
+
+await test("A failed column write aborts the post and leaves data intact", async () => {
+	const tableName = "t-fail";
+	await db.createTable(tableName, simpleSchema);
+	await db.post(tableName, { name: "keep", workerId: 1 });
+
+	const readAll = async () =>
+		(await db.get(tableName, undefined, { page: 1, perPage: -1 })) as {
+			id: unknown;
+			name: string;
+			workerId: number;
+		}[];
+	const before = await readAll();
+
+	const paginationBefore = await paginationName(tableName);
+	const nameFile = join(tableDir(tableName), "name.txt");
+	const original = await readFile(nameFile, "utf8");
+	const committedTmp = await tmpLeftovers(tableName);
+
+	// Inject a column-write failure that survives running as root: replacing
+	// the live column with a directory makes append()'s copyFile throw while
+	// the writer lock is held, after the other columns may have written.
+	await rm(nameFile, { force: true });
+	await mkdir(nameFile);
+
+	try {
+		await assert.rejects(
+			() => db.post(tableName, { name: "doomed", workerId: 2 }),
+			"The post must reject when a column write fails",
+		);
+	} finally {
+		await rm(nameFile, { recursive: true, force: true });
+		await writeFile(nameFile, original);
+	}
+
+	// The failed write must not have moved the row count or published any of
+	// the partially written columns.
+	assert.equal(
+		await paginationName(tableName),
+		paginationBefore,
+		"pagination (row count) unchanged after the failed post",
+	);
+
+	const after = await readAll();
+	assert.equal(after.length, 1, "no phantom row was committed");
+	assert.deepEqual(after, before, "the surviving row is byte-identical");
+
+	// Nothing from the aborted attempt may linger in the write-ahead area.
+	assert.deepEqual(
+		await tmpLeftovers(tableName),
+		committedTmp,
+		"aborted post left no temp/journal entries behind",
 	);
 });
 

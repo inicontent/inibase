@@ -361,6 +361,22 @@ function astHasHops(node: CompiledExpressionNode): boolean {
 }
 
 /**
+ * Await a batch of column-write promises and surface the first rejection.
+ * `Promise.allSettled` never short-circuits, so a swallowed failure would let
+ * the caller publish a partial column set — the pagination row count and the
+ * column line counts would diverge. Every batch that fills a `renameList` must
+ * be inspected through here before the journal/pagination is touched.
+ */
+async function settleWrites(
+	results: PromiseSettledResult<unknown>[],
+): Promise<void> {
+	const failed = results.find(
+		(result): result is PromiseRejectedResult => result.status === "rejected",
+	);
+	if (failed) throw failed.reason;
+}
+
+/**
  * @param {string} database - Database name
  * @param {string} [mainFolder="."] - Main folder path
  * @param {ErrorLang} [language="en"] - Language for error messages
@@ -1604,24 +1620,44 @@ export default class Inibase {
 	): Promise<Record<number, TData & Data>> {
 		const RETURN: Record<number, TData & Data> = {};
 
-		// Fast path: read every top-level simple column in one `paste | sed`
-		// child process instead of spawning one child process per column.
-		// Nested (prefixed) schemas keep the per-column path.
+		// Sparse path: for an explicit finite selection, stream each top-level
+		// simple column only up to the last requested line (never to EOF) and
+		// decode it independently, instead of pasting every column through a
+		// shell pipeline that always scans the whole table and can misalign on
+		// values containing a literal tab. Nested (prefixed) schemas keep the
+		// per-column path below.
 		let batchedKeys: Set<string> | null = null;
 		if (!prefix && linesNumber?.length) {
 			const simpleFields = schema.filter((field) =>
 				this.isSimpleField(field.type),
 			);
-			const batched = await this.processSimpleFieldsBatch(
-				tableName,
-				simpleFields,
-				linesNumber,
+			const decodeID =
+				globalConfig[this.databasePath].tables?.get(tableName)?.config
+					.decodeID === true;
+			const extension = this.getFileExtension(tableName);
+			const reads = await Promise.all(
+				simpleFields.map(async (field) => {
+					const fieldPath = join(
+						this.databasePath,
+						tableName,
+						`${field.key}${extension}`,
+					);
+					if (!(await File.isExists(fieldPath))) return null;
+					const items = await File.getLines(fieldPath, linesNumber, {
+						...field,
+						type: field.key === "id" && decodeID ? "number" : field.type,
+						databasePath: this.databasePath,
+					});
+					return { key: field.key, items };
+				}),
 			);
-			if (batched) {
-				batchedKeys = new Set(simpleFields.map((field) => field.key));
-				for (const [line, row] of Object.entries(batched)) {
+			batchedKeys = new Set(simpleFields.map((field) => field.key));
+			for (const read of reads) {
+				if (!read) continue;
+				for (const [line, value] of Object.entries(read.items)) {
+					if (typeof value === "undefined") continue;
 					if (!RETURN[line]) RETURN[line] = {} as TData & Data;
-					Object.assign(RETURN[line], row);
+					Object.assign(RETURN[line], { [read.key]: value });
 				}
 			}
 		}
@@ -2455,91 +2491,6 @@ export default class Inibase {
 				}
 			}
 		}
-	}
-
-	/**
-	 * Batched read for top-level simple columns: a single `paste | sed` child
-	 * process returns every requested line of every column at once instead of
-	 * spawning one `sed`/`gunzip|sed` child process per column. Returning null
-	 * (e.g. when any column file is missing, or the shell command fails) makes
-	 * the caller fall back to the existing per-column reads.
-	 */
-	private async processSimpleFieldsBatch(
-		tableName: string,
-		fields: Field[],
-		linesNumber: number[],
-	): Promise<Record<number, Record<string, any>> | null> {
-		if (!fields.length || !linesNumber.length) return null;
-
-		const decodeID =
-			globalConfig[this.databasePath].tables?.get(tableName)?.config
-				.decodeID === true;
-		// Decode configs are computed once per column (the per-column read path
-		// builds one config per file too), not once per cell.
-		const cols: {
-			path: string;
-			key: string;
-			config: Field & { databasePath: string };
-		}[] = [];
-		for (const field of fields) {
-			const path = join(
-				this.databasePath,
-				tableName,
-				`${field.key}${this.getFileExtension(tableName)}`,
-			);
-			if (!(await File.isExists(path))) return null;
-			cols.push({
-				path,
-				key: field.key,
-				config: {
-					...field,
-					type: field.key === "id" && decodeID ? "number" : field.type,
-					databasePath: this.databasePath,
-				},
-			});
-		}
-
-		const sortedLines = [...linesNumber].sort((a, b) => a - b);
-		const range = File._groupIntoRanges(sortedLines);
-		const files = cols.map(({ path }) => File.escapeShellPath(path)).join(" ");
-		const isGz = this.getFileExtension(tableName).endsWith(".gz");
-		// Each compressed column needs its own process substitution so the
-		// streams stay aligned column-by-column inside `paste`.
-		const pasteInputs = isGz
-			? cols
-					.map(({ path }) => `<(gunzip -c ${File.escapeShellPath(path)})`)
-					.join(" ")
-			: files;
-		const command = isGz
-			? `bash -c 'paste -d "\\t" ${pasteInputs} | sed -n "${range}"'`
-			: `paste -d'\\t' ${files} | sed -n '${range}'`;
-
-		let output: string;
-		try {
-			output = ((await UtilsServer.exec(command)) as { stdout: string }).stdout;
-		} catch {
-			return null;
-		}
-
-		const outLines = output.trimEnd().split("\n");
-		const RETURN: Record<number, Record<string, any>> = {};
-		for (let i = 0; i < outLines.length && i < sortedLines.length; i++) {
-			const lineNo = sortedLines[i];
-			const cells = outLines[i].split("\t");
-			const row: Record<string, any> = {};
-			let added = false;
-			for (let c = 0; c < cols.length; c++) {
-				const raw = cells[c];
-				if (raw === undefined) continue;
-				const value = File.decode(raw, cols[c].config);
-				if (value !== undefined) {
-					row[cols[c].key] = value;
-					added = true;
-				}
-			}
-			if (added) RETURN[lineNo] = row;
-		}
-		return Object.keys(RETURN).length ? RETURN : null;
 	}
 
 	// Helper function to check if the field type is array
@@ -4024,7 +3975,11 @@ export default class Inibase {
 					{ key: "BLABLA", type: "number" },
 					Ids.length,
 					0,
-					!this.totalItems.has(`${tableName}-id`),
+					// The caller only needs the matching line numbers, not a
+					// whole-table count: stop as soon as every requested id has
+					// been found instead of scanning the column to EOF.
+					false,
+					true,
 				);
 			}
 			if (!lineNumbers) return null;
@@ -4339,13 +4294,15 @@ export default class Inibase {
 					: clonedData,
 			);
 
-			await Promise.allSettled(
-				Object.entries(pathesContents).map(async ([path, content]) =>
-					renameList.push(
-						globalConfig[this.databasePath].tables?.get(tableName)?.config
-							.prepend
-							? await File.prepend(path, content)
-							: await File.append(path, content),
+			await settleWrites(
+				await Promise.allSettled(
+					Object.entries(pathesContents).map(async ([path, content]) =>
+						renameList.push(
+							globalConfig[this.databasePath].tables?.get(tableName)?.config
+								.prepend
+								? await File.prepend(path, content)
+								: await File.append(path, content),
+						),
 					),
 				),
 			);
@@ -4637,9 +4594,11 @@ export default class Inibase {
 					);
 				}
 
-				await Promise.allSettled(
-					Object.entries(pathesContents).map(async ([path, content]) =>
-						renameList.push(await File.replace(path, content, total)),
+				await settleWrites(
+					await Promise.allSettled(
+						Object.entries(pathesContents).map(async ([path, content]) =>
+							renameList.push(await File.replace(path, content, total)),
+						),
 					),
 				);
 
@@ -4786,9 +4745,11 @@ export default class Inibase {
 					);
 				}
 
-				await Promise.allSettled(
-					Object.entries(pathesContents).map(async ([path, content]) =>
-						renameList.push(await File.replace(path, content)),
+				await settleWrites(
+					await Promise.allSettled(
+						Object.entries(pathesContents).map(async ([path, content]) =>
+							renameList.push(await File.replace(path, content)),
+						),
 					),
 				);
 
@@ -5037,10 +4998,12 @@ export default class Inibase {
 
 					if (total && remaining > 0) {
 						this.idDensity.set(tableName, false);
-						await Promise.allSettled(
-							files.map(async (file) =>
-								renameList.push(
-									await File.remove(join(tablePath, file), where),
+						await settleWrites(
+							await Promise.allSettled(
+								files.map(async (file) =>
+									renameList.push(
+										await File.remove(join(tablePath, file), where),
+									),
 								),
 							),
 						);

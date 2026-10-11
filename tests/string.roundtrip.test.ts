@@ -161,6 +161,58 @@ test("end to end: post, get, search and put keep strings exact", async (t) => {
 	removeDatabase();
 });
 
+test("compressed storage keeps quotes, backslashes, unicode and newlines exact", async () => {
+	removeDatabase();
+	const inibase = new Inibase(dbPath);
+	const tableName = "compressed_tools";
+	await inibase.createTable(
+		tableName,
+		[
+			{ key: "name", type: "string", required: true },
+			{ key: "code", type: "string" },
+			{ key: "body", type: "html" },
+		],
+		{ compression: true },
+	);
+
+	const POSTED: Record<string, string> = {
+		...CASES,
+		"single quotes and shell metachars":
+			"it's a 'quoted' $HOME `backtick` $(cmd)",
+		"double quotes": 'he said "hi"',
+		"unicode and emoji": "مرحبا 😀 — naïve",
+	};
+
+	const ids: Record<string, string> = {};
+	for (const [label, value] of Object.entries(POSTED)) {
+		const item = (await inibase.post(
+			tableName,
+			{ name: label, code: value, body: HTML_TOOL },
+			undefined,
+			true,
+		)) as { id: string };
+		ids[label] = item.id;
+	}
+
+	// Reopen so the values are read back from the concatenated gzip columns.
+	const reopened = new Inibase(dbPath);
+	for (const [label, value] of Object.entries(POSTED)) {
+		const got = (await reopened.get(
+			tableName,
+			ids[label],
+			undefined,
+			true,
+		)) as {
+			code: string;
+			body: string;
+		};
+		assert.equal(got.code, value.trim(), `code: ${label}`);
+		assert.equal(got.body, HTML_TOOL, `body: ${label}`);
+	}
+
+	removeDatabase();
+});
+
 test("a legacy column file written by an older version still reads", async () => {
 	removeDatabase();
 	const inibase = new Inibase(dbPath);

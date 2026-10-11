@@ -417,6 +417,20 @@ const tempPathFor = (filePath: string) =>
 		`.tmp/$1.${process.pid}-${(tempSeq++).toString(36)}`,
 	);
 
+/**
+ * Cleanup-and-rethrow for a failed column write. A partial temp file must never
+ * be left behind, and the caller must observe the failure so it can abort the
+ * operation instead of publishing a column that is missing a line — which would
+ * desync the pagination row count from the column files.
+ */
+const failWrite = async (
+	fileTempPath: string,
+	error: unknown,
+): Promise<never> => {
+	await unlink(fileTempPath).catch(() => {});
+	throw error;
+};
+
 const _pipeline = async (
 	filePath: string,
 	rl: Interface,
@@ -441,6 +455,33 @@ const createReadLineInternface = (filePath: string, fileHandle: FileHandle) =>
 			: fileHandle.createReadStream(),
 		crlfDelay: Number.POSITIVE_INFINITY,
 	});
+
+/**
+ * Like {@link createReadLineInternface} but also hands back a disposer that
+ * tears down the readline interface and both the source and (for `.gz`
+ * columns) gunzip streams. Sparse readers call the disposer in their `finally`
+ * so an early `break` — the whole point of a point lookup — cannot leave a read
+ * stream (and its libuv handle) dangling, which would keep the process alive.
+ */
+const openReadline = (
+	filePath: string,
+	fileHandle: FileHandle,
+): { rl: Interface; destroy: () => void } => {
+	const source = fileHandle.createReadStream();
+	const input = filePath.endsWith(".gz") ? source.pipe(createGunzip()) : source;
+	const rl = createInterface({
+		input,
+		crlfDelay: Number.POSITIVE_INFINITY,
+	});
+	return {
+		rl,
+		destroy: () => {
+			rl.close();
+			input.destroy();
+			if (input !== source) source.destroy();
+		},
+	};
+};
 
 /**
  * Checks if a file or directory exists at the specified path.
@@ -832,6 +873,48 @@ export async function get(
 }
 
 /**
+ * Reads only the requested line numbers of one column file and decodes each
+ * with `field`. Unlike the shell `sed -n` reader this stops as soon as the last
+ * requested line has been seen, so a point lookup never scans the column to
+ * EOF, and it decodes each column independently (no tab-delimited `paste`
+ * alignment to break on values that contain a literal tab). Compression is
+ * handled transparently: `.gz` columns are gunzipped on the fly.
+ *
+ * Every resource (readline, gunzip/source stream, file handle) is released on
+ * both the normal and the early-exit path.
+ */
+export const getLines = async (
+	filePath: string,
+	lineNumbers: number[],
+	field?: Field & { databasePath?: string },
+): Promise<Record<number, ReturnType<typeof decode>>> => {
+	const lines: Record<number, ReturnType<typeof decode>> = {};
+	if (!lineNumbers.length) return lines;
+
+	const wanted = new Set(lineNumbers);
+	const last = Math.max(...lineNumbers);
+	const config: Field & { databasePath?: string } = field ?? {
+		key: "BLABLA",
+		type: "string",
+	};
+
+	const fileHandle = await open(filePath, "r");
+	const { rl, destroy } = openReadline(filePath, fileHandle);
+	try {
+		let linesCount = 0;
+		for await (const line of rl) {
+			linesCount++;
+			if (wanted.has(linesCount)) lines[linesCount] = decode(line, config);
+			if (linesCount >= last) break;
+		}
+		return lines;
+	} finally {
+		destroy();
+		await fileHandle.close().catch(() => {});
+	}
+};
+
+/**
  * Asynchronously replaces specific lines in a file based on the provided replacements map or string.
  *
  * @param filePath - Path of the file to modify.
@@ -913,8 +996,8 @@ export const replace = async (
 					}),
 				);
 				return [fileTempPath, filePath];
-			} catch {
-				return [fileTempPath, null];
+			} catch (error) {
+				return failWrite(fileTempPath, error);
 			} finally {
 				// Ensure that file handles are closed, even if an error occurred
 				await fileHandle?.close();
@@ -930,8 +1013,8 @@ export const replace = async (
 			try {
 				await exec(command);
 				return [fileTempPath, filePath];
-			} catch {
-				return [fileTempPath, null];
+			} catch (error) {
+				return failWrite(fileTempPath, error);
 			}
 		}
 	} else if (isReplacementsObject) {
@@ -986,8 +1069,8 @@ export const replace = async (
 				);
 			}
 			return [fileTempPath, filePath];
-		} catch {
-			return [fileTempPath, null];
+		} catch (error) {
+			return failWrite(fileTempPath, error);
 		}
 	}
 	return [];
@@ -1015,12 +1098,12 @@ export const append = async (
 					`${Array.isArray(data) ? data.join("\n") : data}\n`,
 				);
 			} else {
-				const escapedFileTempPath = escapeShellPath(fileTempPath);
-				await exec(
-					`echo '${(Array.isArray(data) ? data.join("\n") : data)
-						.toString()
-						.replace(/'/g, "\\'")}' | gzip - >> ${escapedFileTempPath}`,
-				);
+				// Append a complete gzip member. Readers gunzip every member in
+				// sequence (multi-member stream), and this avoids the shell's
+				// argument-length limits and single-quote escaping the old
+				// `echo … | gzip - >> file` pipeline suffered from.
+				const text = `${Array.isArray(data) ? data.join("\n") : data}\n`;
+				await appendFile(fileTempPath, await gzip(text));
 			}
 		} else
 			await write(
@@ -1035,8 +1118,8 @@ export const append = async (
 					: `${Array.isArray(data) ? data.join("\n") : data}\n`,
 			);
 		return [fileTempPath, filePath];
-	} catch {
-		return [fileTempPath, null];
+	} catch (error) {
+		return failWrite(fileTempPath, error);
 	}
 };
 
@@ -1080,8 +1163,8 @@ export const prepend = async (
 						},
 					}),
 				);
-			} catch {
-				return [fileTempPath, null];
+			} catch (error) {
+				return failWrite(fileTempPath, error);
 			} finally {
 				// Ensure that file handles are closed, even if an error occurred
 				await fileHandle?.close();
@@ -1102,8 +1185,8 @@ export const prepend = async (
 				await exec(
 					`cat ${escapedFileChildTempPath} ${escapedFilePath} > ${escapedFileTempPath}`,
 				);
-			} catch {
-				return [fileTempPath, null];
+			} catch (error) {
+				return failWrite(fileTempPath, error);
 			} finally {
 				await unlink(fileChildTempPath);
 			}
@@ -1120,8 +1203,8 @@ export const prepend = async (
 						)
 					: `${Array.isArray(data) ? data.join("\n") : data}\n`,
 			);
-		} catch {
-			return [fileTempPath, null];
+		} catch (error) {
+			return failWrite(fileTempPath, error);
 		}
 	}
 	return [fileTempPath, filePath];
@@ -1157,8 +1240,8 @@ export const remove = async (
 		await exec(command);
 
 		return [fileTempPath, filePath];
-	} catch {
-		return [fileTempPath, null];
+	} catch (error) {
+		return failWrite(fileTempPath, error);
 	}
 };
 
@@ -1463,6 +1546,7 @@ export const search = async (
 	limit?: number,
 	offset?: number,
 	readWholeFile?: boolean,
+	earlyStop?: boolean,
 ): Promise<
 	[
 		Record<
@@ -1520,6 +1604,7 @@ export const search = async (
 	const linesNumbers: Set<number> = new Set();
 
 	let fileHandle = null;
+	let destroyStreams: () => void = () => {};
 
 	const config: Field & { databasePath?: string } = field ?? {
 		key: "BLABLA",
@@ -1543,7 +1628,8 @@ export const search = async (
 		// Open the file for reading.
 		fileHandle = await open(filePath, "r");
 		// Create a Readline interface to read the file line by line.
-		const rl = createReadLineInternface(filePath, fileHandle);
+		const { rl, destroy } = openReadline(filePath, fileHandle);
+		destroyStreams = destroy;
 
 		// Iterate through each line in the file.
 		for await (const line of rl) {
@@ -1583,6 +1669,10 @@ export const search = async (
 
 				// Store the decoded line in the result object.
 				matchingLines[linesCount] = decodedLine;
+
+				// Every requested match is now in hand: stop instead of
+				// scanning the rest of the column (id -> line resolution).
+				if (earlyStop && limit && linesNumbers.size >= limit) break;
 			}
 		}
 
@@ -1593,7 +1683,9 @@ export const search = async (
 	} catch {
 		return [null, 0, null];
 	} finally {
-		// Close the file handle in the finally block to ensure it is closed even if an error occurs.
+		// Tear down the read streams (an early `break` must not leave a handle
+		// open) and then the file handle, even if an error occurred.
+		destroyStreams();
 		await fileHandle?.close();
 	}
 };
