@@ -12,13 +12,13 @@
 
 Inibase is a file-based TypeScript database designed for **fast data access and low memory usage**, with column selection, built-in caching, and optional gzip compression.
 
-In the **100,000-record CMS benchmark**, Inibase **3.7.0 with gzip** used **1.64 MiB of allocated disk** — **89.4% less than LevelDB** and **98.7% less than SQLite**. Reading two selected columns took **44.3 ms** in the same workload.
+In the **100,000-record CMS benchmark**, published **Inibase 3.8.0 with gzip and `log: true`** used **1.64 MiB of allocated disk** after bulk loading — **89.3% less than LevelDB** and **98.7% less than SQLite**. Five committed updates took **175 ms**, versus **5174 ms** with the default gzip update path. A full read took **258 ms**, and a two-column projection took **64 ms**, both before updates.
 
-[![Database storage comparison for 100,000 CMS records: Inibase gzip uses 1.64 MiB of allocated disk; lower is better](./.github/assets/storage-benchmark-100k.png)](https://github.com/inicontent/benchmarks/blob/a6c4a644aa5472192fefefe0f3d93b56edc9726a/results/large-cms/REPORT.md)
+[![Database storage comparison for 100,000 CMS records with published Inibase 3.8.0; lower is better](./.github/assets/storage-benchmark-100k.png)](https://github.com/inicontent/benchmarks/blob/11123a511e1c5dc2dce0b80f113ab1f65c02093d/results/large-cms/REPORT.md)
 
-*Source: [inicontent/benchmarks](https://github.com/inicontent/benchmarks/blob/a6c4a644aa5472192fefefe0f3d93b56edc9726a/results/large-cms/REPORT.md), median of three trials on Apple M5 with repetitive synthetic CMS content and full durability. The chart measures disk storage, not RAM. Results depend on the workload; indexed competitors were faster for key lookups.*
+*Source: [inicontent/benchmarks](https://github.com/inicontent/benchmarks/blob/11123a511e1c5dc2dce0b80f113ab1f65c02093d/results/large-cms/REPORT.md), medians of three trials on Apple M5 with repetitive synthetic CMS content, full durability, and query caching disabled. Storage is measured before updates; reads are affected by the OS cache. Logging is opt-in and defers work to compaction, which may increase delete costs. Indexed competitors remain faster for key lookups. See [all operation timings](#benchmark).*
 
-[Explore the full results](https://github.com/inicontent/benchmarks/blob/a6c4a644aa5472192fefefe0f3d93b56edc9726a/results/large-cms/REPORT.md) · [Read the methodology](https://github.com/inicontent/benchmarks/blob/a6c4a644aa5472192fefefe0f3d93b56edc9726a/METHODOLOGY.md)
+[Explore the full results](https://github.com/inicontent/benchmarks/blob/11123a511e1c5dc2dce0b80f113ab1f65c02093d/results/large-cms/REPORT.md) · [Read the methodology](https://github.com/inicontent/benchmarks/blob/11123a511e1c5dc2dce0b80f113ab1f65c02093d/METHODOLOGY.md) · [Enable incremental updates](#incremental-update-log)
 
 ## Features
 
@@ -1117,57 +1117,50 @@ are derived first, in dependency order.
 
 ## Benchmark
 
-### Bulk
+### Published 3.8.0: 100,000 CMS records
 
-|        | 10                | 100               | 1000              |
-|--------|-------------------|-------------------|-------------------|
-| POST   | 11 ms (0.66 mb)   | 5 ms (1.02 mb)    | 24 ms (1.44 mb)   |
-| GET    | 29 ms (2.86 mb)   | 24 ms (2.81 mb)   | 36 ms (0.89 mb)   |
-| PUT    | 21 ms (2.68 mb)   | 16 ms (2.90 mb)   | 12 ms (0.63 mb)   |
-| DELETE | 14 ms (0.82 mb)   | 13 ms (0.84 mb)   | 2 ms (0.17 mb)    |
+**252/252 trials passed** across the comparison suite: eight engines, twelve configurations, three datasets at 1,000 and 10,000 records, plus this 100,000-record CMS run. Every successful trial verifies full content, projections, lookups, updates, and the remaining records after deletion.
 
+The table shows **median total milliseconds across three trials; lower is better**. These are database API operations, not HTTP requests.
 
-### Single
+- **POST:** insert all 100,000 records in batches of 1,000, including commit/flush and excluding separately reported maintenance.
+- **GET:** read all 100,000 records; projection returns only `seq` and `category`. Both are measured before updates and are cache-affected.
+- **PUT:** five separate committed updates selected by application key, setting `score` to `-1`.
+- **DELETE:** five separate committed deletions, including any compaction the engine triggers.
 
-|        | 10                  | 100                | 1000               |
-|--------|---------------------|--------------------|--------------------|
-| POST   | 45 ms (1.07 mb)     | 12 ms (0.52 mb)    | 11 ms (0.37 mb)    |
-| GET    | 200 ms (2.15 mb)    | 192 ms (2.72 mb)   | 190 ms (2.31 mb)   |
-| PUT    | 49 ms (3.22 mb)     | 17 ms (2.98 mb)    | 17 ms (3.06 mb)    |
-| DELETE | 118 ms (0.59 mb)    | 113 ms (0.51 mb)   | 103 ms (3.14 mb)   |
+| Configuration | POST 100k | GET 100k | GET projection 100k | PUT 5 records | DELETE 5 records |
+|---|---:|---:|---:|---:|---:|
+| Inibase 3.8.0 plain | 6629.709 | 229.705 | 58.865 | 738.768 | 1208.188 |
+| Inibase 3.8.0 gzip | 3141.852 | 258.723 | 63.058 | 5174.360 | 1932.057 |
+| Inibase 3.8.0 plain + log | 7305.530 | 257.801 | 64.880 | 178.175 | 1382.575 |
+| Inibase 3.8.0 gzip + log | 3194.676 | 257.580 | 64.079 | 175.072 | 3273.597 |
+| SQLite | 358.504 | 113.873 | 47.684 | 0.731 | 0.302 |
+| DuckDB | 1051.170 | 171.503 | 23.602 | 2.368 | 0.898 |
+| PGlite | 1084.946 | 421.289 | 168.332 | 1.658 | 0.678 |
+| PostgreSQL | 580.652 | 105.262 | 26.082 | 0.995 | 0.486 |
+| MongoDB | 636.233 | 408.611 | 113.722 | 18.148 | 20.182 |
+| LevelDB | 316.729 | 231.328 | 226.973 | 0.793 | 0.452 |
+| LMDB | 522.254 | 167.659 | 113.197 | 19.052 | 19.994 |
+| LMDB LZ4 | 1552.237 | 170.728 | 135.092 | 20.034 | 19.979 |
 
-> Default testing uses a table with username, email, and password fields, ensuring password encryption is included in the process<br>
-> Results are measured on a default table plus dedicated tables with `prepend`, `compression`, and `decodeID` configs enabled<br>
-> To run benchmarks, install _typescript_ & _[tsx](https://github.com/privatenumber/tsx)_ globally and run `benchmark` by default bulk, for single use `benchmark --single|-s`
->
-> > [!WARNING]
-> > The numbers above were measured **before** always-on fsync + write-ahead journaling landed (they no longer reflect current hot-path write costs). Run `pnpm benchmark:durability` for the crash-atomic numbers.
+**Small storage, faster incremental updates.** In this workload, gzip + log stores the initial dataset in **1.641 MiB** and reduces the five-update total by **29.6×** compared with the default 3.8.0 gzip path. Bulk insertion remains around **3.2 seconds**. The following five deletes take **3274 ms** with logging versus **1932 ms** without it; that cost includes any triggered compaction.
 
-### Computed fields
+The [update log](#incremental-update-log) is opt-in and currently restricts transactions and schema changes. This short update test does not measure sustained compaction amortization, pending-overlay read latency, peak log space, or crash recovery. Inibase filters on the application `seq` field; competitors use native primary-key indexes. Durability and feature coverage differ across engines. The corpus is repetitive synthetic CMS content, not production customer data; high-entropy and compact-record controls are included in the main report.
 
-![Bulk POST benchmark comparing plain and computed fields for 10, 100, and 1,000 rows; lower is better](./.github/assets/computed-benchmark.svg)
+[All datasets and storage results](https://github.com/inicontent/benchmarks/blob/11123a511e1c5dc2dce0b80f113ab1f65c02093d/results/latest/REPORT.md) · [100,000-record report](https://github.com/inicontent/benchmarks/blob/11123a511e1c5dc2dce0b80f113ab1f65c02093d/results/large-cms/REPORT.md) · [Raw samples](https://github.com/inicontent/benchmarks/blob/11123a511e1c5dc2dce0b80f113ab1f65c02093d/results/large-cms/results.json) · [Methodology](https://github.com/inicontent/benchmarks/blob/11123a511e1c5dc2dce0b80f113ab1f65c02093d/METHODOLOGY.md)
 
-*Charted from the results below, with fsync and journaling enabled. These are recorded sample measurements, not a new benchmark run; hardware and version were not recorded with this table.*
+### Reproduce and profile
 
-Write-time evaluation cost (helpers `sum(3 * 4)`, `avg(4)`, `min(4)`, `max(4)`, `count(3)` over an `items` array with 3 lines, plus an arithmetic field `itemTotal × (314 / 100)`), compared against the identical table without computed fields:
+Run the cross-database suite from [inicontent/benchmarks](https://github.com/inicontent/benchmarks). Its package lock pins the published package and competitor versions; instructions include the exact workloads and configuration labels.
 
-| rows | POST bulk (plain / computed) | POST single (plain / computed) | PUT recompute (plain / computed) |
-|------|------------------------------|--------------------------------|----------------------------------|
-| 10   | 21.90 / 22.69 ms             | 25.24 / 26.80 ms               | 23.10 / 37.07 ms                 |
-| 100  | 22.00 / 25.23 ms             | 25.24 / 26.80 ms               | 22.16 / 40.00 ms                 |
-| 1000 | 28.79 / 35.15 ms             | 25.24 / 26.80 ms               | 21.01 / 45.05 ms                 |
+For local engine development, the following scripts measure different workloads and should not be compared directly with the table above:
 
-> Min of 3 rounds (fsync + journal on); the plain-vs-computed delta is the pure expression-evaluation cost (~6 ms/1000 rows of helpers on POST, more on `PUT` because every matched row is recomputed). GET all (1110 rows): 11.44 / 15.90 ms — computed values are stored in real column files, so reads never evaluate; the gap is the larger column count to scan. Run `pnpm benchmark:computed` to reproduce.
-
-**Link-heavy: shared product catalog with batched link-hop reads.** Every order's line items reference a shared 20-row catalog; `totalCentsLive = sum(quantity, product.price)` follows one link hop per line item. The engine batches the hops across the whole post: each batch resolves at most one read per **distinct** `(table, column, id)` triple (here: catalogSize=20 product rows) instead of one full row-level read per line item (2000 reads for 1000 orders × 2 items):
-
-| rows | POST bulk (lk link hop) |
-|------|-------------------------|
-| 10   | 42.29 ms                |
-| 100  | 47.76 ms                |
-| 1000 | 59.46 ms                |
-
-> Shared 20-row catalog (10/100/1000 orders × 2 line items). Without batching every line item re-reads its product row; with it each batch resolves ≤ catalogSize distinct linked rows once (deduplicated across every line item and every order of the batch) and re-evaluates against the warm in-memory cache. A dangling link anywhere in the batch still rejects the whole post (`COMPUTED_FIELD_DANGLING_LINK`). HTTP-request bound, not disk-bound: the cost scales with the number of *distinct* linked rows the catalog actually has, not with line-item count.
+```sh
+pnpm benchmark
+pnpm benchmark:durability
+pnpm benchmark:updatelog
+pnpm benchmark:computed
+```
 
 ## Roadmap
 
