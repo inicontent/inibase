@@ -807,10 +807,12 @@ export async function get(
 	  ]
 > {
 	let fileHandle = null;
+	let destroyRl: (() => void) | null = null;
 
 	try {
 		fileHandle = await open(filePath, "r");
-		const rl = createReadLineInternface(filePath, fileHandle);
+		const { rl, destroy } = openReadline(filePath, fileHandle);
+		destroyRl = destroy;
 		const lines: Record<
 			number,
 			| string
@@ -853,21 +855,27 @@ export async function get(
 				return [lines, linesCount];
 			}
 
-			const escapedFilePath = escapeShellPath(filePath);
-			const command = filePath.endsWith(".gz")
-				? `gunzip -c ${escapedFilePath} | sed -n '${_groupIntoRanges(lineNumbers)}'`
-				: `sed -n '${_groupIntoRanges(lineNumbers)}' ${escapedFilePath}`;
-			const foundedLines = (await exec(command)).stdout.trimEnd().split("\n");
-
-			let index = 0;
-			for (const line of foundedLines) {
-				lines[lineNumbers[index]] = decode(line, config);
-				index++;
+			// Native sparse read: stream to the last requested line and stop.
+			// This replaces `sed -n '<ranges>'`, which spawned one subprocess
+			// per call and always scanned the column to EOF; on a tiny host the
+			// spawn dominated the cost of a page read (one per nested/array
+			// field). Decoding each column independently also avoids the
+			// tab-alignment hazard of `paste`.
+			if (!lineNumbers.length) return lines;
+			const wanted = new Set(lineNumbers);
+			const lastLine = Math.max(...lineNumbers);
+			for await (const line of rl) {
+				linesCount++;
+				if (wanted.delete(linesCount)) lines[linesCount] = decode(line, config);
+				if (linesCount >= lastLine) break;
 			}
 		}
 		return lines;
 	} finally {
-		// Ensure that file handles are closed, even if an error occurred
+		// Tear down the readline interface and its stream(s) before closing the
+		// handle, so an early `break` cannot leave a read stream (or a gunzip
+		// child) dangling; then ensure the handle is closed even on error.
+		destroyRl?.();
 		await fileHandle?.close();
 	}
 }
