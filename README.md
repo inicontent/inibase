@@ -22,6 +22,11 @@ In the **100,000-record CMS benchmark**, published **Inibase 3.8.0 with gzip and
 
 ## Features
 
+> **Local development build:** experimental seekable columns, disk indexes and
+> logged deletes are documented in [storage acceleration](docs/storage-acceleration.md).
+> The hard total-working-memory and bounded-I/O compaction requirements are not yet
+> complete. Published 3.8.0 results below remain historical, not claims about this build.
+
 - **Lightweight** 🪶
 - **Minimalist** :white_circle: (but powerful)
 - **100% TypeScript** :large_blue_diamond:

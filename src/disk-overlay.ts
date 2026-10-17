@@ -131,26 +131,25 @@ export class DiskOverlay {
 			},
 			"a+",
 		);
-		this.end += 4 + buffer.length;
 		const pointer = Buffer.allocUnsafe(8);
 		pointer.writeBigUInt64LE(BigInt(start + 1));
-		await this.resources.file(
-			this.directory,
-			async (handle) => {
-				let written = 0;
-				while (written < 8) {
-					const { bytesWritten } = await handle.write(
-						pointer,
-						written,
-						8 - written,
-						this.offset(id) + written,
-					);
-					if (!bytesWritten) throw new Error("OVERLAY_CACHE_SHORT_WRITE");
-					written += bytesWritten;
-				}
-			},
-			"r+",
-		);
+		const directory = await open(this.directory, "r+");
+		try {
+			let written = 0;
+			while (written < 8) {
+				const { bytesWritten } = await directory.write(
+					pointer,
+					written,
+					8 - written,
+					this.offset(id) + written,
+				);
+				if (!bytesWritten) throw new Error("OVERLAY_CACHE_SHORT_WRITE");
+				written += bytesWritten;
+			}
+		} finally {
+			await directory.close();
+		}
+		this.end = start + 4 + buffer.length;
 		const offset = this.offset(id);
 		const pageOffset = Math.floor(offset / 4096) * 4096;
 		this.resources.delete(`${this.prefix}:page:${pageOffset}`);
@@ -165,8 +164,9 @@ export class DiskOverlay {
 	async *entries(): AsyncGenerator<[string, OverlayValue]> {
 		await this.initialize();
 		let position = 0;
+		const snapshot = this.end;
 		// Pin only while reading bytes, never across a yield or nested lookup.
-		while (position < this.end) {
+		while (position < snapshot) {
 			const start = position;
 			const record = await this.resources.file(this.values, async (handle) => {
 				const header = Buffer.allocUnsafe(4);
@@ -196,6 +196,7 @@ export class DiskOverlay {
 
 	async clear(): Promise<void> {
 		if (this.ready) await this.ready;
+		if (!this.ready) return;
 		for (const path of [this.directory, this.values]) {
 			await this.resources.releaseFile(path);
 			await unlink(path).catch((error: any) => {
