@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { WriteStream } from "node:fs";
+import { createReadStream, type WriteStream } from "node:fs";
 import {
 	access,
 	appendFile,
@@ -7,6 +7,7 @@ import {
 	type FileHandle,
 	constants as fsConstants,
 	open,
+	readdir,
 	readFile,
 	stat,
 	unlink,
@@ -14,7 +15,11 @@ import {
 import { hostname } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface, type Interface } from "node:readline";
-import { Transform, type Transform as TransformType } from "node:stream";
+import {
+	Readable,
+	Transform,
+	type Transform as TransformType,
+} from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createGunzip, createGzip } from "node:zlib";
 import Inison from "inison";
@@ -25,6 +30,8 @@ import {
 	globalConfig,
 } from "./index.js";
 import { recover } from "./journal.js";
+import { lookupLines } from "./key-index.js";
+import { type AppendPrefix, readSeekable } from "./seek.js";
 import {
 	detectFieldType,
 	isArrayOfObjects,
@@ -155,6 +162,22 @@ const notifyLockReleased = (resolvedPath: string) => {
 const lockFilePathFor = (folderPath: string, prefix?: string) =>
 	join(folderPath, `${prefix ?? ""}.locked`);
 
+const recoveredDirectories = new Set<string>();
+const cleanupStaging = async (folderPath: string) => {
+	// Only engine-generated regular-file names. Unknown files and directories
+	// are retained. The caller exclusively owns this directory's writer lock.
+	const generated =
+		/(?:\.txt(?:\.gz)?\.\d+-[a-z0-9]+|\.optimize-[0-9a-f-]+|\.compact-\d+-[0-9a-f]+|updates\.batch-[0-9a-f-]+|seek\.config-[0-9a-f-]+|^\.format\.[0-9a-f-]+)(?:\.(?:blocks|seek|lookup))?$/;
+	for (const entry of await readdir(folderPath, { withFileTypes: true }))
+		if (entry.isFile() && generated.test(entry.name))
+			await unlink(join(folderPath, entry.name));
+	if (recoveredDirectories.size >= 128)
+		recoveredDirectories.delete(
+			recoveredDirectories.values().next().value as string,
+		);
+	recoveredDirectories.add(resolve(folderPath));
+};
+
 /**
  * State of the lock's recorded owner, used to decide when a lock may be
  * stolen (see `stealableLock`).
@@ -207,6 +230,7 @@ export const lock = async (
 ): Promise<void> => {
 	const lockFilePath = lockFilePathFor(folderPath, prefix);
 	const resolvedPath = resolve(lockFilePath);
+	let stolen = false;
 
 	for (;;) {
 		// Same logical task already holds it -> reentrant depth bump.
@@ -238,9 +262,11 @@ export const lock = async (
 			if (!prefix) {
 				try {
 					await recover(folderPath);
-				} catch {
-					// Recovery is best-effort at lock time; reads retry on
-					// torn state, writers re-check before mutating.
+					if (stolen || !recoveredDirectories.has(resolve(folderPath)))
+						await cleanupStaging(folderPath);
+				} catch (error) {
+					await unlink(lockFilePath).catch(() => {});
+					throw error;
 				}
 			}
 			lockDepths.set(resolvedPath, 1);
@@ -257,6 +283,7 @@ export const lock = async (
 
 			if (await stealableLock(lockFilePath, lockStat.mtimeMs, ttl)) {
 				await unlink(lockFilePath).catch(() => {});
+				stolen = true;
 			}
 
 			await new Promise<void>((resolvePromise) =>
@@ -281,6 +308,7 @@ export const tryLock = async (
 ): Promise<boolean> => {
 	const lockFilePath = lockFilePathFor(folderPath, prefix);
 	const resolvedPath = resolve(lockFilePath);
+	let stolen = false;
 
 	if (isReentrant(resolvedPath)) return true;
 	if (lockDepths.get(resolvedPath)) return false; // held by another in-process task: non-blocking
@@ -303,8 +331,11 @@ export const tryLock = async (
 			if (!prefix) {
 				try {
 					await recover(folderPath);
-				} catch {
-					// Best-effort at lock time, mirroring `lock`.
+					if (stolen || !recoveredDirectories.has(resolve(folderPath)))
+						await cleanupStaging(folderPath);
+				} catch (error) {
+					await unlink(lockFilePath).catch(() => {});
+					throw error;
 				}
 			}
 			lockDepths.set(resolvedPath, 1);
@@ -320,9 +351,10 @@ export const tryLock = async (
 			if (
 				attempt === 0 &&
 				(await stealableLock(lockFilePath, lockStat.mtimeMs, ttl))
-			)
+			) {
 				await unlink(lockFilePath).catch(() => {});
-			else return false; // genuinely held -> don't wait
+				stolen = true;
+			} else return false; // genuinely held -> don't wait
 		}
 	}
 	return false;
@@ -366,8 +398,6 @@ export const syncFile = async (filePath: string) => {
 	try {
 		handle = await open(filePath, "r+");
 		await maybeSync(handle);
-	} catch {
-		// Unsupported filesystem/platform: best effort.
 	} finally {
 		await handle?.close();
 	}
@@ -381,8 +411,10 @@ export const syncDir = async (dirPath: string) => {
 	try {
 		handle = await open(dirPath, "r");
 		await maybeSync(handle);
-	} catch {
-		// Directory fsync is not supported on every platform/filesystem.
+	} catch (error: any) {
+		// Only a documented lack of directory-fsync support is best effort.
+		// EIO/ENOSPC/ENOENT are not success and must reach the caller.
+		if (!["EINVAL", "ENOTSUP", "ENOSYS"].includes(error?.code)) throw error;
 	} finally {
 		await handle?.close();
 	}
@@ -411,6 +443,9 @@ export function escapeShellPath(filePath: string) {
  * still know exactly which files to move.
  */
 let tempSeq = 0;
+const appendPrefixes = new WeakMap<readonly unknown[], AppendPrefix>();
+export const appendPrefixOf = (pair: readonly unknown[]) =>
+	appendPrefixes.get(pair);
 const tempPathFor = (filePath: string) =>
 	filePath.replace(
 		/([^/]+)\/?$/,
@@ -481,6 +516,90 @@ const openReadline = (
 			if (input !== source) source.destroy();
 		},
 	};
+};
+
+/** Raw streaming cells. Engine scans must not first materialize a column. */
+export async function* lines(
+	filePath: string,
+): AsyncGenerator<[number, string]> {
+	const handle = await open(filePath, "r");
+	const reader = openReadline(filePath, handle);
+	try {
+		let line = 0;
+		for await (const raw of reader.rl) yield [++line, raw];
+	} finally {
+		reader.destroy();
+		await handle.close();
+	}
+}
+
+export const DELETED_ROW = Symbol("inibase.deleted-row");
+type RawOverride = string | number | boolean | null | typeof DELETED_ROW;
+export type ColumnOverrides =
+	| Map<number, RawOverride>
+	| {
+			size: number;
+			value(line: number, base: string): Promise<RawOverride>;
+			at?(line: number, base: string): Promise<RawOverride>;
+			candidates?(matches: (encoded: unknown) => boolean): Promise<number[]>;
+			close(): Promise<void>;
+	  };
+
+const overridden = async (
+	overrides: ColumnOverrides | undefined,
+	line: number,
+	base: string,
+) =>
+	overrides instanceof Map
+		? overrides.has(line)
+			? overrides.get(line)
+			: base
+		: overrides
+			? await overrides.value(line, base)
+			: base;
+
+const lineSelection = (selection?: Set<number>) => {
+	let includes = false;
+	if (selection)
+		for (const line of selection)
+			if (line > 0) {
+				includes = true;
+				break;
+			}
+	return (line: number) =>
+		!selection?.size ||
+		((!includes || selection.has(line)) && !selection.has(-line));
+};
+
+/** Bounded streaming rewrite; the callback can consult another disk column. */
+export const rewriteCells = async (
+	filePath: string,
+	cell: (
+		line: number,
+		raw: string,
+	) => Promise<
+		string | number | boolean | null | undefined | typeof DELETED_ROW
+	>,
+): Promise<[string, string]> => {
+	const tmp = tempPathFor(filePath);
+	const handle = await open(tmp, "w");
+	try {
+		async function* cells() {
+			for await (const [line, raw] of lines(filePath)) {
+				const value = await cell(line, raw);
+				if (value !== undefined && value !== DELETED_ROW) yield `${value}\n`;
+			}
+		}
+		const source = Readable.from(cells());
+		const output = handle.createWriteStream();
+		if (filePath.endsWith(".gz")) await pipeline(source, createGzip(), output);
+		else await pipeline(source, output);
+		return [tmp, filePath];
+	} catch (error) {
+		return failWrite(tmp, error);
+	} finally {
+		await handle.close();
+	}
 };
 
 /**
@@ -810,6 +929,18 @@ export async function get(
 	let destroyRl: (() => void) | null = null;
 
 	try {
+		if (lineNumbers && lineNumbers !== -1 && !readWholeFile) {
+			const selected = await readSeekable(
+				filePath,
+				Array.isArray(lineNumbers) ? lineNumbers : [lineNumbers],
+			);
+			if (selected) {
+				const config = field ?? { key: "BLABLA", type: "string" as const };
+				return Object.fromEntries(
+					Array.from(selected, ([line, raw]) => [line, decode(raw, config)]),
+				);
+			}
+		}
 		fileHandle = await open(filePath, "r");
 		const { rl, destroy } = openReadline(filePath, fileHandle);
 		destroyRl = destroy;
@@ -898,6 +1029,12 @@ export const getLines = async (
 ): Promise<Record<number, ReturnType<typeof decode>>> => {
 	const lines: Record<number, ReturnType<typeof decode>> = {};
 	if (!lineNumbers.length) return lines;
+	const selected = await readSeekable(filePath, lineNumbers);
+	if (selected) {
+		const config = field ?? { key: "BLABLA", type: "string" as const };
+		for (const [line, raw] of selected) lines[line] = decode(raw, config);
+		return lines;
+	}
 
 	const wanted = new Set(lineNumbers);
 	const last = Math.max(...lineNumbers);
@@ -1097,8 +1234,14 @@ export const append = async (
 	data: string | number | (string | number)[],
 ): Promise<(string | null)[]> => {
 	const fileTempPath = tempPathFor(filePath);
+	let prefix: AppendPrefix | undefined;
 	try {
 		if (await isExists(filePath)) {
+			const info = await stat(filePath, { bigint: true });
+			prefix = {
+				bytes: Number(info.size),
+				stamp: `${info.dev}:${info.ino}:${info.size}:${info.mtimeNs}`,
+			};
 			await copyFile(filePath, fileTempPath);
 			if (!filePath.endsWith(".gz")) {
 				await appendFile(
@@ -1120,12 +1263,12 @@ export const append = async (
 				// (.tmp/<col>.<pid>-<seq>), so write()'s suffix check can't
 				// gzip a first-write for a compressed column. Do it here.
 				filePath.endsWith(".gz")
-					? await gzip(
-							`${Array.isArray(data) ? data.join("\n") : data}\n`,
-						)
+					? await gzip(`${Array.isArray(data) ? data.join("\n") : data}\n`)
 					: `${Array.isArray(data) ? data.join("\n") : data}\n`,
 			);
-		return [fileTempPath, filePath];
+		const pair = [fileTempPath, filePath];
+		if (prefix) appendPrefixes.set(pair, prefix);
+		return pair;
 	} catch (error) {
 		return failWrite(fileTempPath, error);
 	}
@@ -1179,24 +1322,20 @@ export const prepend = async (
 				await fileTempHandle?.close();
 			}
 		} else {
-			const fileChildTempPath = `${tempPathFor(filePath)}.child`;
+			let output: FileHandle | undefined;
 			try {
-				await write(
-					fileChildTempPath,
-					`${Array.isArray(data) ? data.join("\n") : data}\n`,
+				output = await open(fileTempPath, "w");
+				// A prepended prefix must itself be a gzip member. The unique
+				// staging suffix no longer lets write() infer compression.
+				await output.writeFile(
+					await gzip(`${Array.isArray(data) ? data.join("\n") : data}\n`),
 				);
-
-				const escapedFilePath = escapeShellPath(filePath);
-				const escapedFileTempPath = escapeShellPath(fileTempPath);
-				const escapedFileChildTempPath = escapeShellPath(fileChildTempPath);
-
-				await exec(
-					`cat ${escapedFileChildTempPath} ${escapedFilePath} > ${escapedFileTempPath}`,
-				);
+				for await (const chunk of createReadStream(filePath))
+					await output.writeFile(chunk);
 			} catch (error) {
 				return failWrite(fileTempPath, error);
 			} finally {
-				await unlink(fileChildTempPath);
+				await output?.close();
 			}
 		}
 	} else {
@@ -1206,9 +1345,7 @@ export const prepend = async (
 				// First-write for a compressed column: see append() — the
 				// unique temp path hides the ".gz" suffix from write().
 				filePath.endsWith(".gz")
-					? await gzip(
-							`${Array.isArray(data) ? data.join("\n") : data}\n`,
-						)
+					? await gzip(`${Array.isArray(data) ? data.join("\n") : data}\n`)
 					: `${Array.isArray(data) ? data.join("\n") : data}\n`,
 			);
 		} catch (error) {
@@ -1561,7 +1698,7 @@ export const search = async (
 	 * line, so a search reflects un-compacted `put`s. The native whole-line
 	 * grep fast path is bypassed whenever overrides are supplied.
 	 */
-	overrides?: Map<number, string | number | boolean | null>,
+	overrides?: ColumnOverrides,
 ): Promise<
 	[
 		Record<
@@ -1577,6 +1714,68 @@ export const search = async (
 		Set<number> | null,
 	]
 > => {
+	// Disk indexes produce candidates, never unchecked answers. Fetching a
+	// candidate uses the block directory, not a sequential line-number scan.
+	const allowedLine = lineSelection(searchIn);
+	if (
+		(operator === "=" || operator === "[]") &&
+		!logicalOperator &&
+		comparedAtValue !== null &&
+		typeof field?.type === "string" &&
+		EQUALS_FAST_TYPES.has(field.type)
+	) {
+		const patterns = buildEqualsPatterns(comparedAtValue, field);
+		if (patterns) {
+			const candidates = await lookupLines(filePath, patterns);
+			if (candidates !== null) {
+				const matches = (raw: unknown) =>
+					compare(
+						operator,
+						decode(raw as string | number | null, field) ?? null,
+						comparedAtValue,
+						field.type,
+					);
+				if (overrides instanceof Map) candidates.push(...overrides.keys());
+				else if (overrides?.candidates)
+					candidates.push(...(await overrides.candidates(matches)));
+				else if (overrides?.size)
+					throw new Error("INDEX_OVERLAY_READER_REQUIRED");
+				const selected = await readSeekable(filePath, candidates);
+				if (selected) {
+					const values: Record<number, ReturnType<typeof decode>> = {};
+					const numbers = new Set<number>();
+					try {
+						for (const line of Array.from(new Set(candidates)).sort(
+							(a, b) => a - b,
+						)) {
+							if (!allowedLine(line)) continue;
+							const raw = selected.get(line);
+							if (raw === undefined) continue;
+							const value =
+								overrides && !(overrides instanceof Map) && overrides.at
+									? await overrides.at(line, raw)
+									: await overridden(overrides, line, raw);
+							if (value === DELETED_ROW || !matches(value)) continue;
+							numbers.add(line);
+							if (offset && numbers.size < offset) continue;
+							if (limit && numbers.size > limit + (offset ? offset - 1 : 0)) {
+								if (readWholeFile) continue;
+								break;
+							}
+							values[line] = decode(value as string | number | null, field);
+							if (earlyStop && limit && numbers.size >= limit) break;
+						}
+						return numbers.size
+							? [values, numbers.size, numbers]
+							: [null, 0, null];
+					} finally {
+						if (overrides && !(overrides instanceof Map))
+							await overrides.close();
+					}
+				}
+			}
+		}
+	}
 	// Native fast path for exact-equality searches (whole-line `grep -x -F`).
 	if (
 		!overrides?.size &&
@@ -1653,20 +1852,13 @@ export const search = async (
 			linesCount++;
 
 			// Search only in provided linesNumbers
-			if (
-				searchIn?.size &&
-				(!searchIn.has(linesCount) || searchIn.has(-linesCount))
-			)
-				continue;
+			if (!allowedLine(linesCount)) continue;
 
 			// Decode the line for comparison. A per-line overlay override (raw
 			// cell) wins over the file content so searches see un-compacted puts.
-			const decodedLine = decode(
-				overrides?.has(linesCount)
-					? (overrides.get(linesCount) as string | number | null)
-					: line,
-				config,
-			);
+			const raw = await overridden(overrides, linesCount, line);
+			if (raw === DELETED_ROW) continue;
+			const decodedLine = decode(raw as string | number | null, config);
 
 			// Check if the line meets the specified conditions based on comparison and logical operators.
 			const doesMeetCondition =
@@ -1702,13 +1894,15 @@ export const search = async (
 		return linesNumbers.size
 			? [matchingLines, linesNumbers.size, linesNumbers]
 			: [null, 0, null];
-	} catch {
-		return [null, 0, null];
+	} catch (error: any) {
+		if (error?.code === "ENOENT") return [null, 0, null];
+		throw error;
 	} finally {
 		// Tear down the read streams (an early `break` must not leave a handle
 		// open) and then the file handle, even if an error occurred.
 		destroyStreams();
 		await fileHandle?.close();
+		if (overrides && !(overrides instanceof Map)) await overrides.close();
 	}
 };
 /**
@@ -1725,7 +1919,7 @@ async function reduceNumbers(
 	filePath: string,
 	wanted: "sum" | "avg" | "min" | "max" = "sum",
 	lineNumbers?: number | number[],
-	overrides?: Map<number, string | number | boolean | null>,
+	overrides?: ColumnOverrides,
 ): Promise<number> {
 	/* optional subset */
 	const filter = lineNumbers
@@ -1752,7 +1946,8 @@ async function reduceNumbers(
 
 			// A per-line overlay override (raw cell) wins over the base file so
 			// aggregates reflect un-compacted puts.
-			const raw = overrides?.has(line) ? overrides.get(line) : txt;
+			const raw = await overridden(overrides, line, txt);
+			if (raw === DELETED_ROW) continue;
 			const num = Number(
 				decode(raw as string | number | null, {
 					key: "BLABLA",
@@ -1776,6 +1971,7 @@ async function reduceNumbers(
 		}
 	} finally {
 		await fh.close();
+		if (overrides && !(overrides instanceof Map)) await overrides.close();
 	}
 
 	if (processed === 0) return 0; // nothing numeric found
@@ -1793,25 +1989,25 @@ async function reduceNumbers(
 export const sum = (
 	fp: string,
 	ln?: number | number[],
-	overrides?: Map<number, string | number | boolean | null>,
+	overrides?: ColumnOverrides,
 ) => reduceNumbers(fp, "sum", ln, overrides);
 
 export const avg = (
 	fp: string,
 	ln?: number | number[],
-	overrides?: Map<number, string | number | boolean | null>,
+	overrides?: ColumnOverrides,
 ) => reduceNumbers(fp, "avg", ln, overrides);
 
 export const min = (
 	fp: string,
 	ln?: number | number[],
-	overrides?: Map<number, string | number | boolean | null>,
+	overrides?: ColumnOverrides,
 ) => reduceNumbers(fp, "min", ln, overrides);
 
 export const max = (
 	fp: string,
 	ln?: number | number[],
-	overrides?: Map<number, string | number | boolean | null>,
+	overrides?: ColumnOverrides,
 ) => reduceNumbers(fp, "max", ln, overrides);
 
 export const getFileDate = (path: string) =>

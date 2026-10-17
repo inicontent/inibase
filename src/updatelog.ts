@@ -1,4 +1,11 @@
-import { type FileHandle, open, stat } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import {
+	copyFile,
+	type FileHandle,
+	open,
+	stat,
+	unlink,
+} from "node:fs/promises";
 import { join } from "node:path";
 import * as zlib from "node:zlib";
 
@@ -67,7 +74,7 @@ const crc32Fallback = (() => {
 const zlibCrc32 = (zlib as unknown as { crc32?: (data: Uint8Array) => number })
 	.crc32;
 
-const checksum = (buffer: Uint8Array): number =>
+export const checksum = (buffer: Uint8Array): number =>
 	(typeof zlibCrc32 === "function"
 		? zlibCrc32(buffer)
 		: crc32Fallback(buffer)) >>> 0;
@@ -78,6 +85,8 @@ export interface UpdateRecord {
 	/** Encoded column values, exactly as written by `formatData`. */
 	cols: Record<string, unknown>;
 	updatedAt: number;
+	/** Format 3 durable row tombstone. Format 2 writers never emit this. */
+	deleted?: boolean;
 }
 
 export interface UpdateFrame {
@@ -94,6 +103,13 @@ export interface ScanResult {
 	frameCount: number;
 	/** Last committed generation, or `firstGen - 1` when no frame is valid. */
 	lastGen: number;
+	/** Last validated frame header, used to validate an incremental cursor. */
+	anchor?: { offset: number; header: string };
+}
+
+export interface LogCursor {
+	offset: number;
+	anchor?: ScanResult["anchor"];
 }
 
 /** Raised for mid-log corruption (a reliable frame is followed by more bytes). */
@@ -253,22 +269,31 @@ export const buildFrames = (
 ): UpdateFrame[] => {
 	const frames: UpdateFrame[] = [];
 	let current: UpdateRecord[] = [];
-
-	const sizeOf = (gen: number, recs: UpdateRecord[]) =>
-		framePayload({ gen, records: recs }).length + HEADER_BYTES;
+	let recordBytes = 0;
+	const overhead = () =>
+		framePayload({ gen: firstGen + frames.length, records: [] }).length +
+		HEADER_BYTES;
 
 	for (const record of records) {
-		const alone = sizeOf(firstGen + frames.length + (current.length ? 1 : 0), [
-			record,
-		]);
+		const bytes = Buffer.byteLength(JSON.stringify(record));
+		const alone = overhead() + bytes;
 		if (alone > maxFrameBytes)
 			throw new UpdateLogFrameTooLargeError(path, alone, maxFrameBytes);
-		const candidate = sizeOf(firstGen + frames.length, [...current, record]);
+		const candidate = overhead() + recordBytes + bytes + current.length;
 		if (current.length && candidate > maxFrameBytes) {
 			frames.push({ gen: firstGen + frames.length, records: current });
 			current = [];
+			recordBytes = 0;
 		}
+		// Crossing a power of ten in the generation can add a byte to the frame.
+		if (overhead() + bytes > maxFrameBytes)
+			throw new UpdateLogFrameTooLargeError(
+				path,
+				overhead() + bytes,
+				maxFrameBytes,
+			);
 		current.push(record);
+		recordBytes += bytes;
 	}
 	if (current.length)
 		frames.push({ gen: firstGen + frames.length, records: current });
@@ -297,7 +322,8 @@ export class UpdateLog {
 	async append(frame: UpdateFrame): Promise<void> {
 		const handle = await open(this.path, "a");
 		try {
-			await handle.write(encodeFrame(frame));
+			// write() may legally perform a short write. writeFile() drains it.
+			await handle.writeFile(encodeFrame(frame));
 			await maybeSync(handle);
 		} finally {
 			await handle.close().catch(() => {});
@@ -315,6 +341,29 @@ export class UpdateLog {
 		return firstGen - 1 + frames.length;
 	}
 
+	/** Stage a multi-frame engine operation for the existing atomic file journal. */
+	async stage(
+		frames: UpdateFrame[],
+		tablePath: string,
+	): Promise<[string, string]> {
+		const tmp = join(tablePath, ".tmp", `updates.batch-${randomUUID()}`);
+		let handle: FileHandle | undefined;
+		try {
+			await copyFile(this.path, tmp).catch((error: any) => {
+				if (error?.code !== "ENOENT") throw error;
+			});
+			handle = await open(tmp, "a");
+			for (const frame of frames) await handle.writeFile(encodeFrame(frame));
+			await maybeSync(handle);
+			return [tmp, this.path];
+		} catch (error) {
+			await unlink(tmp).catch(() => {});
+			throw error;
+		} finally {
+			await handle?.close();
+		}
+	}
+
 	/**
 	 * Stream every valid frame from `firstGen` in order, calling `onFrame` for
 	 * each. The log is never loaded into one buffer, so replay is bounded by
@@ -325,6 +374,7 @@ export class UpdateLog {
 		firstGen: number,
 		maxFrameBytes: number = DEFAULT_MAX_FRAME_BYTES,
 		onFrame?: (frame: UpdateFrame) => void | Promise<void>,
+		cursor?: LogCursor,
 	): Promise<ScanResult> {
 		let handle: FileHandle;
 		try {
@@ -340,91 +390,81 @@ export class UpdateLog {
 			throw error;
 		}
 
-		const chunk = Buffer.allocUnsafe(64 * 1024);
-		let pending = Buffer.alloc(0);
-		let committedBytes = 0;
+		let committedBytes = cursor?.offset ?? 0;
 		let frameCount = 0;
 		let tornTail = false;
+		let anchor = cursor?.anchor;
+		const header = Buffer.allocUnsafe(HEADER_BYTES);
+		const readAt = async (buffer: Buffer, position: number) => {
+			let read = 0;
+			while (read < buffer.length) {
+				const { bytesRead } = await handle.read(
+					buffer,
+					read,
+					buffer.length - read,
+					position + read,
+				);
+				if (!bytesRead) break;
+				read += bytesRead;
+			}
+			return read;
+		};
 
 		try {
-			for (;;) {
-				const { bytesRead } = await handle.read(chunk, 0, chunk.length, null);
-				if (bytesRead === 0) break;
-				pending =
-					pending.length === 0
-						? Buffer.from(chunk.subarray(0, bytesRead))
-						: Buffer.concat([pending, chunk.subarray(0, bytesRead)]);
-
-				// Consume every complete, valid frame currently buffered.
-				let offset = 0;
-				while (pending.length - offset >= HEADER_BYTES) {
-					const length = pending.readUInt32LE(offset);
-					const storedCrc = pending.readUInt32LE(offset + 4);
-					if (length > maxFrameBytes)
-						throw new UpdateLogCorruptionError(
-							this.path,
-							offset,
-							`frame length ${length} exceeds cap ${maxFrameBytes}`,
-						);
-					const frameEnd = offset + HEADER_BYTES + length;
-					if (frameEnd > pending.length) break; // wait for more bytes
-					const payload = pending.subarray(offset + HEADER_BYTES, frameEnd);
-					if (checksum(payload) !== storedCrc) break; // decide at EOF
-					const frame = parseFramePayload(
-						payload,
-						firstGen + frameCount,
+			// Pin EOF: an append racing a reader is consumed on its next refresh.
+			const end = (await handle.stat()).size;
+			if (committedBytes > end)
+				throw new UpdateLogCorruptionError(
+					this.path,
+					committedBytes,
+					"stale cursor",
+				);
+			while (committedBytes < end) {
+				if (
+					end - committedBytes < HEADER_BYTES ||
+					(await readAt(header, committedBytes)) !== HEADER_BYTES
+				) {
+					tornTail = true;
+					break;
+				}
+				const length = header.readUInt32LE(0);
+				const storedCrc = header.readUInt32LE(4);
+				if (length > maxFrameBytes)
+					throw new UpdateLogCorruptionError(
 						this.path,
 						committedBytes,
+						`frame length ${length} exceeds cap ${maxFrameBytes}`,
 					);
-					if (onFrame) await onFrame(frame);
-					frameCount++;
-					offset = frameEnd;
-					committedBytes += HEADER_BYTES + length;
+				const frameEnd = committedBytes + HEADER_BYTES + length;
+				if (frameEnd > end) {
+					tornTail = true;
+					break;
 				}
-				pending = pending.subarray(offset);
-			}
-
-			// Leftover bytes: a partial header/payload, or a checksum failure.
-			// If a frame's bytes all fit but the checksum failed and nothing is
-			// left after it, it is a torn tail. Anything else is corruption.
-			if (pending.length > 0) {
-				if (pending.length < HEADER_BYTES) tornTail = true;
-				else {
-					const length = pending.readUInt32LE(0);
-					const storedCrc = pending.readUInt32LE(4);
-					const frameEnd = HEADER_BYTES + length;
-					if (length > maxFrameBytes)
+				const payload = Buffer.allocUnsafe(length);
+				if ((await readAt(payload, committedBytes + HEADER_BYTES)) !== length) {
+					tornTail = true;
+					break;
+				}
+				if (checksum(payload) !== storedCrc) {
+					if (frameEnd !== end)
 						throw new UpdateLogCorruptionError(
 							this.path,
 							committedBytes,
-							`frame length ${length} exceeds cap ${maxFrameBytes}`,
+							"checksum mismatch",
 						);
-					if (frameEnd > pending.length) tornTail = true;
-					else {
-						const payload = pending.subarray(HEADER_BYTES, frameEnd);
-						if (checksum(payload) !== storedCrc) {
-							if (frameEnd === pending.length) tornTail = true;
-							else
-								throw new UpdateLogCorruptionError(
-									this.path,
-									committedBytes,
-									"checksum mismatch",
-								);
-						} else {
-							// Valid frame that only now fit: it is not corruption.
-							const frame = parseFramePayload(
-								payload,
-								firstGen + frameCount,
-								this.path,
-								committedBytes,
-							);
-							if (onFrame) await onFrame(frame);
-							frameCount++;
-							committedBytes += HEADER_BYTES + length;
-							if (pending.length > frameEnd) tornTail = true;
-						}
-					}
+					tornTail = true;
+					break;
 				}
+				const frame = parseFramePayload(
+					payload,
+					firstGen + frameCount,
+					this.path,
+					committedBytes,
+				);
+				if (onFrame) await onFrame(frame);
+				anchor = { offset: committedBytes, header: header.toString("hex") };
+				frameCount++;
+				committedBytes = frameEnd;
 			}
 		} finally {
 			await handle.close().catch(() => {});
@@ -435,7 +475,46 @@ export class UpdateLog {
 			tornTail,
 			frameCount,
 			lastGen: firstGen - 1 + frameCount,
+			anchor,
 		};
+	}
+
+	/** Check the previously committed boundary before accepting an append. */
+	async validateCursor(cursor: LogCursor): Promise<boolean> {
+		if (!cursor.offset) return true;
+		if (!cursor.anchor) return false;
+		const handle = await open(this.path, "r");
+		try {
+			const header = Buffer.alloc(HEADER_BYTES);
+			const { bytesRead } = await handle.read(
+				header,
+				0,
+				HEADER_BYTES,
+				cursor.anchor.offset,
+			);
+			if (
+				bytesRead !== HEADER_BYTES ||
+				header.toString("hex") !== cursor.anchor.header ||
+				cursor.anchor.offset + HEADER_BYTES + header.readUInt32LE(0) !==
+					cursor.offset
+			)
+				return false;
+			const payload = Buffer.allocUnsafe(header.readUInt32LE(0));
+			let read = 0;
+			while (read < payload.length) {
+				const { bytesRead: count } = await handle.read(
+					payload,
+					read,
+					payload.length - read,
+					cursor.anchor.offset + HEADER_BYTES + read,
+				);
+				if (!count) return false;
+				read += count;
+			}
+			return checksum(payload) === header.readUInt32LE(4);
+		} finally {
+			await handle.close();
+		}
 	}
 
 	/**
@@ -447,8 +526,9 @@ export class UpdateLog {
 		firstGen: number,
 		maxFrameBytes: number = DEFAULT_MAX_FRAME_BYTES,
 		onFrame?: (frame: UpdateFrame) => void | Promise<void>,
+		cursor?: LogCursor,
 	): Promise<ScanResult> {
-		const result = await this.scan(firstGen, maxFrameBytes, onFrame);
+		const result = await this.scan(firstGen, maxFrameBytes, onFrame, cursor);
 		if (!result.tornTail) return result;
 		const handle = await open(this.path, "r+");
 		try {

@@ -15,13 +15,19 @@ test("failed rollback retains its journal and backup for a later recovery", asyn
 		await writeFile(backup, "acknowledged-value\n");
 		const journal = new Journal(root, "txn");
 		await journal.begin([{ live, backup, tmp: null, existed: true }]);
-		await assert.rejects(() => journal.rollback(), (error: any) => error.code === "ENOENT");
-		assert.ok(existsSync(journal.path)); assert.ok(existsSync(backup));
+		await assert.rejects(
+			() => journal.rollback(),
+			(error: any) => error.code === "ENOENT",
+		);
+		assert.ok(existsSync(journal.path));
+		assert.ok(existsSync(backup));
 		await mkdir(join(root, "missing"));
 		await recover(join(root, ".tmp"));
 		assert.equal(await readFile(live, "utf8"), "acknowledged-value\n");
 		assert.equal(existsSync(journal.path), false);
-	} finally { await rm(root, { recursive: true, force: true }); }
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
 });
 
 test("complete malformed journal records fail closed instead of being skipped", async () => {
@@ -29,8 +35,13 @@ test("complete malformed journal records fail closed instead of being skipped", 
 	try {
 		await mkdir(join(root, ".tmp"));
 		const path = join(root, ".tmp/journal.jsonl");
-		await writeFile(path, `${JSON.stringify({ txn: "txn", type: "begin", files: [] })}\n{broken}\n${JSON.stringify({ txn: "txn", type: "commit" })}\n`);
+		await writeFile(
+			path,
+			`${JSON.stringify({ txn: "txn", type: "begin", files: [] })}\n{broken}\n${JSON.stringify({ txn: "txn", type: "commit" })}\n`,
+		);
 		await assert.rejects(() => recover(join(root, ".tmp")), /JOURNAL_CORRUPT/);
 		assert.ok(existsSync(path));
-	} finally { await rm(root, { recursive: true, force: true }); }
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
 });

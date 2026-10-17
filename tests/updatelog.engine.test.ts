@@ -396,8 +396,8 @@ test("a newer-format marker is refused, never mis-read", async () => {
 	// format-2 table and merged).
 	await writeMarker({
 		engine: "inibase",
-		format: 3,
-		minReader: "3.9.0",
+		format: 4,
+		minReader: "4.0.0",
 		log: true,
 		baseGen: 0,
 	});
@@ -449,8 +449,8 @@ test("version-compat helpers classify markers correctly", () => {
 		null,
 	);
 	assert.match(
-		unsupportedFormatReason({ format: 3, log: true, baseGen: 0 }) ?? "",
-		/format 3/,
+		unsupportedFormatReason({ format: 4, log: true, baseGen: 0 }) ?? "",
+		/format 4/,
 	);
 	assert.match(
 		unsupportedFormatReason({
