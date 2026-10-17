@@ -100,12 +100,8 @@ export const contentStamp = async (handle: FileHandle): Promise<string> => {
 };
 
 export const pathContentStamp = async (path: string): Promise<string> => {
-	const handle = await open(path, "r");
-	try {
-		return await contentStamp(handle);
-	} finally {
-		await handle.close();
-	}
+	const s = await stat(path, { bigint: true });
+	return `${s.dev}:${s.ino}:${s.size}:${s.mtimeNs}`;
 };
 
 export const readExact = async (
