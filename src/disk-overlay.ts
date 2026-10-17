@@ -21,6 +21,7 @@ export class DiskOverlay {
 	readonly prefix: string;
 	private readonly directory: string;
 	private readonly values: string;
+	private readonly keys: string;
 	private ready: Promise<void> | undefined;
 	private end = 0;
 	size = 0;
@@ -36,6 +37,7 @@ export class DiskOverlay {
 		);
 		this.directory = `${this.prefix}.ids`;
 		this.values = `${this.prefix}.values`;
+		this.keys = `${this.prefix}.keys`;
 	}
 
 	private initialize(): Promise<void> {
@@ -45,7 +47,7 @@ export class DiskOverlay {
 			await mkdir(cache, { recursive: true });
 			for (const name of await readdir(cache)) {
 				const match = new RegExp(
-					`^overlay-${host}-(\\d+)-[0-9a-f-]+\\.(?:ids|values)$`,
+					`^overlay-${host}-(\\d+)-[0-9a-f-]+\\.(?:ids|values|keys)$`,
 				).exec(name);
 				if (!match || Number(match[1]) === process.pid) continue;
 				try {
@@ -55,7 +57,7 @@ export class DiskOverlay {
 						await unlink(join(cache, name)).catch(() => {});
 				}
 			}
-			for (const path of [this.directory, this.values]) {
+			for (const path of [this.directory, this.values, this.keys]) {
 				const handle = await open(path, "wx");
 				await handle.close();
 			}
@@ -133,26 +135,40 @@ export class DiskOverlay {
 		);
 		const pointer = Buffer.allocUnsafe(8);
 		pointer.writeBigUInt64LE(BigInt(start + 1));
-		const directory = await open(this.directory, "r+");
-		try {
-			let written = 0;
-			while (written < 8) {
-				const { bytesWritten } = await directory.write(
-					pointer,
-					written,
-					8 - written,
-					this.offset(id) + written,
-				);
-				if (!bytesWritten) throw new Error("OVERLAY_CACHE_SHORT_WRITE");
-				written += bytesWritten;
-			}
-		} finally {
-			await directory.close();
+		if (!exists) {
+			const key = Buffer.allocUnsafe(8);
+			key.writeBigUInt64LE(BigInt(id));
+			await this.resources.file(
+				this.keys,
+				(handle) => handle.writeFile(key),
+				"a+",
+			);
 		}
+		await this.resources.file(
+			this.directory,
+			async (directory) => {
+				let written = 0;
+				while (written < 8) {
+					const { bytesWritten } = await directory.write(
+						pointer,
+						written,
+						8 - written,
+						this.offset(id) + written,
+					);
+					if (!bytesWritten) throw new Error("OVERLAY_CACHE_SHORT_WRITE");
+					written += bytesWritten;
+				}
+			},
+			"r+",
+		);
 		this.end = start + 4 + buffer.length;
 		const offset = this.offset(id);
 		const pageOffset = Math.floor(offset / 4096) * 4096;
-		this.resources.delete(`${this.prefix}:page:${pageOffset}`);
+		// A successful positional write updates the cached directory page too.
+		// No page allocation is needed when it has already been evicted.
+		this.resources
+			.get<Buffer>(`${this.prefix}:page:${pageOffset}`)
+			?.writeBigUInt64LE(BigInt(start + 1), offset - pageOffset);
 		this.resources.set(
 			`${this.prefix}:row:${id}`,
 			value,
@@ -163,41 +179,37 @@ export class DiskOverlay {
 
 	async *entries(): AsyncGenerator<[string, OverlayValue]> {
 		await this.initialize();
-		let position = 0;
-		const snapshot = this.end;
-		// Pin only while reading bytes, never across a yield or nested lookup.
-		while (position < snapshot) {
-			const start = position;
-			const record = await this.resources.file(this.values, async (handle) => {
-				const header = Buffer.allocUnsafe(4);
-				await handle.read(header, 0, 4, position);
-				const payload = Buffer.allocUnsafe(header.readUInt32LE(0));
+		const snapshot = this.size * 8;
+		// A dense first-seen-ID stream avoids decoding obsolete values and avoids
+		// scanning sparse holes for large IDs. No descriptor is pinned at yield.
+		for (let position = 0; position < snapshot; position += 4096) {
+			const keys = Buffer.allocUnsafe(Math.min(4096, snapshot - position));
+			await this.resources.file(this.keys, async (handle) => {
 				let read = 0;
-				while (read < payload.length) {
+				while (read < keys.length) {
 					const { bytesRead } = await handle.read(
-						payload,
+						keys,
 						read,
-						payload.length - read,
-						position + 4 + read,
+						keys.length - read,
+						position + read,
 					);
 					if (!bytesRead) throw new Error("OVERLAY_CACHE_TRUNCATED");
 					read += bytesRead;
 				}
-				position += 4 + payload.length;
-				return JSON.parse(payload.toString("utf8")) as {
-					id: string;
-					value: OverlayValue;
-				};
 			});
-			if ((await this.pointer(record.id)) === start + 1)
-				yield [record.id, record.value];
+			for (let offset = 0; offset < keys.length; offset += 8) {
+				const id = keys.readBigUInt64LE(offset).toString();
+				const value = await this.get(id);
+				if (!value) throw new Error("OVERLAY_CACHE_MISSING_VALUE");
+				yield [id, value];
+			}
 		}
 	}
 
 	async clear(): Promise<void> {
 		if (this.ready) await this.ready;
 		if (!this.ready) return;
-		for (const path of [this.directory, this.values]) {
+		for (const path of [this.directory, this.values, this.keys]) {
 			await this.resources.releaseFile(path);
 			await unlink(path).catch((error: any) => {
 				if (error?.code !== "ENOENT") throw error;
