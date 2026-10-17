@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import Inibase, { type Schema } from "../src/index.js";
+import { encodeID } from "../src/utils.server.js";
 
 // Test database directory (kept separate from the main test suite database)
 const dbPath = "test-db-advanced";
@@ -624,7 +625,9 @@ await test("decodeID config (numeric IDs end to end)", async (t) => {
 		await inibase.createTable(encrypted, [{ key: "name", type: "string" }]);
 		const returned = await inibase.post(encrypted, { name: "A" });
 		assert.equal(typeof returned, "string");
-		assert.equal(returned, "e5d3e5ab8d0ea3927066ff408b36a186");
+		// IDs depend on the installation's retained INIBASE_SECRET. The test
+		// must verify encoding without depending on a developer's local key.
+		assert.equal(returned, encodeID(1));
 		// ... and the encoded id still resolves back to the row.
 		const row = await inibase.get<Row>(encrypted, returned);
 		assert.equal(row?.name, "A");
