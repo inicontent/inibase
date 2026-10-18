@@ -1,0 +1,83 @@
+# Local qualification, workload version 3
+
+These scripts are copied from the existing sibling benchmarks `src/local-*.mjs`
+(version 2), then extended with `baseline-indexed`. Historical benchmark files and
+results are unchanged. Version 3 compares the starting working tree and candidate
+with **identical** seekable/log/tombstone/key-index settings. `baseline` remains
+available for the historical non-indexed configuration. Do not conflate them.
+
+Run from the iniBase repository root, after compiling both explicit local modules:
+
+```sh
+node node_modules/typescript/bin/tsc
+node benchmark/qualification/local-run.mjs \
+  --baseline=/absolute/frozen-baseline/dist/index.js \
+  --optimized="$PWD/dist/index.js" \
+  --baselineCommit=EXACT_BASELINE_ID --optimizedCommit=EXACT_CANDIDATE_ID \
+  --rows=1000,10000,100000 --profiles=compact,cms,mixed \
+  --repeats=3 --samples=128 --writes=32 --output=/absolute/fresh-results
+node benchmark/qualification/local-report.mjs /absolute/fresh-results
+```
+
+Each run records every compiled JavaScript module hash, runtime, hardware,
+configuration, raw latency samples, worker CPU/I/O/RSS, sampled process-tree RSS,
+logical disk peaks, allocated/logical final sizes, correctness errors and failures.
+`mixed` is deterministic high-entropy data. `cms` is repetitive content.
+Each worker uses a fresh directory. Engines run sequentially and rotate order.
+Successful databases are removed; failed databases remain for investigation.
+The OS filesystem cache is not cleared. Reopening is not a cold-disk measurement.
+
+Defaults use a 16 MiB cache budget, 512 MiB V8 heap cap, full iniBase durability and
+SQLite WAL/FULL. Both default to the platform's fsync behavior; fullfsync is recorded.
+A heap cap is not an RSS limit. Engine cache bytes are not total engine working memory.
+The sampler needs permission to run `ps`; failures are retained explicitly.
+
+`--instrument=true` runs separate diagnostic filesystem/codec/subprocess counters
+and CPU profiles. Do not mix instrumented latencies into ordinary measurements.
+`--blockBytes=65536|131072|262144` selects block-size controls.
+`--samples=1024` enables per-trial lookup p99; reports omit p99 below 1,000 samples.
+`--pending=1024` and `--writes=32` set mutation counts. Mixed timings include three
+explicit compactions/checkpoints and automatic maintenance. These short workloads
+are not a long-duration endurance qualification.
+
+Focused scratch-overlay diagnostic (not durable-write throughput):
+
+```sh
+node benchmark/overlay-churn.mjs /absolute/engine/dist
+```
+
+The initial October 17 exploratory tests/profiling overlapped, so their timings are
+not isolated baseline evidence. The `measured-comparison` matrix is isolated.
+The first `comparison` attempt was stopped because sandbox restrictions blocked
+`ps`; its partial results and sampler errors are preserved, not silently discarded.
+
+Run every package test plus the process/journal recovery suites without the tsx
+CLI IPC server (the test files and assertions are unchanged):
+
+```sh
+node benchmark/qualification/checks.mjs
+node node_modules/typescript/bin/tsc --noEmit
+node node_modules/@biomejs/biome/bin/biome check src
+```
+
+Version 4 adds configurable mixed-operation duration and ongoing deletes, individual
+compaction timings, sampler counts for temporary `.tmp` files and private `.cache`
+files, and tool-source hashes. Default operations and data remain version-3-compatible;
+the version is explicit in every result. `tooling-v3.tar.gz` preserves the earlier
+runner used for `measured-comparison`.
+
+A longer repeated-compaction case with pooled samples sufficient for lookup p99:
+
+```sh
+node benchmark/qualification/local-run.mjs \
+  --baseline=/absolute/frozen-baseline/dist/index.js \
+  --optimized="$PWD/dist/index.js" --rows=10000 --profiles=cms \
+  --repeats=3 --samples=1024 --writes=32 \
+  --mixedRounds=12 --mixedWrites=64 --mixedDeletesEvery=8 \
+  --output=/absolute/fresh-sustained-results
+```
+
+Temporary-file peaks are sampled and can miss short-lived files. They count `.tmp`
+files inside the controlled database directory; this is not complete system-wide
+SQLite temporary-file or physical-device I/O accounting. The runner refuses an
+existing output path to preserve raw evidence.
