@@ -1,37 +1,68 @@
 // Immutable storage-kernel experiment, NOT the public iniBase DML engine.
 import assert from "node:assert/strict";
-import { fork, execFileSync } from "node:child_process";
+import { execFileSync, fork } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
 	mkdir,
 	readdir,
 	readFile,
+	rm,
 	stat,
 	writeFile,
-	rm,
 } from "node:fs/promises";
-import { join, resolve } from "node:path";
 import os from "node:os";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+
 const args = Object.fromEntries(
 	process.argv.slice(2).map((arg) => arg.replace(/^--/, "").split("=")),
 );
-const footprint = async (root) => {
+const footprint = async (root, temporary = false) => {
 	let logical = 0,
-		allocated = 0;
-	for (const item of await readdir(root, { withFileTypes: true })) {
+		allocated = 0,
+		temporaryLogical = 0,
+		temporaryAllocated = 0,
+		racingPaths = 0;
+	const entries = await readdir(root, { withFileTypes: true }).catch(
+		(error) => {
+			if (error.code !== "ENOENT") throw error;
+			racingPaths++;
+			return [];
+		},
+	);
+	for (const item of entries) {
 		const path = join(root, item.name);
 		if (item.isDirectory()) {
-			const child = await footprint(path);
+			const child = await footprint(path, temporary || item.name === ".tmp");
 			logical += child.logical;
 			allocated += child.allocated;
+			temporaryLogical += child.temporaryLogical;
+			temporaryAllocated += child.temporaryAllocated;
+			racingPaths += child.racingPaths;
 		} else {
-			const value = await stat(path);
+			const value = await stat(path).catch((error) => {
+				if (error.code !== "ENOENT") throw error;
+				return null;
+			});
+			if (!value) {
+				racingPaths++;
+				continue;
+			}
 			logical += value.size;
 			allocated += value.blocks * 512;
+			if (temporary) {
+				temporaryLogical += value.size;
+				temporaryAllocated += value.blocks * 512;
+			}
 		}
 	}
-	return { logical, allocated };
+	return {
+		logical,
+		allocated,
+		temporaryLogical,
+		temporaryAllocated,
+		racingPaths,
+	};
 };
 const identity = async (directory) => {
 	const hashes = {};
@@ -55,6 +86,8 @@ if (args.child) {
 	const result = {
 		config,
 		runtime: process.versions,
+		measurementVersion: 2,
+		phases: [],
 		latency: [],
 		timings: {},
 		runtimeRss: process.memoryUsage().rss,
@@ -77,15 +110,28 @@ if (args.child) {
 			}),
 		);
 	const timed = async (name, fn) => {
+		result.phases.push({
+			name: name + ":start",
+			time: Date.now(),
+			memory: process.memoryUsage(),
+		});
+		process.send?.({ phase: name });
+		const cpu = process.cpuUsage();
 		const start = performance.now();
 		const value = await fn();
 		result.timings[name] = performance.now() - start;
+		result.phases.push({
+			name: name + ":end",
+			time: Date.now(),
+			memory: process.memoryUsage(),
+			cpu: process.cpuUsage(cpu),
+		});
 		return value;
 	};
 	let sql, resources;
 	try {
 		let point;
-		if (engine === "rowpack") {
+		if (engine !== "sqlite") {
 			const { DatabaseResources } = await import(
 				pathToFileURL(join(moduleDirectory, "resources.js"))
 			);
@@ -97,7 +143,21 @@ if (args.child) {
 				for (let id = 0; id < rows; id++) yield { id, bytes: row(id) };
 			}
 			await timed("bulkIncludingEncoding", () =>
-				buildRowPack(directory, input(), rows, true, resources),
+				buildRowPack(
+					directory,
+					input(),
+					rows,
+					true,
+					resources,
+					(phase, details) => {
+						result.phases.push({
+							name: phase,
+							time: Date.now(),
+							memory: process.memoryUsage(),
+						});
+						if (details) result.indexBuild = details;
+					},
+				),
 			);
 			const pack = await timed("open", () =>
 				RowPack.open(directory, resources),
@@ -111,7 +171,7 @@ if (args.child) {
 			const { DatabaseSync } = await import("node:sqlite");
 			sql = new DatabaseSync(join(directory, "db.sqlite"));
 			sql.exec(
-				"PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA cache_size=-1024; CREATE TABLE records(id INTEGER PRIMARY KEY, value BLOB NOT NULL)",
+				`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA cache_size=-${Math.floor(Number(process.env.INIBASE_MEMORY_BYTES ?? 1048576) / 1024)}; CREATE TABLE records(id INTEGER PRIMARY KEY, value BLOB NOT NULL)`,
 			);
 			const insert = sql.prepare("INSERT INTO records VALUES (?,?)");
 			await timed("bulkIncludingEncoding", async () => {
@@ -165,6 +225,9 @@ if (args.child) {
 	const output = resolve(args.output ?? "benchmark/results/rowpack"),
 		moduleDirectory = resolve(args.dist ?? "dist");
 	await mkdir(output);
+	const budgetBytes = Number(args.budget ?? 1048576);
+	if (!Number.isSafeInteger(budgetBytes) || budgetBytes < 262144)
+		throw new Error("INVALID_BUDGET");
 	const metadata = {
 		experiment:
 			"immutable row-byte kernel; no public schema, validation, DML, log, secondary keys or compaction",
@@ -175,7 +238,14 @@ if (args.child) {
 		cores: os.cpus().length,
 		ram: os.totalmem(),
 		artifact: await identity(moduleDirectory),
-		budgetBytes: 1048576,
+		baselineArtifact: args.baseline
+			? await identity(resolve(args.baseline))
+			: null,
+		measurementVersion: 2,
+		budgetBytes,
+		toolSha256: createHash("sha256")
+			.update(await readFile(new URL(import.meta.url)))
+			.digest("hex"),
 		cache: "OS-cache-affected; no eviction",
 		notes: [
 			"Same caller-encoded JSON bytes and integer primary keys for both kernels; whole-dataset bulk transaction, FULL sync/WAL for SQLite.",
@@ -192,9 +262,14 @@ if (args.child) {
 	for (const rows of (args.rows ?? "1000,10000,100000").split(",").map(Number))
 		for (const profile of (args.profiles ?? "compact,cms,entropy").split(","))
 			for (let repeat = 0; repeat < Number(args.repeats ?? 3); repeat++)
-				for (const engine of repeat % 2
-					? ["sqlite", "rowpack"]
-					: ["rowpack", "sqlite"]) {
+				for (const engine of (() => {
+					const engines = args.baseline
+						? ["baseline", "rowpack", "sqlite"]
+						: ["rowpack", "sqlite"];
+					return engines
+						.slice(repeat % engines.length)
+						.concat(engines.slice(0, repeat % engines.length));
+				})()) {
 					const id = `${engine}-${profile}-${rows}-${repeat + 1}`,
 						directory = resolve(".work", `rowpack-${id}-${Date.now()}`),
 						destination = join(output, `${id}.json`);
@@ -202,13 +277,13 @@ if (args.child) {
 					const child = fork(
 						new URL(import.meta.url),
 						[
-							`--child=${JSON.stringify({ engine, profile, rows, repeat, directory, moduleDirectory, destination })}`,
+							`--child=${JSON.stringify({ engine, profile, rows, repeat, directory, moduleDirectory: engine === "baseline" ? resolve(args.baseline) : moduleDirectory, destination })}`,
 						],
 						{
 							stdio: ["ignore", "pipe", "pipe", "ipc"],
 							env: {
 								...process.env,
-								INIBASE_MEMORY_BYTES: "1048576",
+								INIBASE_MEMORY_BYTES: String(budgetBytes),
 								INIBASE_DURABILITY: "full",
 							},
 							execArgv: ["--max-old-space-size=256"],
@@ -220,7 +295,10 @@ if (args.child) {
 					});
 					child.stdout.resume();
 					const samples = [];
-					const timer = setInterval(() => {
+					let busy = false;
+					const timer = setInterval(async () => {
+						if (busy) return;
+						busy = true;
 						try {
 							const rss =
 								Number(
@@ -228,13 +306,22 @@ if (args.child) {
 										encoding: "utf8",
 									}).trim(),
 								) * 1024;
-							samples.push({ time: Date.now(), rss });
-						} catch {}
+							samples.push({
+								time: Date.now(),
+								rss,
+								...(await footprint(directory)),
+							});
+						} catch (error) {
+							samples.push({ time: Date.now(), error: error.message });
+						} finally {
+							busy = false;
+						}
 					}, 100);
 					const status = await new Promise((done) =>
 						child.on("exit", (code, signal) => done({ code, signal })),
 					);
 					clearInterval(timer);
+					while (busy) await new Promise((resolve) => setImmediate(resolve));
 					await writeFile(
 						join(output, `${id}.resources.json`),
 						JSON.stringify({ status, stderr, samples }, null, 2) + "\n",

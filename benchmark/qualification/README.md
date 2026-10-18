@@ -160,3 +160,55 @@ endurance tests. All raw latency/CPU/I/O/disk/RSS samples and errors are retaine
 The profiling pass is excluded from latency comparisons. Read the separate row
 kernel's limitations before interpreting its SQLite comparison: it does not
 implement the public engine's features or mutability.
+
+## Row construction stage
+
+The separate October 18 construction experiment compares the preceding immutable
+row kernel with batched ID construction and reusable compression workspaces.
+It is not a public-API or mutable-backend comparison. The historical workloads
+above are unchanged. Reconstruct both measured artifacts in fresh directories:
+
+```sh
+mkdir /private/tmp/inibase-row-base /private/tmp/inibase-row-candidate
+tar -xzf benchmark/results/adaptive-20261018/baseline-source.tar.gz -C /private/tmp/inibase-row-base
+tar -xzf benchmark/results/adaptive-20261018/candidate-source.tar.gz -C /private/tmp/inibase-row-candidate
+ln -s "$PWD/node_modules" /private/tmp/inibase-row-base/node_modules
+ln -s "$PWD/node_modules" /private/tmp/inibase-row-candidate/node_modules
+node node_modules/typescript/bin/tsc --project /private/tmp/inibase-row-base/tsconfig.json
+node node_modules/typescript/bin/tsc --project /private/tmp/inibase-row-candidate/tsconfig.json
+
+node benchmark/qualification/rowpack.mjs \
+  --baseline=/private/tmp/inibase-row-base/dist \
+  --dist=/private/tmp/inibase-row-candidate/dist \
+  --rows=1000,10000,100000 --profiles=compact,cms,entropy \
+  --budget=1048576 --repeats=3 \
+  --output=/private/tmp/inibase-row-results/measured-row
+node benchmark/qualification/rowpack.mjs \
+  --baseline=/private/tmp/inibase-row-base/dist \
+  --dist=/private/tmp/inibase-row-candidate/dist \
+  --rows=100000 --profiles=cms,entropy --budget=262144 --repeats=3 \
+  --output=/private/tmp/inibase-row-results/measured-small
+node benchmark/qualification/row-stage-report.mjs /private/tmp/inibase-row-results
+
+node benchmark/qualification/codec-levels.mjs \
+  /private/tmp/inibase-row-candidate/dist/row-encoder.js \
+  /private/tmp/inibase-row-results/codec-levels-rotated.json
+node benchmark/qualification/index-allocation.mjs \
+  /private/tmp/inibase-row-candidate/dist/index.js \
+  /private/tmp/inibase-row-results/index-allocation.json
+
+node benchmark/qualification/checks.mjs
+env INIBASE_MEMORY_BYTES=262144 node --import tsx tests/rowpack.test.ts
+node node_modules/typescript/bin/tsc --noEmit
+```
+
+Run sequentially and permit `ps` for RSS sampling. The row runner refuses an
+existing output directory. Source archives preserve the actual local TypeScript
+sources/configuration used, including pre-existing edits. Compare compiled module
+hashes against `adaptive-20261018/artifact-reproduction.json` and per-run
+`environment.json`. The main and minimum-budget matrices contain 81 and 18 trials.
+Kernel bulk timings include encoding and durable publication; SQLite's
+checkpoint/close is separate. Disk data exceeds the configured cache/reservation
+budgets, but those budgets do not enforce a total RSS ceiling. Closing/reopening
+does not clear the OS cache. Diagnostics do not contribute latency samples to the
+ordinary benchmark comparisons.

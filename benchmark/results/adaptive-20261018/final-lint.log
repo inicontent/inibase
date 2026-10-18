@@ -1,0 +1,162 @@
+benchmark/qualification/row-stage-report.mjs:129:2 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    127 │ await writeFile(
+    128 │ 	join(root, "summary.json"),
+  > 129 │ 	JSON.stringify({ audits, summaries }, null, 2) + "\n",
+        │ 	^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    130 │ );
+    131 │ const number = (n, d = 2) => Number(n).toFixed(d),
+  
+  i Unsafe fix: Use a template literal.
+  
+    127 127 │   await writeFile(
+    128 128 │   	join(root, "summary.json"),
+    129     │ - → JSON.stringify({·audits,·summaries·},·null,·2)·+·"\n",
+        129 │ + → `${JSON.stringify({·audits,·summaries·},·null,·2)}\n`,
+    130 130 │   );
+    131 131 │   const number = (n, d = 2) => Number(n).toFixed(d),
+  
+
+benchmark/qualification/rowpack.mjs:114:10 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    112 │ 	const timed = async (name, fn) => {
+    113 │ 		result.phases.push({
+  > 114 │ 			name: name + ":start",
+        │ 			      ^^^^^^^^^^^^^^^
+    115 │ 			time: Date.now(),
+    116 │ 			memory: process.memoryUsage(),
+  
+  i Unsafe fix: Use a template literal.
+  
+    112 112 │   	const timed = async (name, fn) => {
+    113 113 │   		result.phases.push({
+    114     │ - → → → name:·name·+·":start",
+        114 │ + → → → name:·`${name}:start`,
+    115 115 │   			time: Date.now(),
+    116 116 │   			memory: process.memoryUsage(),
+  
+
+benchmark/qualification/rowpack.mjs:124:10 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    122 │ 		result.timings[name] = performance.now() - start;
+    123 │ 		result.phases.push({
+  > 124 │ 			name: name + ":end",
+        │ 			      ^^^^^^^^^^^^^
+    125 │ 			time: Date.now(),
+    126 │ 			memory: process.memoryUsage(),
+  
+  i Unsafe fix: Use a template literal.
+  
+    122 122 │   		result.timings[name] = performance.now() - start;
+    123 123 │   		result.phases.push({
+    124     │ - → → → name:·name·+·":end",
+        124 │ + → → → name:·`${name}:end`,
+    125 125 │   			time: Date.now(),
+    126 126 │   			memory: process.memoryUsage(),
+  
+
+benchmark/qualification/rowpack.mjs:223:31 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    221 │ 		process.exitCode = 1;
+    222 │ 	}
+  > 223 │ 	await writeFile(destination, JSON.stringify(result, null, 2) + "\n");
+        │ 	                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    224 │ } else {
+    225 │ 	const output = resolve(args.output ?? "benchmark/results/rowpack"),
+  
+  i Unsafe fix: Use a template literal.
+  
+    221 221 │   		process.exitCode = 1;
+    222 222 │   	}
+    223     │ - → await·writeFile(destination,·JSON.stringify(result,·null,·2)·+·"\n");
+        223 │ + → await·writeFile(destination,·`${JSON.stringify(result,·null,·2)}\n`);
+    224 224 │   } else {
+    225 225 │   	const output = resolve(args.output ?? "benchmark/results/rowpack"),
+  
+
+benchmark/qualification/rowpack.mjs:259:3 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    257 │ 	await writeFile(
+    258 │ 		join(output, "environment.json"),
+  > 259 │ 		JSON.stringify(metadata, null, 2) + "\n",
+        │ 		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    260 │ 	);
+    261 │ 	const failures = [];
+  
+  i Unsafe fix: Use a template literal.
+  
+    257 257 │   	await writeFile(
+    258 258 │   		join(output, "environment.json"),
+    259     │ - → → JSON.stringify(metadata,·null,·2)·+·"\n",
+        259 │ + → → `${JSON.stringify(metadata,·null,·2)}\n`,
+    260 260 │   	);
+    261 261 │   	const failures = [];
+  
+
+benchmark/qualification/rowpack.mjs:327:7 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    325 │ 					await writeFile(
+    326 │ 						join(output, `${id}.resources.json`),
+  > 327 │ 						JSON.stringify({ status, stderr, samples }, null, 2) + "\n",
+        │ 						^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    328 │ 					);
+    329 │ 					if (status.code === 0)
+  
+  i Unsafe fix: Use a template literal.
+  
+    325 325 │   					await writeFile(
+    326 326 │   						join(output, `${id}.resources.json`),
+    327     │ - → → → → → → JSON.stringify({·status,·stderr,·samples·},·null,·2)·+·"\n",
+        327 │ + → → → → → → `${JSON.stringify({·status,·stderr,·samples·},·null,·2)}\n`,
+    328 328 │   					);
+    329 329 │   					if (status.code === 0)
+  
+
+benchmark/qualification/rowpack.mjs:334:7 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    332 │ 					await writeFile(
+    333 │ 						join(output, "failures.json"),
+  > 334 │ 						JSON.stringify(failures, null, 2) + "\n",
+        │ 						^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    335 │ 					);
+    336 │ 				}
+  
+  i Unsafe fix: Use a template literal.
+  
+    332 332 │   					await writeFile(
+    333 333 │   						join(output, "failures.json"),
+    334     │ - → → → → → → JSON.stringify(failures,·null,·2)·+·"\n",
+        334 │ + → → → → → → `${JSON.stringify(failures,·null,·2)}\n`,
+    335 335 │   					);
+    336 336 │   				}
+  
+
+tests/rowpack.test.ts:343:5 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    341 │ 			const path = join(
+    342 │ 				directory,
+  > 343 │ 				(await readdir(directory)).find((name) => name.endsWith(`.${suffix}`))!,
+        │ 				^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    344 │ 			);
+    345 │ 			const bytes = await readFile(path);
+  
+
+Checked 10 files in 7ms. No fixes applied.
+Found 1 warning.
+Found 7 infos.
