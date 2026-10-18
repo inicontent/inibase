@@ -1,0 +1,49 @@
+✖ a read starting during paused file publication cannot return a missing committed key (632.075375ms)
+✖ criteria put keeps selection locked against a concurrent row shift (0.455459ms)
+✖ criteria delete keeps selection locked against a concurrent row shift (0.21075ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 0
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 640.090292
+
+✖ failing tests:
+
+test at tests/publication.test.ts:1:353
+✖ a read starting during paused file publication cannot return a missing committed key (632.075375ms)
+  Error: ENOENT: no such file or directory, stat '/var/folders/0q/gxpck5xd6ys22gpw7yf9695c0000gp/T/inibase-publication-lTBwIz/db/records/key.txt.gz'
+      at async stat (node:internal/fs/promises:1807:18)
+      at async pathContentStamp (/private/tmp/inibase-pg-before.DYDkCa/src/seek.ts:103:12)
+      at async lookupLines (/private/tmp/inibase-pg-before.DYDkCa/src/key-index.ts:225:22)
+      at async Module.search (/private/tmp/inibase-pg-before.DYDkCa/src/file.ts:1733:23)
+      at async Inibase.applyCriteria (/private/tmp/inibase-pg-before.DYDkCa/src/index.ts:3889:54)
+      at async Inibase.getOnce (/private/tmp/inibase-pg-before.DYDkCa/src/index.ts:5205:30)
+      at async Inibase._get (/private/tmp/inibase-pg-before.DYDkCa/src/index.ts:4702:14) {
+    errno: -2,
+    code: 'ENOENT',
+    syscall: 'stat',
+    path: '/var/folders/0q/gxpck5xd6ys22gpw7yf9695c0000gp/T/inibase-publication-lTBwIz/db/records/key.txt.gz'
+  }
+
+test at tests/publication.test.ts:1:2559
+✖ criteria put keeps selection locked against a concurrent row shift (0.455459ms)
+  NO_ENV: No environment file found
+      at Module.createError (/private/tmp/inibase-pg-before.DYDkCa/src/utils.ts:946:16)
+      at Inibase.createError (/private/tmp/inibase-pg-before.DYDkCa/src/index.ts:544:16)
+      at new Inibase (/private/tmp/inibase-pg-before.DYDkCa/src/index.ts:530:16)
+      at TestContext.<anonymous> (/private/tmp/inibase-pg-before.DYDkCa/tests/publication.test.ts:114:15)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7)
+
+test at tests/publication.test.ts:1:2559
+✖ criteria delete keeps selection locked against a concurrent row shift (0.21075ms)
+  NO_ENV: No environment file found
+      at Module.createError (/private/tmp/inibase-pg-before.DYDkCa/src/utils.ts:946:16)
+      at Inibase.createError (/private/tmp/inibase-pg-before.DYDkCa/src/index.ts:544:16)
+      at new Inibase (/private/tmp/inibase-pg-before.DYDkCa/src/index.ts:530:16)
+      at TestContext.<anonymous> (/private/tmp/inibase-pg-before.DYDkCa/tests/publication.test.ts:114:15)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7)

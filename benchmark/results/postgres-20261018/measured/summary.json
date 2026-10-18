@@ -1,0 +1,2848 @@
+{
+  "metadata": {
+    "version": 1,
+    "date": "2026-10-18T16:27:02.070Z",
+    "options": {
+      "rows": "1000,10000,100000",
+      "profiles": "compact,cms,entropy",
+      "repeats": "3",
+      "samples": "32",
+      "writes": "8",
+      "mixedRounds": "3",
+      "output": "benchmark/results/postgres-20261018/measured"
+    },
+    "budget": 16777216,
+    "runtime": {
+      "node": "26.9.0",
+      "acorn": "8.18.0",
+      "ada": "4.0.0",
+      "amaro": "1.1.11",
+      "ares": "1.34.8",
+      "brotli": "1.2.0",
+      "cldr": "48.0",
+      "icu": "78.3",
+      "libffi": "3.8.0",
+      "llhttp": "9.4.3",
+      "merve": "1.2.2",
+      "modules": "147",
+      "napi": "10",
+      "nbytes": "0.1.4",
+      "ncrypto": "0.0.1",
+      "nghttp2": "1.70.0",
+      "nghttp3": "",
+      "ngtcp2": "",
+      "openssl": "3.6.4",
+      "simdjson": "4.6.11",
+      "simdutf": "7.7.0",
+      "sqlite": "3.53.4",
+      "tz": "2026a",
+      "undici": "8.10.2",
+      "unicode": "17.0",
+      "uv": "1.52.1",
+      "uvwasi": "0.0.23",
+      "v8": "14.6.202.34-node.32",
+      "zlib": "1.2.12",
+      "zstd": "1.5.7"
+    },
+    "platform": "darwin",
+    "os": "27.0.0",
+    "cpu": "Apple M5",
+    "ram": 17179869184,
+    "postgres": "postgres (PostgreSQL) 18.6 (Homebrew)",
+    "hashes": {
+      "automatic.js": "9370c2b13ffde2b631e171b5f39fdf2fc6a31d4178bf217cef6dcc1a1e45bf3d",
+      "cli.js": "8f807df8c400aafbded2d87ecdc52060f19ea6a7e28fc65b4d5c74cd80bfafda",
+      "disk-overlay.js": "8d34ce160734f930eca2ccb9f5e6a409d9a23696d16aadf8a6333624de4239f9",
+      "expression.js": "7e999b2969300d5ef9f7a9435fd4659b6e146448b14df74589854a6c5847aa83",
+      "file.js": "5f5338fdbf91ec1ac6308e070d9a0450143eab68486697cd8bc9e16da24f517e",
+      "format.js": "3095e3d0f05f7d7809f1db7e7f7f570634b0a5424b7992e1997dc7ba95ae2336",
+      "index.js": "50309f2f2727c10029da0035205dd7fde7e40512c17f9acecbea16d194a4f6f9",
+      "journal.js": "6078f59c32fd7e5b19a12eff8b73f506eed1884e5b34ba3cdf6e4dc30a40a6b4",
+      "key-index.js": "1147bd63691820780b30eeca01f3d9d0f52919888cad446064fb6e633255eaf4",
+      "overlay.js": "cac35e0995de2726f3931d51aeb87338d738fd5465ceec0d349dc7d6486f49d6",
+      "resources.js": "8a5e1085a3caedadccb38b918193e3c684fc72cfe330c60d761408008ba826e7",
+      "row-encoder.js": "5e1858a3092cd1df8e862459f9b88dfcaa555cd5a0e89f913d6e512db031ddfb",
+      "row-index.js": "31be7e011b1fedec5aa6030760e3b859eb922c46b13d40dae9b82956952d727a",
+      "rowpack.js": "fa009188dc3444e691a8dce293d8629506713be07b6bfbcda907f3a2b8662fb0",
+      "seek.js": "67b381b18469fd40421c91a4268e2ed1a1b43186323ec264c5c3e8c95b6f1bf9",
+      "updatelog.js": "93838e2b0c15499d4e09cdac90009003b1500c820de295d6de923bba5e4cf4d2",
+      "utils.js": "f29ddf432c4d3c7d639bea52848af24c2dfd503b2f514095703a1732710dcc43",
+      "utils.server.js": "ecfb602d389487135f18276f6b303c8ea47fa93c37ec8d27c104f471c6fe4a16"
+    },
+    "tools": {
+      "run.mjs": "dd523c26b468d8ab1cc67bfa83412b62fc39557a4b49b6d4b4337573d3fbd22b",
+      "worker.mjs": "514b57ae566ed3d1be8dd7d4b2be6481194e522203eecfc2c5aeddeed3f2a448",
+      "adapter.mjs": "21d7b1218d96e97e68af31d2c0bb53e16146a198b5fdc07af0a6837920c203d5",
+      "package.json": "b2d0f55e376860a3809f8974939a8a80a8da9b6ddd980edcd897894cf1622c49",
+      "package-lock.json": "92eb9c752e2098e8363095ce9c12d1c06bcd8d3686416d8c03d348eed6a1b35b"
+    },
+    "modulePath": "/Users/karimamahtil/APPS/inibase/dist/index.js",
+    "binaryDirectory": "/opt/homebrew/opt/postgresql@18/bin",
+    "cache": "OS cache is not evicted; reopen is not cold disk",
+    "memory": "Cache allowances are not total memory limits. PostgreSQL RSS sums double-count shared mappings. V8 heap cap is not an RSS limit.",
+    "transport": "PostgreSQL persistent Unix-domain connection; embedded engines direct calls. Connection setup reported separately."
+  },
+  "audit": {
+    "trials": 81,
+    "verified": 81,
+    "failures": [],
+    "samplerErrors": [],
+    "operationErrors": []
+  },
+  "summaries": [
+    {
+      "profile": "compact",
+      "rows": 1000,
+      "engine": "inibase",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "open": 0.21983399999999875,
+        "create": 21.327957999999995,
+        "bulkInsert": 65.280958,
+        "explicitIndexBuild": 74.74387499999999,
+        "initialMaintenance": 0.12820800000000077,
+        "reopen": 0.02954099999999471,
+        "randomIndexedKey": 53.700625,
+        "sequentialIndexedKey": 37.90241600000002,
+        "hotIndexedKey": 35.655958,
+        "missingIndexedKey": 21.36666600000001,
+        "fullRead": 4.194834000000014,
+        "projection": 1.731708000000026,
+        "nonIndexedFilter": 17.257499999999993,
+        "individualDurableInsert": 308.313834,
+        "individualDurableUpdate": 464.67262500000015,
+        "afterUpdateRead": 42.05445800000007,
+        "individualDurableDelete": 613.4559999999999,
+        "afterDeleteRead": 36.62999999999988,
+        "transactionRollback": 47.63566700000001,
+        "maintenance1": 0.10087500000008731,
+        "maintenance2": 0.059874999999919964,
+        "maintenance3": 0.0676250000001346,
+        "mixedIncludingMaintenance": 1926.4792089999999,
+        "finalReopen": 0.1364579999999478,
+        "finalMaintenance": 0.08795899999995527,
+        "close": 0.018083999999817024
+      },
+      "latency": {
+        "randomIndexedKey": {
+          "samples": 96,
+          "p50": 1.3941250000000025,
+          "p95": 4.5857090000000085,
+          "p99": null
+        },
+        "sequentialIndexedKey": {
+          "samples": 96,
+          "p50": 1.1553749999999923,
+          "p95": 1.3680830000000128,
+          "p99": null
+        },
+        "hotIndexedKey": {
+          "samples": 96,
+          "p50": 1.1133749999999623,
+          "p95": 1.223208999999997,
+          "p99": null
+        },
+        "missingIndexedKey": {
+          "samples": 96,
+          "p50": 0.6612079999999878,
+          "p95": 0.7325829999999769,
+          "p99": null
+        },
+        "individualDurableInsert": {
+          "samples": 24,
+          "p50": 37.022249999999985,
+          "p95": 51.126374999999996,
+          "p99": null
+        },
+        "individualDurableUpdate": {
+          "samples": 24,
+          "p50": 57.08429100000001,
+          "p95": 68.73245899999995,
+          "p99": null
+        },
+        "afterUpdateRead": {
+          "samples": 96,
+          "p50": 1.255040999999892,
+          "p95": 1.8092079999998987,
+          "p99": null
+        },
+        "individualDurableDelete": {
+          "samples": 24,
+          "p50": 76.73533300000008,
+          "p95": 82.58795799999984,
+          "p99": null
+        },
+        "afterDeleteRead": {
+          "samples": 96,
+          "p50": 1.1668750000001182,
+          "p95": 1.4310829999999441,
+          "p99": null
+        }
+      },
+      "bulkRecordsPerSecond": 15318.402649666998,
+      "peakWorkerRss": 115212288,
+      "peakSampledTreeRss": 131907584,
+      "peakAccountedBytes": 1476082,
+      "allocated": 229376,
+      "logical": 121565,
+      "peakSampledDisk": 421888,
+      "peakTemporary": 128106,
+      "postgresEmptyAllocated": null,
+      "postgresRelationBytes": null,
+      "samplerErrors": []
+    },
+    {
+      "profile": "compact",
+      "rows": 1000,
+      "engine": "sqlite",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "open": 0.7697499999999984,
+        "create": 0.27204200000000256,
+        "bulkInsert": 1.8144169999999988,
+        "explicitIndexBuild": 0.3240829999999981,
+        "initialMaintenance": 0.29154100000000227,
+        "reopen": 0.20266699999999815,
+        "randomIndexedKey": 0.6844590000000004,
+        "sequentialIndexedKey": 0.5280420000000028,
+        "hotIndexedKey": 0.24320900000000023,
+        "missingIndexedKey": 0.2133339999999997,
+        "fullRead": 0.3562920000000034,
+        "projection": 0.166249999999998,
+        "nonIndexedFilter": 0.05729200000000034,
+        "individualDurableInsert": 0.45762500000000017,
+        "individualDurableUpdate": 0.2906670000000027,
+        "afterUpdateRead": 0.23816599999999966,
+        "individualDurableDelete": 0.46333299999999866,
+        "afterDeleteRead": 0.2875829999999979,
+        "transactionRollback": 0.174082999999996,
+        "maintenance1": 0.22554099999999977,
+        "maintenance2": 0.10974999999999824,
+        "maintenance3": 0.10650000000000404,
+        "mixedIncludingMaintenance": 2.1622079999999997,
+        "finalReopen": 0.230208999999995,
+        "finalMaintenance": 0.020666999999995994,
+        "close": 0.09904199999999719
+      },
+      "latency": {
+        "randomIndexedKey": {
+          "samples": 96,
+          "p50": 0.00862499999999855,
+          "p95": 0.019583000000000794,
+          "p99": null
+        },
+        "sequentialIndexedKey": {
+          "samples": 96,
+          "p50": 0.006792000000000797,
+          "p95": 0.013083000000001732,
+          "p99": null
+        },
+        "hotIndexedKey": {
+          "samples": 96,
+          "p50": 0.006125000000000824,
+          "p95": 0.00845899999999844,
+          "p99": null
+        },
+        "missingIndexedKey": {
+          "samples": 96,
+          "p50": 0.005209000000000685,
+          "p95": 0.008417000000001451,
+          "p99": null
+        },
+        "individualDurableInsert": {
+          "samples": 24,
+          "p50": 0.046791999999999945,
+          "p95": 0.07683400000000162,
+          "p99": null
+        },
+        "individualDurableUpdate": {
+          "samples": 24,
+          "p50": 0.03558299999999903,
+          "p95": 0.05733400000000444,
+          "p99": null
+        },
+        "afterUpdateRead": {
+          "samples": 96,
+          "p50": 0.0059590000000042664,
+          "p95": 0.008041000000002185,
+          "p99": null
+        },
+        "individualDurableDelete": {
+          "samples": 24,
+          "p50": 0.054375000000000284,
+          "p95": 0.07075000000000387,
+          "p99": null
+        },
+        "afterDeleteRead": {
+          "samples": 96,
+          "p50": 0.006540999999998576,
+          "p95": 0.011207999999996332,
+          "p99": null
+        }
+      },
+      "bulkRecordsPerSecond": 551141.2205683702,
+      "peakWorkerRss": 60538880,
+      "peakSampledTreeRss": 0,
+      "peakAccountedBytes": 0,
+      "allocated": 200704,
+      "logical": 200704,
+      "peakSampledDisk": 0,
+      "peakTemporary": 0,
+      "postgresEmptyAllocated": null,
+      "postgresRelationBytes": null,
+      "samplerErrors": []
+    },
+    {
+      "profile": "compact",
+      "rows": 1000,
+      "engine": "postgres",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "open": 3.613500000000002,
+        "create": 1.9013750000000016,
+        "bulkInsert": 5.748291999999999,
+        "explicitIndexBuild": 1.6343340000000026,
+        "initialMaintenance": 3.7625829999999993,
+        "reopen": 1.284084,
+        "randomIndexedKey": 2.354166999999997,
+        "sequentialIndexedKey": 1.4840839999999957,
+        "hotIndexedKey": 1.2261669999999967,
+        "missingIndexedKey": 1.236417000000003,
+        "fullRead": 0.9068749999999994,
+        "projection": 0.41825000000000045,
+        "nonIndexedFilter": 0.3277089999999987,
+        "individualDurableInsert": 0.6472920000000002,
+        "individualDurableUpdate": 0.754958000000002,
+        "afterUpdateRead": 1.2079579999999979,
+        "individualDurableDelete": 0.5131669999999957,
+        "afterDeleteRead": 1.2024589999999975,
+        "transactionRollback": 0.2922499999999957,
+        "maintenance1": 3.0146669999999958,
+        "maintenance2": 1.915582999999998,
+        "maintenance3": 1.7691670000000101,
+        "mixedIncludingMaintenance": 9.902790999999993,
+        "finalReopen": 1.2155840000000069,
+        "finalMaintenance": 1.7409999999999997,
+        "close": 0.5550839999999937
+      },
+      "latency": {
+        "randomIndexedKey": {
+          "samples": 96,
+          "p50": 0.041957999999993945,
+          "p95": 0.1219159999999988,
+          "p99": null
+        },
+        "sequentialIndexedKey": {
+          "samples": 96,
+          "p50": 0.04008299999999565,
+          "p95": 0.06783300000000025,
+          "p99": null
+        },
+        "hotIndexedKey": {
+          "samples": 96,
+          "p50": 0.034041000000001986,
+          "p95": 0.05345799999999912,
+          "p99": null
+        },
+        "missingIndexedKey": {
+          "samples": 96,
+          "p50": 0.03725000000000023,
+          "p95": 0.05566699999999969,
+          "p99": null
+        },
+        "individualDurableInsert": {
+          "samples": 24,
+          "p50": 0.06033299999999997,
+          "p95": 0.20291599999999477,
+          "p99": null
+        },
+        "individualDurableUpdate": {
+          "samples": 24,
+          "p50": 0.07566700000000282,
+          "p95": 0.20120899999999864,
+          "p99": null
+        },
+        "afterUpdateRead": {
+          "samples": 96,
+          "p50": 0.031999999999996476,
+          "p95": 0.05216699999999719,
+          "p99": null
+        },
+        "individualDurableDelete": {
+          "samples": 24,
+          "p50": 0.06145800000000179,
+          "p95": 0.08116700000000066,
+          "p99": null
+        },
+        "afterDeleteRead": {
+          "samples": 96,
+          "p50": 0.03608299999999787,
+          "p95": 0.0507080000000002,
+          "p99": null
+        }
+      },
+      "bulkRecordsPerSecond": 173964.71856335763,
+      "peakWorkerRss": 66420736,
+      "peakSampledTreeRss": 0,
+      "peakAccountedBytes": 0,
+      "allocated": 41627648,
+      "logical": 41573570,
+      "peakSampledDisk": 0,
+      "peakTemporary": 0,
+      "postgresEmptyAllocated": 40837120,
+      "postgresRelationBytes": 344064,
+      "samplerErrors": []
+    },
+    {
+      "profile": "compact",
+      "rows": 10000,
+      "engine": "inibase",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "open": 0.22891600000000167,
+        "create": 21.226958999999997,
+        "bulkInsert": 440.12679099999997,
+        "explicitIndexBuild": 120.16383300000007,
+        "initialMaintenance": 0.130916999999954,
+        "reopen": 0.030833000000029642,
+        "randomIndexedKey": 68.54595799999993,
+        "sequentialIndexedKey": 36.075874999999996,
+        "hotIndexedKey": 35.11741600000005,
+        "missingIndexedKey": 20.569958000000042,
+        "fullRead": 18.021334000000024,
+        "projection": 6.5955000000000155,
+        "nonIndexedFilter": 27.078041999999982,
+        "individualDurableInsert": 290.966,
+        "individualDurableUpdate": 1056.851083,
+        "afterUpdateRead": 59.21745800000008,
+        "individualDurableDelete": 954.6194169999999,
+        "afterDeleteRead": 49.78212500000018,
+        "transactionRollback": 123.4045000000001,
+        "maintenance1": 0.08995799999956944,
+        "maintenance2": 0.05008399999951507,
+        "maintenance3": 0.06450000000040745,
+        "mixedIncludingMaintenance": 3903.2140000000004,
+        "finalReopen": 0.11033399999996618,
+        "finalMaintenance": 0.16033299999980954,
+        "close": 0.01929199999995035
+      },
+      "latency": {
+        "randomIndexedKey": {
+          "samples": 96,
+          "p50": 1.9720419999999876,
+          "p95": 4.19766699999991,
+          "p99": null
+        },
+        "sequentialIndexedKey": {
+          "samples": 96,
+          "p50": 1.1213749999999436,
+          "p95": 1.23862500000007,
+          "p99": null
+        },
+        "hotIndexedKey": {
+          "samples": 96,
+          "p50": 1.0812080000000606,
+          "p95": 1.1888750000000528,
+          "p99": null
+        },
+        "missingIndexedKey": {
+          "samples": 96,
+          "p50": 0.6367080000001124,
+          "p95": 0.69399999999996,
+          "p99": null
+        },
+        "individualDurableInsert": {
+          "samples": 24,
+          "p50": 34.89270799999997,
+          "p95": 51.94566699999996,
+          "p99": null
+        },
+        "individualDurableUpdate": {
+          "samples": 24,
+          "p50": 130.4318330000001,
+          "p95": 151.53212500000018,
+          "p99": null
+        },
+        "afterUpdateRead": {
+          "samples": 96,
+          "p50": 1.8423750000001746,
+          "p95": 2.5336669999996957,
+          "p99": null
+        },
+        "individualDurableDelete": {
+          "samples": 24,
+          "p50": 120.12925000000041,
+          "p95": 126.67887500000006,
+          "p99": null
+        },
+        "afterDeleteRead": {
+          "samples": 96,
+          "p50": 1.5822910000001684,
+          "p95": 2.4789169999999103,
+          "p99": null
+        }
+      },
+      "bulkRecordsPerSecond": 22720.725492032136,
+      "peakWorkerRss": 186826752,
+      "peakSampledTreeRss": 192806912,
+      "peakAccountedBytes": 8542798,
+      "allocated": 1339392,
+      "logical": 1228570,
+      "peakSampledDisk": 2641920,
+      "peakTemporary": 1233897,
+      "postgresEmptyAllocated": null,
+      "postgresRelationBytes": null,
+      "samplerErrors": []
+    },
+    {
+      "profile": "compact",
+      "rows": 10000,
+      "engine": "sqlite",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "open": 0.8313330000000008,
+        "create": 0.279834000000001,
+        "bulkInsert": 12.774207999999998,
+        "explicitIndexBuild": 2.7441669999999974,
+        "initialMaintenance": 2.0905410000000018,
+        "reopen": 0.23704099999999784,
+        "randomIndexedKey": 0.7206249999999983,
+        "sequentialIndexedKey": 0.3230000000000004,
+        "hotIndexedKey": 0.2547920000000019,
+        "missingIndexedKey": 0.2851659999999967,
+        "fullRead": 4.778417000000005,
+        "projection": 3.122,
+        "nonIndexedFilter": 0.43849999999999767,
+        "individualDurableInsert": 0.4470410000000058,
+        "individualDurableUpdate": 0.422542,
+        "afterUpdateRead": 0.26516699999999105,
+        "individualDurableDelete": 0.4692500000000024,
+        "afterDeleteRead": 0.2646249999999952,
+        "transactionRollback": 0.17737500000001205,
+        "maintenance1": 0.5349590000000006,
+        "maintenance2": 0.1436250000000001,
+        "maintenance3": 0.1266250000000042,
+        "mixedIncludingMaintenance": 2.6875,
+        "finalReopen": 0.23491699999999582,
+        "finalMaintenance": 0.060291000000006534,
+        "close": 0.2272079999999903
+      },
+      "latency": {
+        "randomIndexedKey": {
+          "samples": 96,
+          "p50": 0.00983299999999332,
+          "p95": 0.017707999999998947,
+          "p99": null
+        },
+        "sequentialIndexedKey": {
+          "samples": 96,
+          "p50": 0.007542000000000826,
+          "p95": 0.010916999999999177,
+          "p99": null
+        },
+        "hotIndexedKey": {
+          "samples": 96,
+          "p50": 0.006291999999994857,
+          "p95": 0.008708000000005711,
+          "p99": null
+        },
+        "missingIndexedKey": {
+          "samples": 96,
+          "p50": 0.006290999999997382,
+          "p95": 0.01170799999999872,
+          "p99": null
+        },
+        "individualDurableInsert": {
+          "samples": 24,
+          "p50": 0.05116599999999494,
+          "p95": 0.07095800000000452,
+          "p99": null
+        },
+        "individualDurableUpdate": {
+          "samples": 24,
+          "p50": 0.0499590000000012,
+          "p95": 0.08191700000000424,
+          "p99": null
+        },
+        "afterUpdateRead": {
+          "samples": 96,
+          "p50": 0.0067079999999961615,
+          "p95": 0.010416999999989685,
+          "p99": null
+        },
+        "individualDurableDelete": {
+          "samples": 24,
+          "p50": 0.05829200000000867,
+          "p95": 0.07804099999999892,
+          "p99": null
+        },
+        "afterDeleteRead": {
+          "samples": 96,
+          "p50": 0.006457999999994968,
+          "p95": 0.011667000000002758,
+          "p99": null
+        }
+      },
+      "bulkRecordsPerSecond": 782827.397205369,
+      "peakWorkerRss": 110460928,
+      "peakSampledTreeRss": 0,
+      "peakAccountedBytes": 0,
+      "allocated": 1871872,
+      "logical": 1871872,
+      "peakSampledDisk": 0,
+      "peakTemporary": 0,
+      "postgresEmptyAllocated": null,
+      "postgresRelationBytes": null,
+      "samplerErrors": []
+    },
+    {
+      "profile": "compact",
+      "rows": 10000,
+      "engine": "postgres",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "open": 3.7613749999999975,
+        "create": 1.836791999999999,
+        "bulkInsert": 36.90495799999999,
+        "explicitIndexBuild": 10.977000000000004,
+        "initialMaintenance": 10.065415999999999,
+        "reopen": 1.2830000000000013,
+        "randomIndexedKey": 2.3126670000000047,
+        "sequentialIndexedKey": 1.3315829999999949,
+        "hotIndexedKey": 1.3108330000000024,
+        "missingIndexedKey": 1.230290999999994,
+        "fullRead": 6.9657080000000065,
+        "projection": 3.0838329999999985,
+        "nonIndexedFilter": 0.5653330000000096,
+        "individualDurableInsert": 0.6637909999999891,
+        "individualDurableUpdate": 0.7911249999999939,
+        "afterUpdateRead": 1.1967909999999904,
+        "individualDurableDelete": 0.5750000000000028,
+        "afterDeleteRead": 1.1303339999999764,
+        "transactionRollback": 0.2930419999999856,
+        "maintenance1": 10.250165999999979,
+        "maintenance2": 8.220334000000008,
+        "maintenance3": 10.324290999999988,
+        "mixedIncludingMaintenance": 32.97108299999999,
+        "finalReopen": 1.2393330000000162,
+        "finalMaintenance": 7.804749999999984,
+        "close": 0.6509169999999926
+      },
+      "latency": {
+        "randomIndexedKey": {
+          "samples": 96,
+          "p50": 0.042791999999991504,
+          "p95": 0.08941699999999742,
+          "p99": null
+        },
+        "sequentialIndexedKey": {
+          "samples": 96,
+          "p50": 0.03591600000000028,
+          "p95": 0.058458000000001675,
+          "p99": null
+        },
+        "hotIndexedKey": {
+          "samples": 96,
+          "p50": 0.03583299999999667,
+          "p95": 0.051833000000002016,
+          "p99": null
+        },
+        "missingIndexedKey": {
+          "samples": 96,
+          "p50": 0.034250000000000114,
+          "p95": 0.052499999999994884,
+          "p99": null
+        },
+        "individualDurableInsert": {
+          "samples": 24,
+          "p50": 0.06370800000000543,
+          "p95": 0.22116699999999412,
+          "p99": null
+        },
+        "individualDurableUpdate": {
+          "samples": 24,
+          "p50": 0.07712500000000944,
+          "p95": 0.22254199999999003,
+          "p99": null
+        },
+        "afterUpdateRead": {
+          "samples": 96,
+          "p50": 0.03279100000000312,
+          "p95": 0.054082999999991443,
+          "p99": null
+        },
+        "individualDurableDelete": {
+          "samples": 24,
+          "p50": 0.0656670000000048,
+          "p95": 0.08850000000001046,
+          "p99": null
+        },
+        "afterDeleteRead": {
+          "samples": 96,
+          "p50": 0.030666999999994005,
+          "p95": 0.04929199999999412,
+          "p99": null
+        }
+      },
+      "bulkRecordsPerSecond": 270966.3021429262,
+      "peakWorkerRss": 93798400,
+      "peakSampledTreeRss": 156860416,
+      "peakAccountedBytes": 0,
+      "allocated": 60731392,
+      "logical": 60677323,
+      "peakSampledDisk": 43806720,
+      "peakTemporary": 0,
+      "postgresEmptyAllocated": 40837120,
+      "postgresRelationBytes": 2678784,
+      "samplerErrors": []
+    },
+    {
+      "profile": "compact",
+      "rows": 100000,
+      "engine": "inibase",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "open": 0.26191599999999937,
+        "create": 20.218958,
+        "bulkInsert": 4394.1,
+        "explicitIndexBuild": 462.8480409999993,
+        "initialMaintenance": 0.13720800000010058,
+        "reopen": 0.10854099999960454,
+        "randomIndexedKey": 110.4110410000003,
+        "sequentialIndexedKey": 38.33416699999998,
+        "hotIndexedKey": 37.186666000000514,
+        "missingIndexedKey": 22.192917000000307,
+        "fullRead": 151.41783399999986,
+        "projection": 55.90720799999963,
+        "nonIndexedFilter": 150.7211669999997,
+        "individualDurableInsert": 306.52691699999923,
+        "individualDurableUpdate": 7524.59,
+        "afterUpdateRead": 91.09587499999907,
+        "individualDurableDelete": 4606.8135,
+        "afterDeleteRead": 89.15454200000022,
+        "transactionRollback": 909.1499169999988,
+        "maintenance1": 0.09020800000143936,
+        "maintenance2": 0.09595799999806331,
+        "maintenance3": 0.08366599999862956,
+        "mixedIncludingMaintenance": 25026.216083,
+        "finalReopen": 0.09858400000666734,
+        "finalMaintenance": 0.3775420000019949,
+        "close": 0.027749999993829988
+      },
+      "latency": {
+        "randomIndexedKey": {
+          "samples": 96,
+          "p50": 3.4692910000003394,
+          "p95": 4.981874999999491,
+          "p99": null
+        },
+        "sequentialIndexedKey": {
+          "samples": 96,
+          "p50": 1.1651250000004438,
+          "p95": 1.3276670000004742,
+          "p99": null
+        },
+        "hotIndexedKey": {
+          "samples": 96,
+          "p50": 1.151958999999806,
+          "p95": 1.2512919999999212,
+          "p99": null
+        },
+        "missingIndexedKey": {
+          "samples": 96,
+          "p50": 0.6866250000002765,
+          "p95": 0.7625420000003942,
+          "p99": null
+        },
+        "individualDurableInsert": {
+          "samples": 24,
+          "p50": 36.00554199999988,
+          "p95": 51.003333000000566,
+          "p99": null
+        },
+        "individualDurableUpdate": {
+          "samples": 24,
+          "p50": 934.0227500000001,
+          "p95": 946.8734169999998,
+          "p99": null
+        },
+        "afterUpdateRead": {
+          "samples": 96,
+          "p50": 2.9340420000007725,
+          "p95": 3.616374999999607,
+          "p99": null
+        },
+        "individualDurableDelete": {
+          "samples": 24,
+          "p50": 575.1614170000012,
+          "p95": 610.1114170000001,
+          "p99": null
+        },
+        "afterDeleteRead": {
+          "samples": 96,
+          "p50": 3.0480830000014976,
+          "p95": 4.607625000000553,
+          "p99": null
+        }
+      },
+      "bulkRecordsPerSecond": 22757.78885323502,
+      "peakWorkerRss": 342556672,
+      "peakSampledTreeRss": 366854144,
+      "peakAccountedBytes": 16773649,
+      "allocated": 12034048,
+      "logical": 11930378,
+      "peakSampledDisk": 24031232,
+      "peakTemporary": 11935758,
+      "postgresEmptyAllocated": null,
+      "postgresRelationBytes": null,
+      "samplerErrors": []
+    },
+    {
+      "profile": "compact",
+      "rows": 100000,
+      "engine": "sqlite",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "open": 0.688208000000003,
+        "create": 0.298290999999999,
+        "bulkInsert": 117.67629199999999,
+        "explicitIndexBuild": 38.308250000000015,
+        "initialMaintenance": 0.23904099999998607,
+        "reopen": 0.27120800000000145,
+        "randomIndexedKey": 0.8117080000000101,
+        "sequentialIndexedKey": 0.3251669999999933,
+        "hotIndexedKey": 0.250583000000006,
+        "missingIndexedKey": 0.24387500000000273,
+        "fullRead": 64.06508300000002,
+        "projection": 18.985792000000004,
+        "nonIndexedFilter": 3.9705000000000155,
+        "individualDurableInsert": 0.49733399999996664,
+        "individualDurableUpdate": 0.5065830000000346,
+        "afterUpdateRead": 0.2837079999999901,
+        "individualDurableDelete": 0.6075420000000236,
+        "afterDeleteRead": 0.3124169999999822,
+        "transactionRollback": 0.20870800000000145,
+        "maintenance1": 0.6410420000000272,
+        "maintenance2": 0.13850000000002183,
+        "maintenance3": 0.15166700000003175,
+        "mixedIncludingMaintenance": 3.000417000000027,
+        "finalReopen": 0.26716600000003154,
+        "finalMaintenance": 0.06458299999997053,
+        "close": 0.616333999999938
+      },
+      "latency": {
+        "randomIndexedKey": {
+          "samples": 96,
+          "p50": 0.01066600000001472,
+          "p95": 0.023458000000005086,
+          "p99": null
+        },
+        "sequentialIndexedKey": {
+          "samples": 96,
+          "p50": 0.008000000000009777,
+          "p95": 0.010166999999995596,
+          "p99": null
+        },
+        "hotIndexedKey": {
+          "samples": 96,
+          "p50": 0.006000000000000227,
+          "p95": 0.007875000000012733,
+          "p99": null
+        },
+        "missingIndexedKey": {
+          "samples": 96,
+          "p50": 0.006249999999994316,
+          "p95": 0.009457999999995081,
+          "p99": null
+        },
+        "individualDurableInsert": {
+          "samples": 24,
+          "p50": 0.05941699999999628,
+          "p95": 0.09041700000000219,
+          "p99": null
+        },
+        "individualDurableUpdate": {
+          "samples": 24,
+          "p50": 0.058500000000037744,
+          "p95": 0.09533399999997982,
+          "p99": null
+        },
+        "afterUpdateRead": {
+          "samples": 96,
+          "p50": 0.00695899999999483,
+          "p95": 0.017624999999952706,
+          "p99": null
+        },
+        "individualDurableDelete": {
+          "samples": 24,
+          "p50": 0.07354099999997743,
+          "p95": 0.10666700000001583,
+          "p99": null
+        },
+        "afterDeleteRead": {
+          "samples": 96,
+          "p50": 0.0067919999999617175,
+          "p95": 0.013374999999996362,
+          "p99": null
+        }
+      },
+      "bulkRecordsPerSecond": 849788.8427687712,
+      "peakWorkerRss": 297664512,
+      "peakSampledTreeRss": 290570240,
+      "peakAccountedBytes": 0,
+      "allocated": 18857984,
+      "logical": 18857984,
+      "peakSampledDisk": 18886656,
+      "peakTemporary": 0,
+      "postgresEmptyAllocated": null,
+      "postgresRelationBytes": null,
+      "samplerErrors": []
+    },
+    {
+      "profile": "compact",
+      "rows": 100000,
+      "engine": "postgres",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "open": 3.6411659999999983,
+        "create": 2.0307499999999976,
+        "bulkInsert": 320.39045799999997,
+        "explicitIndexBuild": 71.34370799999999,
+        "initialMaintenance": 38.63150000000002,
+        "reopen": 1.4041250000000218,
+        "randomIndexedKey": 2.7117079999999874,
+        "sequentialIndexedKey": 1.3732919999999922,
+        "hotIndexedKey": 1.3967499999999973,
+        "missingIndexedKey": 1.2992079999999646,
+        "fullRead": 57.69912500000004,
+        "projection": 20.090458000000012,
+        "nonIndexedFilter": 6.186624999999935,
+        "individualDurableInsert": 0.7495000000000118,
+        "individualDurableUpdate": 0.8866249999999809,
+        "afterUpdateRead": 1.315417000000025,
+        "individualDurableDelete": 0.5067090000000007,
+        "afterDeleteRead": 1.1368750000000318,
+        "transactionRollback": 0.3119580000000042,
+        "maintenance1": 33.174541999999974,
+        "maintenance2": 30.52866700000004,
+        "maintenance3": 28.978874999999903,
+        "mixedIncludingMaintenance": 97.23154099999999,
+        "finalReopen": 1.1470420000000559,
+        "finalMaintenance": 31.76237500000002,
+        "close": 0.9588329999999132
+      },
+      "latency": {
+        "randomIndexedKey": {
+          "samples": 96,
+          "p50": 0.04737500000004502,
+          "p95": 0.10995799999994915,
+          "p99": null
+        },
+        "sequentialIndexedKey": {
+          "samples": 96,
+          "p50": 0.03737499999999727,
+          "p95": 0.05525000000000091,
+          "p99": null
+        },
+        "hotIndexedKey": {
+          "samples": 96,
+          "p50": 0.037041999999985364,
+          "p95": 0.0559170000000222,
+          "p99": null
+        },
+        "missingIndexedKey": {
+          "samples": 96,
+          "p50": 0.03666699999996581,
+          "p95": 0.0522920000000795,
+          "p99": null
+        },
+        "individualDurableInsert": {
+          "samples": 24,
+          "p50": 0.07129200000008495,
+          "p95": 0.24683300000003783,
+          "p99": null
+        },
+        "individualDurableUpdate": {
+          "samples": 24,
+          "p50": 0.08258299999999963,
+          "p95": 0.2610419999999749,
+          "p99": null
+        },
+        "afterUpdateRead": {
+          "samples": 96,
+          "p50": 0.033542000000011285,
+          "p95": 0.07037500000001273,
+          "p99": null
+        },
+        "individualDurableDelete": {
+          "samples": 24,
+          "p50": 0.05912499999999454,
+          "p95": 0.08537499999999909,
+          "p99": null
+        },
+        "afterDeleteRead": {
+          "samples": 96,
+          "p50": 0.032500000000027285,
+          "p95": 0.041624999999953616,
+          "p99": null
+        }
+      },
+      "bulkRecordsPerSecond": 312119.1580555748,
+      "peakWorkerRss": 209780736,
+      "peakSampledTreeRss": 321863680,
+      "peakAccountedBytes": 0,
+      "allocated": 100888576,
+      "logical": 100777869,
+      "peakSampledDisk": 100757504,
+      "peakTemporary": 0,
+      "postgresEmptyAllocated": 40837120,
+      "postgresRelationBytes": 26009600,
+      "samplerErrors": []
+    },
+    {
+      "profile": "cms",
+      "rows": 1000,
+      "engine": "inibase",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "open": 0.23758399999999824,
+        "create": 23.521,
+        "bulkInsert": 70.033292,
+        "explicitIndexBuild": 74.72133299999999,
+        "initialMaintenance": 0.1357500000000016,
+        "reopen": 0.03237500000000182,
+        "randomIndexedKey": 48.05170899999999,
+        "sequentialIndexedKey": 36.485750000000024,
+        "hotIndexedKey": 35.94758300000001,
+        "missingIndexedKey": 21.41708299999999,
+        "fullRead": 4.911082999999962,
+        "projection": 1.892583000000002,
+        "nonIndexedFilter": 15.728875000000016,
+        "individualDurableInsert": 300.25604100000004,
+        "individualDurableUpdate": 473.630708,
+        "afterUpdateRead": 43.5267080000001,
+        "individualDurableDelete": 653.869666,
+        "afterDeleteRead": 36.54062500000009,
+        "transactionRollback": 49.569332999999915,
+        "maintenance1": 0.09758300000021336,
+        "maintenance2": 0.060292000000117696,
+        "maintenance3": 0.08720799999991868,
+        "mixedIncludingMaintenance": 1922.0185,
+        "finalReopen": 0.13083299999971132,
+        "finalMaintenance": 0.9158339999999043,
+        "close": 0.027167000000190455
+      },
+      "latency": {
+        "randomIndexedKey": {
+          "samples": 96,
+          "p50": 1.3227079999999773,
+          "p95": 2.211666000000008,
+          "p99": null
+        },
+        "sequentialIndexedKey": {
+          "samples": 96,
+          "p50": 1.1283750000000055,
+          "p95": 1.1962909999999738,
+          "p99": null
+        },
+        "hotIndexedKey": {
+          "samples": 96,
+          "p50": 1.1112919999999917,
+          "p95": 1.2647910000000024,
+          "p99": null
+        },
+        "missingIndexedKey": {
+          "samples": 96,
+          "p50": 0.6579580000000078,
+          "p95": 0.7577919999999949,
+          "p99": null
+        },
+        "individualDurableInsert": {
+          "samples": 24,
+          "p50": 36.16783299999997,
+          "p95": 51.83791699999995,
+          "p99": null
+        },
+        "individualDurableUpdate": {
+          "samples": 24,
+          "p50": 59.064542000000074,
+          "p95": 69.64049999999997,
+          "p99": null
+        },
+        "afterUpdateRead": {
+          "samples": 96,
+          "p50": 1.2880419999999049,
+          "p95": 2.0243329999998423,
+          "p99": null
+        },
+        "individualDurableDelete": {
+          "samples": 24,
+          "p50": 80.95341699999994,
+          "p95": 85.82454099999995,
+          "p99": null
+        },
+        "afterDeleteRead": {
+          "samples": 96,
+          "p50": 1.1956659999998465,
+          "p95": 1.6035420000000613,
+          "p99": null
+        }
+      },
+      "bulkRecordsPerSecond": 14278.92322982618,
+      "peakWorkerRss": 125943808,
+      "peakSampledTreeRss": 134594560,
+      "peakAccountedBytes": 6188275,
+      "allocated": 233472,
+      "logical": 128378,
+      "peakSampledDisk": 421888,
+      "peakTemporary": 125752,
+      "postgresEmptyAllocated": null,
+      "postgresRelationBytes": null,
+      "samplerErrors": []
+    },
+    {
+      "profile": "cms",
+      "rows": 1000,
+      "engine": "sqlite",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "open": 0.6799580000000027,
+        "create": 0.2994160000000008,
+        "bulkInsert": 4.313499999999998,
+        "explicitIndexBuild": 0.4072080000000007,
+        "initialMaintenance": 1.3900830000000006,
+        "reopen": 0.2692910000000026,
+        "randomIndexedKey": 0.7729159999999986,
+        "sequentialIndexedKey": 0.3086659999999988,
+        "hotIndexedKey": 0.28458300000000136,
+        "missingIndexedKey": 0.23966700000000074,
+        "fullRead": 0.6869170000000011,
+        "projection": 0.389084000000004,
+        "nonIndexedFilter": 0.08495800000000031,
+        "individualDurableInsert": 0.562375000000003,
+        "individualDurableUpdate": 0.375791999999997,
+        "afterUpdateRead": 0.25874999999999915,
+        "individualDurableDelete": 0.5070830000000015,
+        "afterDeleteRead": 0.2973339999999993,
+        "transactionRollback": 0.17200000000000415,
+        "maintenance1": 0.47741599999999806,
+        "maintenance2": 0.20716600000000085,
+        "maintenance3": 0.20412499999999767,
+        "mixedIncludingMaintenance": 2.4002079999999992,
+        "finalReopen": 0.24108400000000074,
+        "finalMaintenance": 0.023499999999998522,
+        "close": 0.13245799999999974
+      },
+      "latency": {
+        "randomIndexedKey": {
+          "samples": 96,
+          "p50": 0.00995900000000205,
+          "p95": 0.03141700000000114,
+          "p99": null
+        },
+        "sequentialIndexedKey": {
+          "samples": 96,
+          "p50": 0.007250000000002643,
+          "p95": 0.012750000000000483,
+          "p99": null
+        },
+        "hotIndexedKey": {
+          "samples": 96,
+          "p50": 0.006374999999998465,
+          "p95": 0.010500000000000398,
+          "p99": null
+        },
+        "missingIndexedKey": {
+          "samples": 96,
+          "p50": 0.005458999999998326,
+          "p95": 0.009624999999999773,
+          "p99": null
+        },
+        "individualDurableInsert": {
+          "samples": 24,
+          "p50": 0.05491600000000574,
+          "p95": 0.13087500000000318,
+          "p99": null
+        },
+        "individualDurableUpdate": {
+          "samples": 24,
+          "p50": 0.04120900000000205,
+          "p95": 0.07679200000000463,
+          "p99": null
+        },
+        "afterUpdateRead": {
+          "samples": 96,
+          "p50": 0.0061249999999972715,
+          "p95": 0.014291000000000054,
+          "p99": null
+        },
+        "individualDurableDelete": {
+          "samples": 24,
+          "p50": 0.05449999999999733,
+          "p95": 0.10091599999999801,
+          "p99": null
+        },
+        "afterDeleteRead": {
+          "samples": 96,
+          "p50": 0.006500000000002615,
+          "p95": 0.013374999999996362,
+          "p99": null
+        }
+      },
+      "bulkRecordsPerSecond": 231830.30022023892,
+      "peakWorkerRss": 68222976,
+      "peakSampledTreeRss": 0,
+      "peakAccountedBytes": 0,
+      "allocated": 1470464,
+      "logical": 1470464,
+      "peakSampledDisk": 0,
+      "peakTemporary": 0,
+      "postgresEmptyAllocated": null,
+      "postgresRelationBytes": null,
+      "samplerErrors": []
+    },
+    {
+      "profile": "cms",
+      "rows": 1000,
+      "engine": "postgres",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "open": 3.8030829999999973,
+        "create": 1.9733749999999972,
+        "bulkInsert": 12.337708000000003,
+        "explicitIndexBuild": 1.9838749999999976,
+        "initialMaintenance": 3.900958000000003,
+        "reopen": 1.2049159999999972,
+        "randomIndexedKey": 2.2536250000000067,
+        "sequentialIndexedKey": 1.1511669999999938,
+        "hotIndexedKey": 1.3441249999999982,
+        "missingIndexedKey": 1.2610839999999968,
+        "fullRead": 1.9523340000000005,
+        "projection": 0.3924169999999947,
+        "nonIndexedFilter": 0.16562499999999858,
+        "individualDurableInsert": 0.7434170000000009,
+        "individualDurableUpdate": 0.7709169999999972,
+        "afterUpdateRead": 1.1904169999999965,
+        "individualDurableDelete": 0.5415830000000028,
+        "afterDeleteRead": 1.1417080000000084,
+        "transactionRollback": 0.292082999999991,
+        "maintenance1": 3.783582999999993,
+        "maintenance2": 2.005167,
+        "maintenance3": 1.910375000000002,
+        "mixedIncludingMaintenance": 10.839083000000002,
+        "finalReopen": 1.1212919999999968,
+        "finalMaintenance": 2.0766670000000005,
+        "close": 0.5615829999999988
+      },
+      "latency": {
+        "randomIndexedKey": {
+          "samples": 96,
+          "p50": 0.043375000000004604,
+          "p95": 0.09704199999999474,
+          "p99": null
+        },
+        "sequentialIndexedKey": {
+          "samples": 96,
+          "p50": 0.03391699999999531,
+          "p95": 0.05433299999999974,
+          "p99": null
+        },
+        "hotIndexedKey": {
+          "samples": 96,
+          "p50": 0.035874999999997215,
+          "p95": 0.05491700000000321,
+          "p99": null
+        },
+        "missingIndexedKey": {
+          "samples": 96,
+          "p50": 0.03716699999999662,
+          "p95": 0.05137500000000017,
+          "p99": null
+        },
+        "individualDurableInsert": {
+          "samples": 24,
+          "p50": 0.07287500000000335,
+          "p95": 0.1982500000000016,
+          "p99": null
+        },
+        "individualDurableUpdate": {
+          "samples": 24,
+          "p50": 0.07558399999999921,
+          "p95": 0.22512499999999847,
+          "p99": null
+        },
+        "afterUpdateRead": {
+          "samples": 96,
+          "p50": 0.03220799999999713,
+          "p95": 0.047708000000000084,
+          "p99": null
+        },
+        "individualDurableDelete": {
+          "samples": 24,
+          "p50": 0.06191599999999653,
+          "p95": 0.08241599999999494,
+          "p99": null
+        },
+        "afterDeleteRead": {
+          "samples": 96,
+          "p50": 0.03324999999999534,
+          "p95": 0.047624999999996476,
+          "p99": null
+        }
+      },
+      "bulkRecordsPerSecond": 81052.33160000219,
+      "peakWorkerRss": 77692928,
+      "peakSampledTreeRss": 0,
+      "peakAccountedBytes": 0,
+      "allocated": 42872832,
+      "logical": 42818764,
+      "peakSampledDisk": 0,
+      "peakTemporary": 0,
+      "postgresEmptyAllocated": 40837120,
+      "postgresRelationBytes": 1581056,
+      "samplerErrors": []
+    },
+    {
+      "profile": "cms",
+      "rows": 10000,
+      "engine": "inibase",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "open": 0.2623749999999987,
+        "create": 22.265,
+        "bulkInsert": 467.92816600000003,
+        "explicitIndexBuild": 155.161208,
+        "initialMaintenance": 0.1313750000000482,
+        "reopen": 0.09579199999996035,
+        "randomIndexedKey": 68.32837500000005,
+        "sequentialIndexedKey": 36.699208999999996,
+        "hotIndexedKey": 35.92979200000002,
+        "missingIndexedKey": 20.95066600000007,
+        "fullRead": 26.58979199999999,
+        "projection": 9.058250000000044,
+        "nonIndexedFilter": 36.05875000000003,
+        "individualDurableInsert": 308.21070800000007,
+        "individualDurableUpdate": 1074.884833,
+        "afterUpdateRead": 57.74204200000031,
+        "individualDurableDelete": 1338.9118749999998,
+        "afterDeleteRead": 49.86958400000003,
+        "transactionRollback": 121.83062500000005,
+        "maintenance1": 0.08245899999928952,
+        "maintenance2": 0.06770899999992253,
+        "maintenance3": 0.07937500000025466,
+        "mixedIncludingMaintenance": 4181.921875,
+        "finalReopen": 0.10887499999989814,
+        "finalMaintenance": 0.18291599999975006,
+        "close": 0.02433299999938754
+      },
+      "latency": {
+        "randomIndexedKey": {
+          "samples": 96,
+          "p50": 2.003582999999935,
+          "p95": 3.8075830000000224,
+          "p99": null
+        },
+        "sequentialIndexedKey": {
+          "samples": 96,
+          "p50": 1.1320830000000797,
+          "p95": 1.2430419999999458,
+          "p99": null
+        },
+        "hotIndexedKey": {
+          "samples": 96,
+          "p50": 1.116416000000072,
+          "p95": 1.2104590000000144,
+          "p99": null
+        },
+        "missingIndexedKey": {
+          "samples": 96,
+          "p50": 0.6514580000000478,
+          "p95": 0.7030419999999822,
+          "p99": null
+        },
+        "individualDurableInsert": {
+          "samples": 24,
+          "p50": 36.27666700000009,
+          "p95": 52.961625000000026,
+          "p99": null
+        },
+        "individualDurableUpdate": {
+          "samples": 24,
+          "p50": 131.75329199999987,
+          "p95": 153.59416699999997,
+          "p99": null
+        },
+        "afterUpdateRead": {
+          "samples": 96,
+          "p50": 1.7610410000002048,
+          "p95": 2.4632919999999103,
+          "p99": null
+        },
+        "individualDurableDelete": {
+          "samples": 24,
+          "p50": 167.14708299999984,
+          "p95": 172.2482500000001,
+          "p99": null
+        },
+        "afterDeleteRead": {
+          "samples": 96,
+          "p50": 1.6420829999997295,
+          "p95": 2.387833000000228,
+          "p99": null
+        }
+      },
+      "bulkRecordsPerSecond": 21370.80160291099,
+      "peakWorkerRss": 221216768,
+      "peakSampledTreeRss": 212549632,
+      "peakAccountedBytes": 16767955,
+      "allocated": 1404928,
+      "logical": 1296436,
+      "peakSampledDisk": 2772992,
+      "peakTemporary": 1301203,
+      "postgresEmptyAllocated": null,
+      "postgresRelationBytes": null,
+      "samplerErrors": []
+    },
+    {
+      "profile": "cms",
+      "rows": 10000,
+      "engine": "sqlite",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "open": 0.8670419999999979,
+        "create": 0.2683329999999984,
+        "bulkInsert": 43.49033300000001,
+        "explicitIndexBuild": 3.4242500000000007,
+        "initialMaintenance": 2.260957999999988,
+        "reopen": 0.30887500000000045,
+        "randomIndexedKey": 0.7620000000000005,
+        "sequentialIndexedKey": 0.33825000000000216,
+        "hotIndexedKey": 0.28870799999999974,
+        "missingIndexedKey": 0.23354199999999992,
+        "fullRead": 8.298708000000005,
+        "projection": 2.5842499999999973,
+        "nonIndexedFilter": 1.2579999999999956,
+        "individualDurableInsert": 0.5432089999999903,
+        "individualDurableUpdate": 0.46937499999999943,
+        "afterUpdateRead": 0.2982910000000061,
+        "individualDurableDelete": 0.5202910000000003,
+        "afterDeleteRead": 0.3046250000000015,
+        "transactionRollback": 0.18004099999998857,
+        "maintenance1": 0.5976670000000013,
+        "maintenance2": 0.25233300000000725,
+        "maintenance3": 0.23066699999999685,
+        "mixedIncludingMaintenance": 2.9287920000000014,
+        "finalReopen": 0.24025000000000318,
+        "finalMaintenance": 0.05833300000000463,
+        "close": 0.5027499999999918
+      },
+      "latency": {
+        "randomIndexedKey": {
+          "samples": 96,
+          "p50": 0.010332999999988601,
+          "p95": 0.020332999999993717,
+          "p99": null
+        },
+        "sequentialIndexedKey": {
+          "samples": 96,
+          "p50": 0.007791999999994914,
+          "p95": 0.013708999999991534,
+          "p99": null
+        },
+        "hotIndexedKey": {
+          "samples": 96,
+          "p50": 0.006332999999997924,
+          "p95": 0.008458000000004517,
+          "p99": null
+        },
+        "missingIndexedKey": {
+          "samples": 96,
+          "p50": 0.00633400000000961,
+          "p95": 0.009749999999996817,
+          "p99": null
+        },
+        "individualDurableInsert": {
+          "samples": 24,
+          "p50": 0.06725000000000136,
+          "p95": 0.09054199999999923,
+          "p99": null
+        },
+        "individualDurableUpdate": {
+          "samples": 24,
+          "p50": 0.05708300000000577,
+          "p95": 0.08566700000000083,
+          "p99": null
+        },
+        "afterUpdateRead": {
+          "samples": 96,
+          "p50": 0.00695899999999483,
+          "p95": 0.016417000000004123,
+          "p99": null
+        },
+        "individualDurableDelete": {
+          "samples": 24,
+          "p50": 0.062665999999993,
+          "p95": 0.07954199999998934,
+          "p99": null
+        },
+        "afterDeleteRead": {
+          "samples": 96,
+          "p50": 0.0062500000000085265,
+          "p95": 0.01566599999999596,
+          "p99": null
+        }
+      },
+      "bulkRecordsPerSecond": 229936.15615681763,
+      "peakWorkerRss": 197279744,
+      "peakSampledTreeRss": 156155904,
+      "peakAccountedBytes": 0,
+      "allocated": 14454784,
+      "logical": 14454784,
+      "peakSampledDisk": 14454784,
+      "peakTemporary": 0,
+      "postgresEmptyAllocated": null,
+      "postgresRelationBytes": null,
+      "samplerErrors": []
+    },
+    {
+      "profile": "cms",
+      "rows": 10000,
+      "engine": "postgres",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "open": 3.575875,
+        "create": 1.8923330000000007,
+        "bulkInsert": 89.79599999999999,
+        "explicitIndexBuild": 11.890167000000005,
+        "initialMaintenance": 15.182249999999982,
+        "reopen": 1.3455830000000049,
+        "randomIndexedKey": 2.591000000000008,
+        "sequentialIndexedKey": 1.5208340000000078,
+        "hotIndexedKey": 1.376499999999993,
+        "missingIndexedKey": 1.2975419999999929,
+        "fullRead": 15.91833299999999,
+        "projection": 3.696124999999995,
+        "nonIndexedFilter": 1.4511660000000006,
+        "individualDurableInsert": 0.7812920000000076,
+        "individualDurableUpdate": 0.778334000000001,
+        "afterUpdateRead": 1.2604579999999999,
+        "individualDurableDelete": 0.5014589999999828,
+        "afterDeleteRead": 1.1693749999999739,
+        "transactionRollback": 0.3119999999999834,
+        "maintenance1": 10.971833000000004,
+        "maintenance2": 8.055833999999976,
+        "maintenance3": 9.335624999999993,
+        "mixedIncludingMaintenance": 32.55366699999999,
+        "finalReopen": 1.3682079999999814,
+        "finalMaintenance": 9.009999999999991,
+        "close": 0.8928340000000503
+      },
+      "latency": {
+        "randomIndexedKey": {
+          "samples": 96,
+          "p50": 0.05070800000001441,
+          "p95": 0.09433400000000347,
+          "p99": null
+        },
+        "sequentialIndexedKey": {
+          "samples": 96,
+          "p50": 0.04304199999998559,
+          "p95": 0.0549999999999784,
+          "p99": null
+        },
+        "hotIndexedKey": {
+          "samples": 96,
+          "p50": 0.03908400000000256,
+          "p95": 0.04599999999999227,
+          "p99": null
+        },
+        "missingIndexedKey": {
+          "samples": 96,
+          "p50": 0.037499999999994316,
+          "p95": 0.0514999999999759,
+          "p99": null
+        },
+        "individualDurableInsert": {
+          "samples": 24,
+          "p50": 0.0823339999999746,
+          "p95": 0.19362499999999727,
+          "p99": null
+        },
+        "individualDurableUpdate": {
+          "samples": 24,
+          "p50": 0.07391699999999446,
+          "p95": 0.23016599999999698,
+          "p99": null
+        },
+        "afterUpdateRead": {
+          "samples": 96,
+          "p50": 0.03391600000000494,
+          "p95": 0.05895799999998985,
+          "p99": null
+        },
+        "individualDurableDelete": {
+          "samples": 24,
+          "p50": 0.058000000000021146,
+          "p95": 0.0858339999999771,
+          "p99": null
+        },
+        "afterDeleteRead": {
+          "samples": 96,
+          "p50": 0.032874999999989996,
+          "p95": 0.04879100000002268,
+          "p99": null
+        }
+      },
+      "bulkRecordsPerSecond": 111363.53512405898,
+      "peakWorkerRss": 164200448,
+      "peakSampledTreeRss": 218152960,
+      "peakAccountedBytes": 0,
+      "allocated": 73019392,
+      "logical": 72965331,
+      "peakSampledDisk": 72757248,
+      "peakTemporary": 0,
+      "postgresEmptyAllocated": 40837120,
+      "postgresRelationBytes": 14950400,
+      "samplerErrors": []
+    },
+    {
+      "profile": "cms",
+      "rows": 100000,
+      "engine": "inibase",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "open": 0.2439159999999987,
+        "create": 21.952416,
+        "bulkInsert": 4599.357333,
+        "explicitIndexBuild": 783.2197909999995,
+        "initialMaintenance": 0.11345900000014808,
+        "reopen": 0.09929199999987759,
+        "randomIndexedKey": 107.8229169999995,
+        "sequentialIndexedKey": 36.07404200000019,
+        "hotIndexedKey": 35.23999999999978,
+        "missingIndexedKey": 20.939292000000023,
+        "fullRead": 256.5584169999993,
+        "projection": 52.232332999999926,
+        "nonIndexedFilter": 211.18870799999968,
+        "individualDurableInsert": 304.011125,
+        "individualDurableUpdate": 7124.09225,
+        "afterUpdateRead": 88.14808300000004,
+        "individualDurableDelete": 8256.428750000001,
+        "afterDeleteRead": 91.2989579999994,
+        "transactionRollback": 890.3006669999995,
+        "maintenance1": 0.08887499999764259,
+        "maintenance2": 0.08454199999687262,
+        "maintenance3": 0.08004200000141282,
+        "mixedIncludingMaintenance": 27531.009541,
+        "finalReopen": 0.08929199999693083,
+        "finalMaintenance": 0.1682920000021113,
+        "close": 0.031541000003926456
+      },
+      "latency": {
+        "randomIndexedKey": {
+          "samples": 96,
+          "p50": 3.3505409999997937,
+          "p95": 4.683500000000095,
+          "p99": null
+        },
+        "sequentialIndexedKey": {
+          "samples": 96,
+          "p50": 1.1228329999994457,
+          "p95": 1.2036669999997684,
+          "p99": null
+        },
+        "hotIndexedKey": {
+          "samples": 96,
+          "p50": 1.087416999999732,
+          "p95": 1.1662079999996422,
+          "p99": null
+        },
+        "missingIndexedKey": {
+          "samples": 96,
+          "p50": 0.6497079999999187,
+          "p95": 0.6880000000001019,
+          "p99": null
+        },
+        "individualDurableInsert": {
+          "samples": 24,
+          "p50": 35.89091599999938,
+          "p95": 52.87858299999971,
+          "p99": null
+        },
+        "individualDurableUpdate": {
+          "samples": 24,
+          "p50": 886.0750830000006,
+          "p95": 913.1554589999996,
+          "p99": null
+        },
+        "afterUpdateRead": {
+          "samples": 96,
+          "p50": 2.8289999999997235,
+          "p95": 3.605042000001049,
+          "p99": null
+        },
+        "individualDurableDelete": {
+          "samples": 24,
+          "p50": 1033.8984169999985,
+          "p95": 1046.5320829999982,
+          "p99": null
+        },
+        "afterDeleteRead": {
+          "samples": 96,
+          "p50": 3.0927499999997963,
+          "p95": 5.736958000001323,
+          "p99": null
+        }
+      },
+      "bulkRecordsPerSecond": 21742.168037805728,
+      "peakWorkerRss": 531611648,
+      "peakSampledTreeRss": 531398656,
+      "peakAccountedBytes": 16776582,
+      "allocated": 12730368,
+      "logical": 12627553,
+      "peakSampledDisk": 25423872,
+      "peakTemporary": 12632751,
+      "postgresEmptyAllocated": null,
+      "postgresRelationBytes": null,
+      "samplerErrors": []
+    },
+    {
+      "profile": "cms",
+      "rows": 100000,
+      "engine": "sqlite",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "open": 0.7082920000000001,
+        "create": 0.2751659999999987,
+        "bulkInsert": 389.22,
+        "explicitIndexBuild": 64.89512500000001,
+        "initialMaintenance": 0.22654099999999744,
+        "reopen": 0.28837500000003047,
+        "randomIndexedKey": 0.8330000000000268,
+        "sequentialIndexedKey": 0.3386249999999791,
+        "hotIndexedKey": 0.266083999999978,
+        "missingIndexedKey": 0.24337500000001455,
+        "fullRead": 127.39866699999999,
+        "projection": 39.672166999999945,
+        "nonIndexedFilter": 25.916291,
+        "individualDurableInsert": 0.5215409999999565,
+        "individualDurableUpdate": 0.4841660000000729,
+        "afterUpdateRead": 0.34962500000006,
+        "individualDurableDelete": 0.46574999999995725,
+        "afterDeleteRead": 0.3481249999999818,
+        "transactionRollback": 0.19158300000003692,
+        "maintenance1": 0.7021659999999201,
+        "maintenance2": 0.28129200000000765,
+        "maintenance3": 0.3036250000000109,
+        "mixedIncludingMaintenance": 3.5966250000000173,
+        "finalReopen": 0.2545000000000073,
+        "finalMaintenance": 0.07058400000005349,
+        "close": 0.6215000000001965
+      },
+      "latency": {
+        "randomIndexedKey": {
+          "samples": 96,
+          "p50": 0.011291999999968994,
+          "p95": 0.024082999999961885,
+          "p99": null
+        },
+        "sequentialIndexedKey": {
+          "samples": 96,
+          "p50": 0.008125000000006821,
+          "p95": 0.010333000000002812,
+          "p99": null
+        },
+        "hotIndexedKey": {
+          "samples": 96,
+          "p50": 0.0061249999999972715,
+          "p95": 0.008624999999994998,
+          "p99": null
+        },
+        "missingIndexedKey": {
+          "samples": 96,
+          "p50": 0.006249999999965894,
+          "p95": 0.009832999999957792,
+          "p99": null
+        },
+        "individualDurableInsert": {
+          "samples": 24,
+          "p50": 0.0574579999999969,
+          "p95": 0.10004200000003038,
+          "p99": null
+        },
+        "individualDurableUpdate": {
+          "samples": 24,
+          "p50": 0.06216600000004746,
+          "p95": 0.09329199999990578,
+          "p99": null
+        },
+        "afterUpdateRead": {
+          "samples": 96,
+          "p50": 0.009334000000080778,
+          "p95": 0.014542000000005828,
+          "p99": null
+        },
+        "individualDurableDelete": {
+          "samples": 24,
+          "p50": 0.059082999999986896,
+          "p95": 0.12354100000004564,
+          "p99": null
+        },
+        "afterDeleteRead": {
+          "samples": 96,
+          "p50": 0.006792000000018561,
+          "p95": 0.014082999999914136,
+          "p99": null
+        }
+      },
+      "bulkRecordsPerSecond": 256924.1046194954,
+      "peakWorkerRss": 575209472,
+      "peakSampledTreeRss": 574586880,
+      "peakAccountedBytes": 0,
+      "allocated": 144355328,
+      "logical": 144355328,
+      "peakSampledDisk": 144388096,
+      "peakTemporary": 0,
+      "postgresEmptyAllocated": null,
+      "postgresRelationBytes": null,
+      "samplerErrors": []
+    },
+    {
+      "profile": "cms",
+      "rows": 100000,
+      "engine": "postgres",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "open": 3.6310420000000008,
+        "create": 1.8982910000000004,
+        "bulkInsert": 849.141417,
+        "explicitIndexBuild": 148.75850000000003,
+        "initialMaintenance": 137.667958,
+        "reopen": 1.9526250000001255,
+        "randomIndexedKey": 2.5718749999998636,
+        "sequentialIndexedKey": 1.2326669999999922,
+        "hotIndexedKey": 1.0795829999999569,
+        "missingIndexedKey": 1.027667000000065,
+        "fullRead": 133.47012499999983,
+        "projection": 32.237957999999935,
+        "nonIndexedFilter": 32.94224999999983,
+        "individualDurableInsert": 0.8477080000000115,
+        "individualDurableUpdate": 0.9148330000000442,
+        "afterUpdateRead": 1.256750000000011,
+        "individualDurableDelete": 0.514417000000094,
+        "afterDeleteRead": 1.1684170000000904,
+        "transactionRollback": 0.29408300000000054,
+        "maintenance1": 65.78087500000015,
+        "maintenance2": 55.11308400000007,
+        "maintenance3": 55.20179200000007,
+        "mixedIncludingMaintenance": 178.93599999999992,
+        "finalReopen": 1.606999999999971,
+        "finalMaintenance": 58.417458000000124,
+        "close": 1.254458999999997
+      },
+      "latency": {
+        "randomIndexedKey": {
+          "samples": 96,
+          "p50": 0.042625000000043656,
+          "p95": 0.10462499999994179,
+          "p99": null
+        },
+        "sequentialIndexedKey": {
+          "samples": 96,
+          "p50": 0.03154199999994489,
+          "p95": 0.05716700000016317,
+          "p99": null
+        },
+        "hotIndexedKey": {
+          "samples": 96,
+          "p50": 0.028374999999869033,
+          "p95": 0.050625000000081855,
+          "p99": null
+        },
+        "missingIndexedKey": {
+          "samples": 96,
+          "p50": 0.02825000000007094,
+          "p95": 0.047207999999955064,
+          "p99": null
+        },
+        "individualDurableInsert": {
+          "samples": 24,
+          "p50": 0.08687499999996362,
+          "p95": 0.2199999999997999,
+          "p99": null
+        },
+        "individualDurableUpdate": {
+          "samples": 24,
+          "p50": 0.09141699999986486,
+          "p95": 0.2551660000001448,
+          "p99": null
+        },
+        "afterUpdateRead": {
+          "samples": 96,
+          "p50": 0.03329099999996288,
+          "p95": 0.06283399999983885,
+          "p99": null
+        },
+        "individualDurableDelete": {
+          "samples": 24,
+          "p50": 0.0571669999999358,
+          "p95": 0.09474999999997635,
+          "p99": null
+        },
+        "afterDeleteRead": {
+          "samples": 96,
+          "p50": 0.03254100000003746,
+          "p95": 0.04920799999990777,
+          "p99": null
+        }
+      },
+      "bulkRecordsPerSecond": 117766.01399717144,
+      "peakWorkerRss": 406618112,
+      "peakSampledTreeRss": 567558144,
+      "peakAccountedBytes": 0,
+      "allocated": 357625856,
+      "logical": 340713362,
+      "peakSampledDisk": 357494784,
+      "peakTemporary": 0,
+      "postgresEmptyAllocated": 40837120,
+      "postgresRelationBytes": 148480000,
+      "samplerErrors": []
+    },
+    {
+      "profile": "entropy",
+      "rows": 1000,
+      "engine": "inibase",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "open": 0.22779099999999985,
+        "create": 20.090459,
+        "bulkInsert": 92.750958,
+        "explicitIndexBuild": 97.02237499999998,
+        "initialMaintenance": 0.11766700000001151,
+        "reopen": 0.02908300000001418,
+        "randomIndexedKey": 51.666334000000006,
+        "sequentialIndexedKey": 37.73200000000003,
+        "hotIndexedKey": 36.733082999999965,
+        "missingIndexedKey": 21.86775,
+        "fullRead": 8.140540999999985,
+        "projection": 2.7527919999999995,
+        "nonIndexedFilter": 17.74525,
+        "individualDurableInsert": 317.33995799999997,
+        "individualDurableUpdate": 482.00583300000005,
+        "afterUpdateRead": 43.74700000000007,
+        "individualDurableDelete": 995.3524169999998,
+        "afterDeleteRead": 41.279207999999926,
+        "transactionRollback": 47.21162499999991,
+        "maintenance1": 0.09058299999969677,
+        "maintenance2": 0.11020899999994072,
+        "maintenance3": 0.060499999999592546,
+        "mixedIncludingMaintenance": 2189.5697500000006,
+        "finalReopen": 0.10304199999973207,
+        "finalMaintenance": 0.09958399999959511,
+        "close": 0.018749999999272404
+      },
+      "latency": {
+        "randomIndexedKey": {
+          "samples": 96,
+          "p50": 1.3696250000000418,
+          "p95": 2.596082999999993,
+          "p99": null
+        },
+        "sequentialIndexedKey": {
+          "samples": 96,
+          "p50": 1.1507080000000087,
+          "p95": 1.3954160000000115,
+          "p99": null
+        },
+        "hotIndexedKey": {
+          "samples": 96,
+          "p50": 1.1268329999999764,
+          "p95": 1.3186660000000074,
+          "p99": null
+        },
+        "missingIndexedKey": {
+          "samples": 96,
+          "p50": 0.6750410000000215,
+          "p95": 0.841083000000026,
+          "p99": null
+        },
+        "individualDurableInsert": {
+          "samples": 24,
+          "p50": 37.101084000000014,
+          "p95": 55.03995800000001,
+          "p99": null
+        },
+        "individualDurableUpdate": {
+          "samples": 24,
+          "p50": 60.07095900000013,
+          "p95": 63.200958000000014,
+          "p99": null
+        },
+        "afterUpdateRead": {
+          "samples": 96,
+          "p50": 1.2852080000000115,
+          "p95": 1.954291000000012,
+          "p99": null
+        },
+        "individualDurableDelete": {
+          "samples": 24,
+          "p50": 124.05120899999997,
+          "p95": 127.07675000000017,
+          "p99": null
+        },
+        "afterDeleteRead": {
+          "samples": 96,
+          "p50": 1.2462500000001455,
+          "p95": 1.9068750000001273,
+          "p99": null
+        }
+      },
+      "bulkRecordsPerSecond": 10781.559798013084,
+      "peakWorkerRss": 136544256,
+      "peakSampledTreeRss": 148094976,
+      "peakAccountedBytes": 6509649,
+      "allocated": 958464,
+      "logical": 851100,
+      "peakSampledDisk": 2256896,
+      "peakTemporary": 1226799,
+      "postgresEmptyAllocated": null,
+      "postgresRelationBytes": null,
+      "samplerErrors": []
+    },
+    {
+      "profile": "entropy",
+      "rows": 1000,
+      "engine": "sqlite",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "open": 0.7672500000000007,
+        "create": 0.27254100000000037,
+        "bulkInsert": 14.245083000000001,
+        "explicitIndexBuild": 0.3879999999999981,
+        "initialMaintenance": 2.1033329999999992,
+        "reopen": 0.24637500000000045,
+        "randomIndexedKey": 0.8972090000000037,
+        "sequentialIndexedKey": 0.4809580000000011,
+        "hotIndexedKey": 0.46279099999999573,
+        "missingIndexedKey": 0.1994590000000045,
+        "fullRead": 1.1589169999999953,
+        "projection": 0.30358299999999616,
+        "nonIndexedFilter": 0.18837500000000063,
+        "individualDurableInsert": 0.6032909999999987,
+        "individualDurableUpdate": 0.4457919999999973,
+        "afterUpdateRead": 0.45324999999999704,
+        "individualDurableDelete": 0.4503750000000011,
+        "afterDeleteRead": 0.4077079999999995,
+        "transactionRollback": 0.16912499999999397,
+        "maintenance1": 0.4913749999999908,
+        "maintenance2": 0.20900000000000318,
+        "maintenance3": 0.22812500000000568,
+        "mixedIncludingMaintenance": 2.883500000000012,
+        "finalReopen": 0.22425000000001205,
+        "finalMaintenance": 0.05016700000000185,
+        "close": 0.2410420000000073
+      },
+      "latency": {
+        "randomIndexedKey": {
+          "samples": 96,
+          "p50": 0.008584000000006142,
+          "p95": 0.019249999999999545,
+          "p99": null
+        },
+        "sequentialIndexedKey": {
+          "samples": 96,
+          "p50": 0.006833000000000311,
+          "p95": 0.010207999999998663,
+          "p99": null
+        },
+        "hotIndexedKey": {
+          "samples": 96,
+          "p50": 0.006084000000001311,
+          "p95": 0.010249999999999204,
+          "p99": null
+        },
+        "missingIndexedKey": {
+          "samples": 96,
+          "p50": 0.0048340000000024475,
+          "p95": 0.0072499999999990905,
+          "p99": null
+        },
+        "individualDurableInsert": {
+          "samples": 24,
+          "p50": 0.0676249999999925,
+          "p95": 0.09937500000000199,
+          "p99": null
+        },
+        "individualDurableUpdate": {
+          "samples": 24,
+          "p50": 0.052666999999999575,
+          "p95": 0.07595799999999997,
+          "p99": null
+        },
+        "afterUpdateRead": {
+          "samples": 96,
+          "p50": 0.006542000000003156,
+          "p95": 0.009499999999995623,
+          "p99": null
+        },
+        "individualDurableDelete": {
+          "samples": 24,
+          "p50": 0.05429200000000378,
+          "p95": 0.07124999999999915,
+          "p99": null
+        },
+        "afterDeleteRead": {
+          "samples": 96,
+          "p50": 0.0060829999999896245,
+          "p95": 0.012332999999998151,
+          "p99": null
+        }
+      },
+      "bulkRecordsPerSecond": 70199.66117431538,
+      "peakWorkerRss": 90406912,
+      "peakSampledTreeRss": 0,
+      "peakAccountedBytes": 0,
+      "allocated": 2154496,
+      "logical": 2154496,
+      "peakSampledDisk": 0,
+      "peakTemporary": 0,
+      "postgresEmptyAllocated": null,
+      "postgresRelationBytes": null,
+      "samplerErrors": []
+    },
+    {
+      "profile": "entropy",
+      "rows": 1000,
+      "engine": "postgres",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "open": 3.4843329999999995,
+        "create": 1.8550000000000004,
+        "bulkInsert": 21.030625000000004,
+        "explicitIndexBuild": 1.8407499999999999,
+        "initialMaintenance": 3.951042000000001,
+        "reopen": 1.3226250000000022,
+        "randomIndexedKey": 2.419833000000004,
+        "sequentialIndexedKey": 1.3202500000000015,
+        "hotIndexedKey": 1.2631670000000028,
+        "missingIndexedKey": 0.9776249999999962,
+        "fullRead": 1.9487499999999898,
+        "projection": 1.2147500000000093,
+        "nonIndexedFilter": 0.3054169999999914,
+        "individualDurableInsert": 0.7857499999999931,
+        "individualDurableUpdate": 0.6790840000000031,
+        "afterUpdateRead": 1.354666999999992,
+        "individualDurableDelete": 0.500583000000006,
+        "afterDeleteRead": 1.3120000000000118,
+        "transactionRollback": 0.335290999999998,
+        "maintenance1": 4.032083,
+        "maintenance2": 1.9754999999999967,
+        "maintenance3": 1.9472499999999968,
+        "mixedIncludingMaintenance": 11.479375000000005,
+        "finalReopen": 1.1500410000000016,
+        "finalMaintenance": 2.089333999999994,
+        "close": 0.6322499999999991
+      },
+      "latency": {
+        "randomIndexedKey": {
+          "samples": 96,
+          "p50": 0.041791000000003464,
+          "p95": 0.09433399999999637,
+          "p99": null
+        },
+        "sequentialIndexedKey": {
+          "samples": 96,
+          "p50": 0.03008299999999764,
+          "p95": 0.04708300000000065,
+          "p99": null
+        },
+        "hotIndexedKey": {
+          "samples": 96,
+          "p50": 0.03224999999999767,
+          "p95": 0.045999999999999375,
+          "p99": null
+        },
+        "missingIndexedKey": {
+          "samples": 96,
+          "p50": 0.03012499999999818,
+          "p95": 0.048749999999998295,
+          "p99": null
+        },
+        "individualDurableInsert": {
+          "samples": 24,
+          "p50": 0.07633400000000279,
+          "p95": 0.21916699999999878,
+          "p99": null
+        },
+        "individualDurableUpdate": {
+          "samples": 24,
+          "p50": 0.07041700000000617,
+          "p95": 0.21983400000000586,
+          "p99": null
+        },
+        "afterUpdateRead": {
+          "samples": 96,
+          "p50": 0.031833000000005995,
+          "p95": 0.0655840000000012,
+          "p99": null
+        },
+        "individualDurableDelete": {
+          "samples": 24,
+          "p50": 0.06487500000000068,
+          "p95": 0.08050000000000068,
+          "p99": null
+        },
+        "afterDeleteRead": {
+          "samples": 96,
+          "p50": 0.033958999999995854,
+          "p95": 0.05229199999999423,
+          "p99": null
+        }
+      },
+      "bulkRecordsPerSecond": 47549.704300276375,
+      "peakWorkerRss": 101580800,
+      "peakSampledTreeRss": 0,
+      "peakAccountedBytes": 0,
+      "allocated": 43167744,
+      "logical": 43113675,
+      "peakSampledDisk": 0,
+      "peakTemporary": 0,
+      "postgresEmptyAllocated": 40837120,
+      "postgresRelationBytes": 1867776,
+      "samplerErrors": []
+    },
+    {
+      "profile": "entropy",
+      "rows": 10000,
+      "engine": "inibase",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "open": 0.24383299999999863,
+        "create": 21.445458000000002,
+        "bulkInsert": 759.712625,
+        "explicitIndexBuild": 378.78379199999995,
+        "initialMaintenance": 0.1195420000001377,
+        "reopen": 0.08441700000003038,
+        "randomIndexedKey": 75.97262500000011,
+        "sequentialIndexedKey": 37.38604200000009,
+        "hotIndexedKey": 36.196957999999995,
+        "missingIndexedKey": 21.245083999999906,
+        "fullRead": 58.28479100000004,
+        "projection": 6.161082999999962,
+        "nonIndexedFilter": 65.7322079999999,
+        "individualDurableInsert": 290.12087500000007,
+        "individualDurableUpdate": 1069.181958,
+        "afterUpdateRead": 57.52675000000045,
+        "individualDurableDelete": 4898.208833000001,
+        "afterDeleteRead": 56.77991699999984,
+        "transactionRollback": 125.80362500000047,
+        "maintenance1": 0.08183399999870744,
+        "maintenance2": 0.08316700000068522,
+        "maintenance3": 0.08220799999980954,
+        "mixedIncludingMaintenance": 6846.536666999999,
+        "finalReopen": 0.1010839999999007,
+        "finalMaintenance": 0.17191599999932805,
+        "close": 0.023083000000042375
+      },
+      "latency": {
+        "randomIndexedKey": {
+          "samples": 96,
+          "p50": 2.1958750000001146,
+          "p95": 4.042541000000028,
+          "p99": null
+        },
+        "sequentialIndexedKey": {
+          "samples": 96,
+          "p50": 1.1469170000000304,
+          "p95": 1.2921249999999418,
+          "p99": null
+        },
+        "hotIndexedKey": {
+          "samples": 96,
+          "p50": 1.1032500000001164,
+          "p95": 1.2434160000000247,
+          "p99": null
+        },
+        "missingIndexedKey": {
+          "samples": 96,
+          "p50": 0.6585000000000036,
+          "p95": 0.7402079999999387,
+          "p99": null
+        },
+        "individualDurableInsert": {
+          "samples": 24,
+          "p50": 34.11616700000013,
+          "p95": 50.958209000000124,
+          "p99": null
+        },
+        "individualDurableUpdate": {
+          "samples": 24,
+          "p50": 132.5767090000004,
+          "p95": 146.79320800000005,
+          "p99": null
+        },
+        "afterUpdateRead": {
+          "samples": 96,
+          "p50": 1.8203749999997854,
+          "p95": 2.398207999999613,
+          "p99": null
+        },
+        "individualDurableDelete": {
+          "samples": 24,
+          "p50": 611.1803330000002,
+          "p95": 619.8019169999998,
+          "p99": null
+        },
+        "afterDeleteRead": {
+          "samples": 96,
+          "p50": 1.9287500000000364,
+          "p95": 3.058665999999903,
+          "p99": null
+        }
+      },
+      "bulkRecordsPerSecond": 13162.871947797366,
+      "peakWorkerRss": 279592960,
+      "peakSampledTreeRss": 284917760,
+      "peakAccountedBytes": 16768625,
+      "allocated": 8671232,
+      "logical": 8559529,
+      "peakSampledDisk": 23728128,
+      "peakTemporary": 14996426,
+      "postgresEmptyAllocated": null,
+      "postgresRelationBytes": null,
+      "samplerErrors": []
+    },
+    {
+      "profile": "entropy",
+      "rows": 10000,
+      "engine": "sqlite",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "open": 0.6908330000000014,
+        "create": 0.289791000000001,
+        "bulkInsert": 135.521667,
+        "explicitIndexBuild": 6.41416700000002,
+        "initialMaintenance": 0.9745420000000138,
+        "reopen": 0.2662909999999954,
+        "randomIndexedKey": 1.0250000000000057,
+        "sequentialIndexedKey": 0.574750000000023,
+        "hotIndexedKey": 0.5142910000000143,
+        "missingIndexedKey": 0.24645900000001575,
+        "fullRead": 11.055041999999986,
+        "projection": 5.156000000000006,
+        "nonIndexedFilter": 3.7690000000000055,
+        "individualDurableInsert": 0.5641660000000002,
+        "individualDurableUpdate": 0.46858300000002373,
+        "afterUpdateRead": 0.5145409999999515,
+        "individualDurableDelete": 0.5042499999999563,
+        "afterDeleteRead": 0.6318749999999795,
+        "transactionRollback": 0.20062500000000227,
+        "maintenance1": 0.8620839999999816,
+        "maintenance2": 0.33233300000000554,
+        "maintenance3": 0.2387920000000463,
+        "mixedIncludingMaintenance": 4.1660420000000045,
+        "finalReopen": 0.25362499999999955,
+        "finalMaintenance": 0.0650410000000079,
+        "close": 0.7360000000000468
+      },
+      "latency": {
+        "randomIndexedKey": {
+          "samples": 96,
+          "p50": 0.010457999999999856,
+          "p95": 0.02766699999997968,
+          "p99": null
+        },
+        "sequentialIndexedKey": {
+          "samples": 96,
+          "p50": 0.008499999999997954,
+          "p95": 0.013833000000005313,
+          "p99": null
+        },
+        "hotIndexedKey": {
+          "samples": 96,
+          "p50": 0.006917000000015605,
+          "p95": 0.01154100000002245,
+          "p99": null
+        },
+        "missingIndexedKey": {
+          "samples": 96,
+          "p50": 0.0063330000000121345,
+          "p95": 0.008874999999989086,
+          "p99": null
+        },
+        "individualDurableInsert": {
+          "samples": 24,
+          "p50": 0.0677079999999819,
+          "p95": 0.0983749999999759,
+          "p99": null
+        },
+        "individualDurableUpdate": {
+          "samples": 24,
+          "p50": 0.05150000000003274,
+          "p95": 0.07491699999997081,
+          "p99": null
+        },
+        "afterUpdateRead": {
+          "samples": 96,
+          "p50": 0.008166999999957625,
+          "p95": 0.01850000000001728,
+          "p99": null
+        },
+        "individualDurableDelete": {
+          "samples": 24,
+          "p50": 0.0604579999999828,
+          "p95": 0.12024999999999864,
+          "p99": null
+        },
+        "afterDeleteRead": {
+          "samples": 96,
+          "p50": 0.007541000000003351,
+          "p95": 0.020125000000007276,
+          "p99": null
+        }
+      },
+      "bulkRecordsPerSecond": 73788.93885654461,
+      "peakWorkerRss": 223035392,
+      "peakSampledTreeRss": 211009536,
+      "peakAccountedBytes": 0,
+      "allocated": 21295104,
+      "logical": 21295104,
+      "peakSampledDisk": 24735744,
+      "peakTemporary": 0,
+      "postgresEmptyAllocated": null,
+      "postgresRelationBytes": null,
+      "samplerErrors": []
+    },
+    {
+      "profile": "entropy",
+      "rows": 10000,
+      "engine": "postgres",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "open": 3.4123330000000003,
+        "create": 1.9142080000000021,
+        "bulkInsert": 176.934416,
+        "explicitIndexBuild": 13.559083000000015,
+        "initialMaintenance": 17.178832999999997,
+        "reopen": 1.5839579999999955,
+        "randomIndexedKey": 2.6601249999999936,
+        "sequentialIndexedKey": 1.5032500000000084,
+        "hotIndexedKey": 3.514250000000004,
+        "missingIndexedKey": 1.3522079999999903,
+        "fullRead": 14.874333999999976,
+        "projection": 6.614666999999997,
+        "nonIndexedFilter": 3.8226249999999595,
+        "individualDurableInsert": 0.8356670000000008,
+        "individualDurableUpdate": 0.8575000000000159,
+        "afterUpdateRead": 1.5364159999999742,
+        "individualDurableDelete": 0.5144999999999982,
+        "afterDeleteRead": 1.4094580000000292,
+        "transactionRollback": 0.33820899999994936,
+        "maintenance1": 13.164957999999956,
+        "maintenance2": 8.221292000000005,
+        "maintenance3": 8.888125000000002,
+        "mixedIncludingMaintenance": 34.62158299999999,
+        "finalReopen": 1.574957999999981,
+        "finalMaintenance": 10.776459000000045,
+        "close": 1.1814170000000104
+      },
+      "latency": {
+        "randomIndexedKey": {
+          "samples": 96,
+          "p50": 0.04112499999999386,
+          "p95": 0.09099999999997976,
+          "p99": null
+        },
+        "sequentialIndexedKey": {
+          "samples": 96,
+          "p50": 0.034333999999972775,
+          "p95": 0.05662499999999682,
+          "p99": null
+        },
+        "hotIndexedKey": {
+          "samples": 96,
+          "p50": 0.041540999999995165,
+          "p95": 0.07679100000001426,
+          "p99": null
+        },
+        "missingIndexedKey": {
+          "samples": 96,
+          "p50": 0.03741700000000492,
+          "p95": 0.05824999999998681,
+          "p99": null
+        },
+        "individualDurableInsert": {
+          "samples": 24,
+          "p50": 0.0766659999999888,
+          "p95": 0.2129579999999578,
+          "p99": null
+        },
+        "individualDurableUpdate": {
+          "samples": 24,
+          "p50": 0.08141699999998764,
+          "p95": 0.252207999999996,
+          "p99": null
+        },
+        "afterUpdateRead": {
+          "samples": 96,
+          "p50": 0.0348329999999919,
+          "p95": 0.06416600000000017,
+          "p99": null
+        },
+        "individualDurableDelete": {
+          "samples": 24,
+          "p50": 0.06104200000004312,
+          "p95": 0.09491700000000947,
+          "p99": null
+        },
+        "afterDeleteRead": {
+          "samples": 96,
+          "p50": 0.03408400000000711,
+          "p95": 0.058667000000014013,
+          "p99": null
+        }
+      },
+      "bulkRecordsPerSecond": 56518.11685975215,
+      "peakWorkerRss": 211599360,
+      "peakSampledTreeRss": 301957120,
+      "peakAccountedBytes": 0,
+      "allocated": 75780096,
+      "logical": 75726034,
+      "peakSampledDisk": 75640832,
+      "peakTemporary": 0,
+      "postgresEmptyAllocated": 40837120,
+      "postgresRelationBytes": 17702912,
+      "samplerErrors": []
+    },
+    {
+      "profile": "entropy",
+      "rows": 100000,
+      "engine": "inibase",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "open": 0.2321669999999969,
+        "create": 24.957957999999998,
+        "bulkInsert": 9194.212540999999,
+        "explicitIndexBuild": 3071.855916999999,
+        "initialMaintenance": 0.110833000000639,
+        "reopen": 0.09116600000015751,
+        "randomIndexedKey": 114.30258399999911,
+        "sequentialIndexedKey": 36.58250000000044,
+        "hotIndexedKey": 35.60775000000103,
+        "missingIndexedKey": 20.991041999999652,
+        "fullRead": 550.3305840000012,
+        "projection": 50.233916999999565,
+        "nonIndexedFilter": 500.5987089999999,
+        "individualDurableInsert": 305.39116699999977,
+        "individualDurableUpdate": 7136.6195830000015,
+        "afterUpdateRead": 86.75058400000125,
+        "individualDurableDelete": 43259.113166,
+        "afterDeleteRead": 96.86129200000141,
+        "transactionRollback": 900.9855410000018,
+        "maintenance1": 0.08812499999476131,
+        "maintenance2": 0.08074999999371357,
+        "maintenance3": 0.08358299999963492,
+        "mixedIncludingMaintenance": 53947.338625000004,
+        "finalReopen": 0.11100000000442378,
+        "finalMaintenance": 3.767374999995809,
+        "close": 0.04629199999908451
+      },
+      "latency": {
+        "randomIndexedKey": {
+          "samples": 96,
+          "p50": 3.53925000000163,
+          "p95": 5.041832999999315,
+          "p99": null
+        },
+        "sequentialIndexedKey": {
+          "samples": 96,
+          "p50": 1.1178749999999127,
+          "p95": 1.20404199999939,
+          "p99": null
+        },
+        "hotIndexedKey": {
+          "samples": 96,
+          "p50": 1.0904580000005808,
+          "p95": 1.16150000000016,
+          "p99": null
+        },
+        "missingIndexedKey": {
+          "samples": 96,
+          "p50": 0.6530000000002474,
+          "p95": 0.6929170000003069,
+          "p99": null
+        },
+        "individualDurableInsert": {
+          "samples": 24,
+          "p50": 36.775665999999546,
+          "p95": 51.97320799999943,
+          "p99": null
+        },
+        "individualDurableUpdate": {
+          "samples": 24,
+          "p50": 888.9617079999989,
+          "p95": 908.6147500000006,
+          "p99": null
+        },
+        "afterUpdateRead": {
+          "samples": 96,
+          "p50": 2.7620420000021113,
+          "p95": 3.4647919999988517,
+          "p99": null
+        },
+        "individualDurableDelete": {
+          "samples": 24,
+          "p50": 5408.761332999995,
+          "p95": 5429.690667000003,
+          "p99": null
+        },
+        "afterDeleteRead": {
+          "samples": 96,
+          "p50": 3.220999999990454,
+          "p95": 5.785999999992782,
+          "p99": null
+        }
+      },
+      "bulkRecordsPerSecond": 10876.40725663751,
+      "peakWorkerRss": 596754432,
+      "peakSampledTreeRss": 596738048,
+      "peakAccountedBytes": 16775241,
+      "allocated": 95801344,
+      "logical": 85292831,
+      "peakSampledDisk": 271384576,
+      "peakTemporary": 150888637,
+      "postgresEmptyAllocated": null,
+      "postgresRelationBytes": null,
+      "samplerErrors": []
+    },
+    {
+      "profile": "entropy",
+      "rows": 100000,
+      "engine": "sqlite",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "open": 0.7869160000000015,
+        "create": 0.2821249999999971,
+        "bulkInsert": 1176.909208,
+        "explicitIndexBuild": 66.8845839999999,
+        "initialMaintenance": 0.14850000000001273,
+        "reopen": 0.30537500000014006,
+        "randomIndexedKey": 0.9839170000000195,
+        "sequentialIndexedKey": 0.5215840000000753,
+        "hotIndexedKey": 0.4537920000000213,
+        "missingIndexedKey": 0.2409580000000915,
+        "fullRead": 132.40095900000006,
+        "projection": 53.75141599999961,
+        "nonIndexedFilter": 35.68304199999966,
+        "individualDurableInsert": 0.7775829999995949,
+        "individualDurableUpdate": 0.5299159999999574,
+        "afterUpdateRead": 0.5562079999999696,
+        "individualDurableDelete": 0.4313750000001164,
+        "afterDeleteRead": 0.48949999999967986,
+        "transactionRollback": 0.19879200000013952,
+        "maintenance1": 0.9316249999997126,
+        "maintenance2": 0.3420000000000982,
+        "maintenance3": 0.3409999999998945,
+        "mixedIncludingMaintenance": 3.893416999999772,
+        "finalReopen": 0.2541249999999309,
+        "finalMaintenance": 0.06329200000027413,
+        "close": 0.7396250000001601
+      },
+      "latency": {
+        "randomIndexedKey": {
+          "samples": 96,
+          "p50": 0.01129199999991215,
+          "p95": 0.019665999999915584,
+          "p99": null
+        },
+        "sequentialIndexedKey": {
+          "samples": 96,
+          "p50": 0.008417000000008557,
+          "p95": 0.014167000000043117,
+          "p99": null
+        },
+        "hotIndexedKey": {
+          "samples": 96,
+          "p50": 0.006209000000126252,
+          "p95": 0.00933300000019699,
+          "p99": null
+        },
+        "missingIndexedKey": {
+          "samples": 96,
+          "p50": 0.0061670000000049185,
+          "p95": 0.009166999999933978,
+          "p99": null
+        },
+        "individualDurableInsert": {
+          "samples": 24,
+          "p50": 0.09954199999992852,
+          "p95": 0.13591600000017934,
+          "p99": null
+        },
+        "individualDurableUpdate": {
+          "samples": 24,
+          "p50": 0.061459000000013475,
+          "p95": 0.09170800000038071,
+          "p99": null
+        },
+        "afterUpdateRead": {
+          "samples": 96,
+          "p50": 0.010291000000052009,
+          "p95": 0.015291000000161148,
+          "p99": null
+        },
+        "individualDurableDelete": {
+          "samples": 24,
+          "p50": 0.055292000000008557,
+          "p95": 0.09433299999955125,
+          "p99": null
+        },
+        "afterDeleteRead": {
+          "samples": 96,
+          "p50": 0.006624999999985448,
+          "p95": 0.01741700000002311,
+          "p99": null
+        }
+      },
+      "bulkRecordsPerSecond": 84968.32153258163,
+      "peakWorkerRss": 607846400,
+      "peakSampledTreeRss": 607748096,
+      "peakAccountedBytes": 0,
+      "allocated": 220073984,
+      "logical": 212791296,
+      "peakSampledDisk": 221351936,
+      "peakTemporary": 0,
+      "postgresEmptyAllocated": null,
+      "postgresRelationBytes": null,
+      "samplerErrors": []
+    },
+    {
+      "profile": "entropy",
+      "rows": 100000,
+      "engine": "postgres",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "open": 3.6690830000000005,
+        "create": 1.8705409999999993,
+        "bulkInsert": 1606.8635,
+        "explicitIndexBuild": 162.54145799999992,
+        "initialMaintenance": 155.74604099999988,
+        "reopen": 1.8293330000001333,
+        "randomIndexedKey": 2.642125000000078,
+        "sequentialIndexedKey": 1.4544169999999212,
+        "hotIndexedKey": 1.1790419999999813,
+        "missingIndexedKey": 1.0856249999999363,
+        "fullRead": 141.91833299999985,
+        "projection": 38.92079199999989,
+        "nonIndexedFilter": 36.60041700000011,
+        "individualDurableInsert": 1.0813339999999698,
+        "individualDurableUpdate": 0.8664169999997284,
+        "afterUpdateRead": 1.5135000000000218,
+        "individualDurableDelete": 0.5501249999997526,
+        "afterDeleteRead": 1.369333000000097,
+        "transactionRollback": 0.3206249999998363,
+        "maintenance1": 71.91799999999967,
+        "maintenance2": 59.753541999999925,
+        "maintenance3": 59.136708,
+        "mixedIncludingMaintenance": 194.7947079999999,
+        "finalReopen": 1.8997090000002572,
+        "finalMaintenance": 70.42766699999993,
+        "close": 1.5243340000006356
+      },
+      "latency": {
+        "randomIndexedKey": {
+          "samples": 96,
+          "p50": 0.03862499999991087,
+          "p95": 0.0860419999999067,
+          "p99": null
+        },
+        "sequentialIndexedKey": {
+          "samples": 96,
+          "p50": 0.03300000000012915,
+          "p95": 0.06154200000014498,
+          "p99": null
+        },
+        "hotIndexedKey": {
+          "samples": 96,
+          "p50": 0.026416000000153872,
+          "p95": 0.042374999999992724,
+          "p99": null
+        },
+        "missingIndexedKey": {
+          "samples": 96,
+          "p50": 0.029791999999815744,
+          "p95": 0.04779199999984485,
+          "p99": null
+        },
+        "individualDurableInsert": {
+          "samples": 24,
+          "p50": 0.09795799999983501,
+          "p95": 0.2970829999999296,
+          "p99": null
+        },
+        "individualDurableUpdate": {
+          "samples": 24,
+          "p50": 0.08562500000016371,
+          "p95": 0.26854199999979755,
+          "p99": null
+        },
+        "afterUpdateRead": {
+          "samples": 96,
+          "p50": 0.03491699999995035,
+          "p95": 0.06616600000006656,
+          "p99": null
+        },
+        "individualDurableDelete": {
+          "samples": 24,
+          "p50": 0.06349999999974898,
+          "p95": 0.09283300000015515,
+          "p99": null
+        },
+        "afterDeleteRead": {
+          "samples": 96,
+          "p50": 0.033083000000260654,
+          "p95": 0.053792000000157714,
+          "p99": null
+        }
+      },
+      "bulkRecordsPerSecond": 62233.039707479824,
+      "peakWorkerRss": 483196928,
+      "peakSampledTreeRss": 626802688,
+      "peakAccountedBytes": 0,
+      "allocated": 386658304,
+      "logical": 384819092,
+      "peakSampledDisk": 401575936,
+      "peakTemporary": 0,
+      "postgresEmptyAllocated": 40837120,
+      "postgresRelationBytes": 175808512,
+      "samplerErrors": []
+    }
+  ]
+}
