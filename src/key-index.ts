@@ -94,7 +94,8 @@ export const prepareKeyIndex = async (
 			? 0
 			: Math.min(65536, 2 ** Math.ceil(Math.log2(Math.max(64, count / 2))));
 		const heads = Buffer.alloc(buckets * BUCKET);
-		await output.writeFile(Buffer.alloc(HEADER + heads.length));
+		await output.writeFile(Buffer.alloc(HEADER));
+		if (heads.length) await output.writeFile(heads);
 		const buffer = Buffer.allocUnsafe(64 * 1024 - ((64 * 1024) % ENTRY));
 		let used = 0;
 		// Dense numeric ids are buffered; holes use positioned writes, not a Map.
