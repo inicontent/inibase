@@ -31,6 +31,7 @@ import {
 } from "./index.js";
 import { recover } from "./journal.js";
 import { lookupLines } from "./key-index.js";
+import type { DatabaseResources } from "./resources.js";
 import { type AppendPrefix, readSeekable } from "./seek.js";
 import {
 	detectFieldType,
@@ -166,6 +167,42 @@ const notifyLockReleased = (resolvedPath: string) => {
 const lockFilePathFor = (folderPath: string, prefix?: string) =>
 	join(folderPath, `${prefix ?? ""}.locked`);
 
+const initializeLock = async (path: string, resources?: DatabaseResources) => {
+	let created = false;
+	const initialize = async (handle: FileHandle) => {
+		created = true;
+		await handle.writeFile(
+			JSON.stringify({
+				pid: process.pid,
+				host: hostname(),
+				startedAt: Date.now(),
+			}),
+		);
+		await maybeSync(handle);
+	};
+	try {
+		if (resources) await resources.transientFile(path, "wx", initialize);
+		else {
+			const handle = await open(path, "wx");
+			try {
+				await initialize(handle);
+			} finally {
+				await handle.close();
+			}
+		}
+	} catch (error) {
+		if (created)
+			await unlink(path).catch((cleanup) => {
+				if (cleanup.code !== "ENOENT")
+					throw new AggregateError(
+						[error, cleanup],
+						"LOCK_INITIALIZATION_CLEANUP_FAILED",
+					);
+			});
+		throw error;
+	}
+};
+
 const recoveredDirectories = new Set<string>();
 const cleanupStaging = async (folderPath: string) => {
 	// Only engine-generated regular-file names. Unknown files and directories
@@ -231,6 +268,7 @@ export const lock = async (
 	folderPath: string,
 	prefix?: string,
 	ttl: number = DEFAULT_LOCK_TTL_MS,
+	resources?: DatabaseResources,
 ): Promise<void> => {
 	const lockFilePath = lockFilePathFor(folderPath, prefix);
 	const resolvedPath = resolve(lockFilePath);
@@ -246,19 +284,7 @@ export const lock = async (
 			continue;
 		}
 		try {
-			const lockFile = await open(lockFilePath, "wx");
-			try {
-				await lockFile.writeFile(
-					JSON.stringify({
-						pid: process.pid,
-						host: hostname(),
-						startedAt: Date.now(),
-					}),
-				);
-				await maybeSync(lockFile);
-			} finally {
-				await lockFile.close();
-			}
+			await initializeLock(lockFilePath, resources);
 			// The global (prefix-less) lock is the writer lock: run crash
 			// recovery for this table while we exclusively hold it. Locked
 			// calls with a prefix are read-side helpers (e.g. sort cache) and
@@ -309,6 +335,7 @@ export const tryLock = async (
 	folderPath: string,
 	prefix?: string,
 	ttl: number = DEFAULT_LOCK_TTL_MS,
+	resources?: DatabaseResources,
 ): Promise<boolean> => {
 	const lockFilePath = lockFilePathFor(folderPath, prefix);
 	const resolvedPath = resolve(lockFilePath);
@@ -319,19 +346,7 @@ export const tryLock = async (
 
 	for (let attempt = 0; attempt < 2; attempt++) {
 		try {
-			const lockFile = await open(lockFilePath, "wx");
-			try {
-				await lockFile.writeFile(
-					JSON.stringify({
-						pid: process.pid,
-						host: hostname(),
-						startedAt: Date.now(),
-					}),
-				);
-				await maybeSync(lockFile);
-			} finally {
-				await lockFile.close();
-			}
+			await initializeLock(lockFilePath, resources);
 			if (!prefix) {
 				try {
 					await recover(folderPath);

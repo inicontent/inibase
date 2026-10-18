@@ -1,5 +1,10 @@
 # Row-storage experiment
 
+The separate [mutable row kernel](mutable-row-storage.md) now exercises durable
+byte-record batches and copy-on-write primary-ID paths. It does not yet integrate
+this immutable layout or replace the public engine. Its API, compaction,
+reclamation and migration gates remain open.
+
 iniBase's requirements are disk-resident primary data and indexes, small bounded
 engine working memory, compact storage, low CPU, fast NVMe access, simple embedded
 operation, and durable, correct results. Column storage is not a requirement.

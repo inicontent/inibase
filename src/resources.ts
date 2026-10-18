@@ -28,6 +28,7 @@ export class DatabaseResources {
 	private peak = 0;
 	private closed = false;
 	private closing = 0;
+	private transient = 0;
 	private working = 0;
 	private peakAccounted = 0;
 	private readonly memoryWaiters = new Set<() => void>();
@@ -121,6 +122,44 @@ export class DatabaseResources {
 		this.waiters.clear();
 	}
 
+	/** Fresh descriptors for replaceable manifests and publication/lock files. */
+	async transientFile<T>(
+		path: string,
+		flags: string,
+		fn: (handle: FileHandle) => Promise<T>,
+	): Promise<T> {
+		for (;;) {
+			if (this.closed) throw new Error("DATABASE_RESOURCES_CLOSED");
+			if (
+				this.handles.size + this.opening.size + this.closing + this.transient <
+				this.handleLimit
+			) {
+				this.transient++;
+				break;
+			}
+			let idle: string | undefined;
+			for (const [key, entry] of this.handles)
+				if (!entry.users) {
+					idle = key;
+					break;
+				}
+			if (idle !== undefined) await this.releaseFile(idle);
+			else await new Promise<void>((accept) => this.waiters.add(accept));
+		}
+		let handle: FileHandle | undefined;
+		try {
+			handle = await open(path, flags);
+			return await fn(handle);
+		} finally {
+			try {
+				await handle?.close();
+			} finally {
+				this.transient--;
+				this.wake();
+			}
+		}
+	}
+
 	/** Pinned handles cannot be evicted. Opening reservations count toward the cap. */
 	async file<T>(
 		path: string,
@@ -151,7 +190,7 @@ export class DatabaseResources {
 				continue;
 			}
 			if (
-				this.handles.size + this.opening.size + this.closing >=
+				this.handles.size + this.opening.size + this.closing + this.transient >=
 				this.handleLimit
 			) {
 				let removed = false;
@@ -216,7 +255,8 @@ export class DatabaseResources {
 			maintenanceErrors: this.maintenanceErrors,
 			maintenanceLastError: this.maintenanceError,
 			cachedEntries: this.cache.size,
-			openFiles: this.handles.size + this.opening.size + this.closing,
+			openFiles:
+				this.handles.size + this.opening.size + this.closing + this.transient,
 			maxOpenFiles: this.handleLimit,
 		};
 	}
@@ -228,6 +268,8 @@ export class DatabaseResources {
 
 	async close(): Promise<void> {
 		await this.drainMaintenance();
+		while (this.transient)
+			await new Promise<void>((accept) => this.waiters.add(accept));
 		for (const pending of this.opening.values()) await pending;
 		for (const path of this.handles.keys()) await this.releaseFile(path);
 		this.cache.clear();
