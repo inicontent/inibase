@@ -167,6 +167,34 @@ test("seeded random histories match an independent model after reopen", async ()
 	}
 });
 
+test("uncompressed records and every radix depth preserve values and counts", async () => {
+	const directory = await mkdtemp(join(tmpdir(), "inibase-rowstore-raw-")),
+		resources = new DatabaseResources(),
+		store = new RowStore(directory, resources);
+	try {
+		await store.create(false);
+		const ids = [
+			0,
+			...Array.from({ length: 14 }, (_, index) => 2 ** (index * 4)),
+			Number.MAX_SAFE_INTEGER,
+		];
+		await store.commit(
+			batch(ids.map((id) => ({ id, value: Buffer.from(`value:${id}`) }))),
+		);
+		const snapshot = await store.snapshot();
+		assert.equal(snapshot.rows, ids.length);
+		for (const id of ids)
+			assert.equal((await collect(snapshot, id)).toString(), `value:${id}`);
+		await store.commit(batch(ids.map((id) => ({ id, value: null }))));
+		assert.equal((await store.snapshot()).rows, 0);
+		for (const id of ids)
+			assert.equal(await (await store.snapshot()).has(id), false);
+	} finally {
+		await resources.close();
+		await rm(directory, { recursive: true, force: true });
+	}
+});
+
 test("large high-entropy values stream under a shared 256 KiB reservation", async () => {
 	const prior = process.env.INIBASE_MEMORY_BYTES;
 	process.env.INIBASE_MEMORY_BYTES = "262144";

@@ -2,9 +2,10 @@
 import { randomUUID } from "node:crypto";
 import { type FileHandle, mkdir, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import { gunzipSync, gzipSync } from "node:zlib";
+import { gunzipSync } from "node:zlib";
 import * as File from "./file.js";
 import type { DatabaseResources } from "./resources.js";
+import { RowEncoder } from "./row-encoder.js";
 import { decodeHeader, encodeHeader, readExact, writeExact } from "./seek.js";
 import { checksum } from "./updatelog.js";
 
@@ -103,12 +104,65 @@ class Appender {
 	private start: number;
 	end: number;
 	readonly baseEnd: number;
+	private pages = new Map<
+		number,
+		{ bytes: Buffer; valid: number; dirtyStart: number; dirtyEnd: number }
+	>();
 	constructor(
 		private file: FileHandle,
 		end: number,
+		private pageLimit: number,
 	) {
 		this.start = this.end = end;
 		this.baseEnd = end;
+	}
+	private async savePage(
+		offset: number,
+		page: { bytes: Buffer; dirtyStart: number; dirtyEnd: number },
+	) {
+		if (page.dirtyEnd > page.dirtyStart)
+			await writeExact(
+				this.file,
+				page.bytes.subarray(page.dirtyStart, page.dirtyEnd),
+				offset + page.dirtyStart,
+			);
+		page.dirtyStart = 4096;
+		page.dirtyEnd = 0;
+	}
+	private async pageAt(offset: number) {
+		const position = Math.floor(offset / 4096) * 4096;
+		let page = this.pages.get(position);
+		if (!page) {
+			if (this.pages.size >= this.pageLimit) {
+				const oldest = this.pages.entries().next().value;
+				if (!oldest) throw new Error("ROWSTORE_PAGE_CACHE");
+				await this.savePage(oldest[0], oldest[1]);
+				this.pages.delete(oldest[0]);
+			}
+			page = {
+				bytes: Buffer.allocUnsafe(4096),
+				valid: 0,
+				dirtyStart: 4096,
+				dirtyEnd: 0,
+			};
+		}
+		this.pages.delete(position);
+		this.pages.set(position, page);
+		const valid = Math.min(4096, this.start - position);
+		if (valid > page.valid) {
+			await readExact(
+				this.file,
+				page.bytes.subarray(page.valid, valid),
+				position + page.valid,
+			);
+			page.valid = valid;
+		}
+		return { page, position };
+	}
+	async finish() {
+		await this.flush();
+		for (const [position, page] of this.pages)
+			await this.savePage(position, page);
 	}
 	/** Only unpublished nodes may be changed in place; old snapshots never reach them. */
 	async overwrite(offset: number, bytes: Buffer) {
@@ -116,8 +170,16 @@ class Appender {
 			throw new Error("ROWSTORE_OVERWRITE");
 		if (offset >= this.start) bytes.copy(this.buffer, offset - this.start);
 		else {
-			await this.flush();
-			await writeExact(this.file, bytes, offset);
+			if (offset + bytes.length > this.start) await this.flush();
+			for (let used = 0; used < bytes.length; ) {
+				const { page, position } = await this.pageAt(offset + used),
+					within = offset + used - position,
+					take = Math.min(bytes.length - used, 4096 - within);
+				bytes.copy(page.bytes, within, used, used + take);
+				page.dirtyStart = Math.min(page.dirtyStart, within);
+				page.dirtyEnd = Math.max(page.dirtyEnd, within + take);
+				used += take;
+			}
 		}
 	}
 	async flush() {
@@ -156,8 +218,14 @@ class Appender {
 				offset - this.start + bytes.length,
 			);
 		else {
-			await this.flush();
-			await readExact(this.file, bytes, offset);
+			if (offset + bytes.length > this.start) await this.flush();
+			for (let used = 0; used < bytes.length; ) {
+				const { page, position } = await this.pageAt(offset + used),
+					within = offset + used - position,
+					take = Math.min(bytes.length - used, 4096 - within);
+				page.bytes.copy(bytes, used, within, within + take);
+				used += take;
+			}
 		}
 	}
 }
@@ -349,104 +417,117 @@ export class RowStore {
 		hook?: (phase: RowCommitPhase) => void | Promise<void>,
 	): Promise<void> {
 		await this.locked(() =>
-			this.resources.withWorking(WORKING, async () => {
-				const state = await current(this.directory, this.resources);
-				if (state.sequence === Number.MAX_SAFE_INTEGER)
-					throw new Error("ROWSTORE_SEQUENCE");
-				const filePath = join(this.directory, state.file);
-				// No rename/replacement of this append file: pooled readers keep valid snapshots.
-				await this.resources.file(
-					filePath,
-					async (file) => {
-						const header = Buffer.alloc(HEADER);
-						await readExact(file, header, 0);
-						if (
-							JSON.stringify(decodeHeader(header)) !==
-								JSON.stringify(identity(state)) ||
-							(await file.stat()).size < state.end
-						)
-							throw new Error("ROWSTORE_GENERATION");
-						// An unpublished append is never part of a reader's snapshot.
-						await file.truncate(state.end);
-						const append = new Appender(file, state.end),
-							raw = Buffer.allocUnsafe(CHUNK);
-						for await (const mutation of mutations) {
-							validID(mutation.id);
-							const previous = await find(
-								{ ...state, end: append.end },
-								mutation.id,
-								(at, bytes) => append.read(at, bytes),
-							);
-							const start = append.end;
-							let used = 0,
-								length = 0;
-							const flush = async () => {
-								if (!used) return;
-								const bytes = raw.subarray(0, used),
-									encoded = state.compression
-										? gzipSync(bytes, { memLevel: 4, windowBits: 14 })
-										: bytes;
-								const entry = Buffer.alloc(16);
-								entry.writeUInt32LE(encoded.length);
-								entry.writeUInt32LE(used, 4);
-								entry.writeUInt32LE(checksum(bytes), 8);
-								entry.writeUInt32LE(checksum(entry.subarray(0, 12)), 12);
-								await append.append(entry);
-								await append.append(encoded);
-								used = 0;
-							};
-							if (mutation.value !== null) {
-								const input = Buffer.isBuffer(mutation.value)
-									? [mutation.value]
-									: mutation.value;
-								for await (const bytes of input) {
-									if (!(bytes instanceof Uint8Array))
-										throw new Error("ROWSTORE_VALUE");
-									for (let position = 0; position < bytes.length; ) {
-										const take = Math.min(
-											CHUNK - used,
-											bytes.length - position,
-										);
-										raw.set(bytes.subarray(position, position + take), used);
-										position += take;
-										used += take;
-										length += take;
-										if (!Number.isSafeInteger(length))
-											throw new Error("ROWSTORE_SIZE");
-										if (used === CHUNK) await flush();
+			this.resources.withWorking(
+				Math.min(this.resources.limit, 512 * 1024),
+				async () => {
+					const state = await current(this.directory, this.resources);
+					if (state.sequence === Number.MAX_SAFE_INTEGER)
+						throw new Error("ROWSTORE_SEQUENCE");
+					const filePath = join(this.directory, state.file);
+					// No rename/replacement of this append file: pooled readers keep valid snapshots.
+					await this.resources.file(
+						filePath,
+						async (file) => {
+							const header = Buffer.alloc(HEADER);
+							await readExact(file, header, 0);
+							if (
+								JSON.stringify(decodeHeader(header)) !==
+									JSON.stringify(identity(state)) ||
+								(await file.stat()).size < state.end
+							)
+								throw new Error("ROWSTORE_GENERATION");
+							// An unpublished append is never part of a reader's snapshot.
+							await file.truncate(state.end);
+							const small = this.resources.limit < 512 * 1024;
+							const encoder = state.compression
+								? new RowEncoder(CHUNK, true, small ? 3 : 4, 6, small ? 12 : 14)
+								: undefined;
+							try {
+								const append = new Appender(file, state.end, small ? 4 : 16),
+									raw = Buffer.allocUnsafe(CHUNK);
+								for await (const mutation of mutations) {
+									validID(mutation.id);
+									const previous = await find(
+										{ ...state, end: append.end },
+										mutation.id,
+										(at, bytes) => append.read(at, bytes),
+									);
+									const start = append.end;
+									let used = 0,
+										length = 0;
+									const flush = async () => {
+										if (!used) return;
+										const bytes = raw.subarray(0, used),
+											encoded = encoder ? await encoder.encode(bytes) : bytes;
+										const entry = Buffer.alloc(16);
+										entry.writeUInt32LE(encoded.length);
+										entry.writeUInt32LE(used, 4);
+										entry.writeUInt32LE(checksum(bytes), 8);
+										entry.writeUInt32LE(checksum(entry.subarray(0, 12)), 12);
+										await append.append(entry);
+										await append.append(encoded);
+										used = 0;
+									};
+									if (mutation.value !== null) {
+										const input = Buffer.isBuffer(mutation.value)
+											? [mutation.value]
+											: mutation.value;
+										for await (const bytes of input) {
+											if (!(bytes instanceof Uint8Array))
+												throw new Error("ROWSTORE_VALUE");
+											for (let position = 0; position < bytes.length; ) {
+												const take = Math.min(
+													CHUNK - used,
+													bytes.length - position,
+												);
+												raw.set(
+													bytes.subarray(position, position + take),
+													used,
+												);
+												position += take;
+												used += take;
+												length += take;
+												if (!Number.isSafeInteger(length))
+													throw new Error("ROWSTORE_SIZE");
+												if (used === CHUNK) await flush();
+											}
+										}
+										await flush();
 									}
+									const leaf = Buffer.alloc(NODE);
+									leaf[0] = 1;
+									leaf.writeInt8(-1, 1);
+									leaf[2] = mutation.value === null ? 1 : 0;
+									leaf.writeBigUInt64LE(BigInt(mutation.id), 8);
+									leaf.writeBigUInt64LE(BigInt(start), 16);
+									leaf.writeBigUInt64LE(BigInt(length), 24);
+									leaf.writeBigUInt64LE(BigInt(append.end - start), 32);
+									state.rows +=
+										(mutation.value === null ? 0 : 1) -
+										(previous && !previous.deleted ? 1 : 0);
+									state.root = await replace(
+										state.root,
+										mutation.id,
+										await appendNode(append, leaf),
+										append,
+									);
 								}
-								await flush();
+								await append.finish();
+								await encoder?.close();
+								state.end = append.end;
+								state.sequence++;
+								await hook?.("appended");
+								await file.sync();
+								await hook?.("data-synced");
+								await publish(this.directory, state, this.resources, hook);
+							} finally {
+								await encoder?.close();
 							}
-							const leaf = Buffer.alloc(NODE);
-							leaf[0] = 1;
-							leaf.writeInt8(-1, 1);
-							leaf[2] = mutation.value === null ? 1 : 0;
-							leaf.writeBigUInt64LE(BigInt(mutation.id), 8);
-							leaf.writeBigUInt64LE(BigInt(start), 16);
-							leaf.writeBigUInt64LE(BigInt(length), 24);
-							leaf.writeBigUInt64LE(BigInt(append.end - start), 32);
-							state.rows +=
-								(mutation.value === null ? 0 : 1) -
-								(previous && !previous.deleted ? 1 : 0);
-							state.root = await replace(
-								state.root,
-								mutation.id,
-								await appendNode(append, leaf),
-								append,
-							);
-						}
-						await append.flush();
-						state.end = append.end;
-						state.sequence++;
-						await hook?.("appended");
-						await file.sync();
-						await hook?.("data-synced");
-						await publish(this.directory, state, this.resources, hook);
-					},
-					"r+",
-				);
-			}),
+						},
+						"r+",
+					);
+				},
+			),
 		);
 	}
 }

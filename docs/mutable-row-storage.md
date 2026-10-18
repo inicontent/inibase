@@ -11,7 +11,7 @@ options or production dependencies are introduced.
 One UUID-named append file holds independently compressed value chunks and a
 compressed radix-16 primary-ID tree. Both data and indexes live on disk. The
 tree branches on four bits of the stable ID, compresses common prefixes and
-uses at most fourteen 192-byte nodes along a lookup path. It supports IDs from
+uses at most fourteen branch levels plus one 192-byte leaf along a lookup path. It supports IDs from
 zero through Number.MAX_SAFE_INTEGER without a highest-ID-sized sparse file.
 Checksums cover index nodes, chunk descriptors, raw values and manifest JSON.
 Pointer, size, traversal-depth and decompression bounds are validated.
@@ -45,16 +45,24 @@ returns an error: callers must treat such a commit outcome as indeterminate.
 
 ## Resource accounting
 
-Mutation/decompression operations reserve 256 KiB before allocating their
-workspace. That includes a 64 KiB append buffer, 32 KiB raw chunk, bounded
+Mutations reserve 512 KiB before allocating their workspace, or 256 KiB when
+the configured database budget is smaller. Decompression reserves 256 KiB.
+That includes a 64 KiB append buffer, 32 KiB raw chunk, bounded reusable
 compression output/native context allowance and bounded index path state.
+A private dirty-page cache holds at most sixteen 4 KiB index pages, or four at
+the smaller budget. It coalesces updates only to unpublished bytes and flushes
+every dirty range before data synchronization. Reads of already flushed ranges
+do not force unrelated pending append bytes out. This cache is covered by the
+working reservation rather than an additional memory allowance.
+The compressor keeps level 6 and uses a smaller window/memory setting at the
+256 KiB budget, with a possible compression-ratio cost.
 Inputs and yielded/materialized outputs belong to the caller. There are no
 whole-table ID/value maps, retained background queues or engine value caches.
 The shared resource manager bounds pooled **and fresh** descriptors, including
 this kernel's lock, manifest, publication and directory handles. The existing
 public backend still has allocations and file operations outside this protocol.
 
-The 256 KiB allowance is not a process RSS or complete JavaScript/native-allocation
+The working allowance is not a process RSS or complete JavaScript/native-allocation
 proof. Runtime overhead, garbage collection, caller inputs/results and retained
 snapshot objects still consume memory. The local Mac cannot qualify a hard
 whole-process-group memory cap. Async input producers must not recursively call

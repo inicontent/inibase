@@ -13,13 +13,15 @@ export class RowEncoder {
 		pageBytes: number,
 		smallWorkingSet = false,
 		memoryLevel = smallWorkingSet ? 4 : 8,
+		private readonly level = 1,
+		windowBits = smallWorkingSet ? 14 : 15,
 	) {
 		this.output = Buffer.allocUnsafe(pageBytes + 4096);
 		this.stream = createDeflateRaw({
-			level: 1,
+			level,
 			memLevel: memoryLevel,
 			chunkSize: smallWorkingSet ? 16384 : pageBytes + 4096,
-			windowBits: smallWorkingSet ? 14 : 15,
+			windowBits,
 		});
 		this.stream.on("error", (error) => {
 			this.failure = error;
@@ -43,7 +45,18 @@ export class RowEncoder {
 		if (this.reject) throw new Error("ROWPACK_ENCODER_BUSY");
 		if (this.closed) throw new Error("ROWPACK_ENCODER_CLOSED");
 		// A standard gzip header, independently checksummed member per page.
-		this.output.set([31, 139, 8, 0, 0, 0, 0, 0, 4, 3]);
+		this.output.set([
+			31,
+			139,
+			8,
+			0,
+			0,
+			0,
+			0,
+			0,
+			this.level === 1 ? 4 : this.level === 9 ? 2 : 0,
+			3,
+		]);
 		this.used = 10;
 		try {
 			await new Promise<void>((resolve, reject) => {
