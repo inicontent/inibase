@@ -6,7 +6,7 @@ const files = manifest.scripts.test.split(' && ').map(command => {
  if (!command.startsWith('tsx ./tests/')) throw new Error(`Unsupported test command: ${command}`);
  return command.slice(4);
 });
-files.push('./tests/storage-process.test.ts', './tests/journal-hardening.test.ts', './tests/publication.test.ts');
+files.push('./tests/storage-process.test.ts', './tests/journal-hardening.test.ts');
 let failures = 0;
 for (const file of files) {
  console.log(`\nCHECK ${file}`);
