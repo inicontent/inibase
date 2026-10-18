@@ -1,0 +1,11 @@
+Gate B: populated-overlay budget (log table, size 1000)
+  ┌──────────────────────────────┬──────┐
+  │ (index)                      │ ms   │
+  ├──────────────────────────────┼──────┤
+  │ GET empty overlay (baseline) │ 1191 │
+  │ PUT populate overlay         │ 55   │
+  │ GET populated overlay        │ 1183 │
+  │ GET after compact            │ 1202 │
+  │ compact (1000 rows)          │ 49   │
+  └──────────────────────────────┴──────┘
+populated-overlay GET vs empty-overlay GET: +-1% (1191 ms -> 1183 ms)

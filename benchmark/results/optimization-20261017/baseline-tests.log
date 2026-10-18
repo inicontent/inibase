@@ -1,0 +1,25 @@
+
+> inibase@3.9.0-dev.0 test /Users/karimamahtil/APPS/inibase
+> tsx ./tests/inibase.test.ts && tsx ./tests/inibase.advanced.test.ts && tsx ./tests/transaction.test.ts && tsx ./tests/durability.test.ts && tsx ./tests/expression.test.ts && tsx ./tests/utils.test.ts && tsx ./tests/sum.nested.test.ts && tsx ./tests/computed.child.test.ts && tsx ./tests/hardening.test.ts && tsx ./tests/string.roundtrip.test.ts && tsx ./tests/updatelog.test.ts && tsx ./tests/updatelog.engine.test.ts && tsx ./tests/compaction.test.ts && tsx ./tests/incremental.test.ts && tsx ./tests/seekable.test.ts && tsx ./tests/tombstones.test.ts && tsx ./tests/storage-hardening.test.ts
+
+node:net:2306
+      const error = new UVExceptionWithHostPort(rval, 'listen', address, port);
+                    ^
+
+Error: listen EPERM: operation not permitted /var/folders/0q/gxpck5xd6ys22gpw7yf9695c0000gp/T/tsx-502/21833.pipe
+    at Server.setupListenHandle [as _listen2] (node:net:2306:21)
+    at listenInCluster (node:net:2437:12)
+    at Server.listen (node:net:2579:5)
+    at file:///Users/karimamahtil/APPS/inibase/node_modules/.pnpm/tsx@4.22.4/node_modules/tsx/dist/cli.mjs:53:31537
+    at new Promise (<anonymous>)
+    at createIpcServer (file:///Users/karimamahtil/APPS/inibase/node_modules/.pnpm/tsx@4.22.4/node_modules/tsx/dist/cli.mjs:53:31515)
+    at async file:///Users/karimamahtil/APPS/inibase/node_modules/.pnpm/tsx@4.22.4/node_modules/tsx/dist/cli.mjs:55:459 {
+  code: 'EPERM',
+  errno: -1,
+  syscall: 'listen',
+  address: '/var/folders/0q/gxpck5xd6ys22gpw7yf9695c0000gp/T/tsx-502/21833.pipe',
+  port: -1
+}
+
+Node.js v26.9.0
+ ELIFECYCLE  Test failed. See above for more details.

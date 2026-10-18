@@ -1,0 +1,32 @@
+inibase computed-fields benchmark (fsync + journal on: numbers are engine
+costs; the plain-vs-computed delta is the pure expression-evaluation cost)
+
+rows   POST bulk                POST single            PUT recompute
+       plain / computed ms      plain / computed       plain / computed
+----   --------------------     --------------------   --------------------
+10    29.33 / 30.96            29.79 / 31.52          23.72 / 34.68
+100   24.78 / 28.96            29.79 / 31.52          33.32 / 37.72
+1000  26.15 / 36.15            29.79 / 31.52          29.57 / 40.18
+
+GET all after POST rounds (1110 rows): 10.50 / 13.93 ms (reads hit stored columns; no compute)
+
+POST bulk transient heap, max of 3 reps (plain / computed):
+  10    0.77 / 1.20 mb
+  100   1.84 / 4.77 mb
+  1000  1.70 / 0.43 mb
+
+--- link-heavy: shared catalog, per-item link hops ---
+
+POST bulk of 10/100/1000 orders (2000 line items max, 20-row product catalog):
+  10    34.90 ms
+  100   35.32 ms
+  1000  55.80 ms
+  (each batch resolves <= catalogSize distinct linked rows; without batching every line item reads its product row)
+
+--- README markdown ---
+
+| rows | POST bulk (plain / computed) | POST single (plain / computed) | PUT recompute (plain / computed) |
+|------|------------------------------|--------------------------------|----------------------------------|
+| 10 | 29.33 / 30.96 ms | 29.79 / 31.52 ms | 23.72 / 34.68 ms |
+| 100 | 24.78 / 28.96 ms | 29.79 / 31.52 ms | 33.32 / 37.72 ms |
+| 1000 | 26.15 / 36.15 ms | 29.79 / 31.52 ms | 29.57 / 40.18 ms |
