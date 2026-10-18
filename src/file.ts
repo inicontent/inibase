@@ -23,6 +23,7 @@ import {
 import { pipeline } from "node:stream/promises";
 import { createGunzip, createGzip } from "node:zlib";
 import Inison from "inison";
+import { replacementChunks } from "./column-replace.js";
 import {
 	type ComparisonOperator,
 	type Field,
@@ -1111,54 +1112,15 @@ export const replace = async (
 			let fileHandle = null;
 			let fileTempHandle: FileHandle | null = null;
 			try {
-				let linesCount = 0;
 				fileHandle = await open(filePath, "r");
 				fileTempHandle = await open(fileTempPath, "w");
-				const writeStream = fileTempHandle.createWriteStream();
-				const rl = createReadLineInternface(filePath, fileHandle);
-
-				await _pipeline(
-					filePath,
-					rl,
-					writeStream,
-					new Transform({
-						transform(line, _, callback) {
-							linesCount++;
-							const replacement = isReplacementsObject
-								? Object.hasOwn(replacements, linesCount)
-									? replacements[linesCount]
-									: line
-								: replacements;
-							return callback(null, `${replacement}\n`);
-						},
-						flush(callback) {
-							const remainingReplacementsKeys = Object.keys(replacements)
-								.map(Number)
-								.toSorted((a, b) => a - b)
-								.filter((lineNumber) => lineNumber > linesCount);
-
-							if (remainingReplacementsKeys.length)
-								this.push(
-									"\n".repeat(remainingReplacementsKeys[0] - linesCount - 1) +
-										remainingReplacementsKeys
-											.map((lineNumber, index) =>
-												index === 0 ||
-												lineNumber -
-													(remainingReplacementsKeys[index - 1] - 1) ===
-													0
-													? replacements[lineNumber]
-													: "\n".repeat(
-															lineNumber -
-																remainingReplacementsKeys[index - 1] -
-																1,
-														) + replacements[lineNumber],
-											)
-											.join("\n"),
-								);
-							callback();
-						},
-					}),
-				);
+				const source = fileHandle.createReadStream();
+				const output = fileTempHandle.createWriteStream();
+				const edit = (input: AsyncIterable<Buffer>) =>
+					replacementChunks(input, replacements);
+				if (filePath.endsWith(".gz"))
+					await pipeline(source, createGunzip(), edit, createGzip(), output);
+				else await pipeline(source, edit, output);
 				return [fileTempPath, filePath];
 			} catch (error) {
 				return failWrite(fileTempPath, error);
