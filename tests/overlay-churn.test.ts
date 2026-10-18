@@ -64,3 +64,43 @@ test("truncated dense overlay directory fails closed", async () => {
 		await rm(root, { recursive: true, force: true });
 	}
 });
+
+test("failed local scratch application replays the durably appended frame on retry", async () => {
+	const { TableOverlay } = await import("../src/overlay.js");
+	const { resourcesFor } = await import("../src/resources.js");
+	const root = await mkdtemp(join(tmpdir(), "overlay-apply-fault-"));
+	const table = join(root, "records");
+	const { mkdir } = await import("node:fs/promises");
+	await mkdir(table);
+	const overlay = new TableOverlay(table, 0);
+	try {
+		await overlay.refreshForWrite();
+		const initial = {
+			gen: 1,
+			records: [{ id: 1, cols: { value: "old" }, updatedAt: 1 }],
+		};
+		await overlay.log.append(initial);
+		await overlay.applyLocal([initial]);
+		const frame = {
+			gen: 2,
+			records: [{ id: 1, cols: { value: "durable" }, updatedAt: 2 }],
+		};
+		await overlay.log.append(frame);
+		const original = overlay.byId.set.bind(overlay.byId);
+		overlay.byId.set = async () => {
+			throw new Error("injected scratch failure");
+		};
+		await assert.rejects(
+			overlay.applyLocal([frame]),
+			/injected scratch failure/,
+		);
+		overlay.byId.set = original;
+		await overlay.refresh();
+		assert.equal((await overlay.get(1))?.cols.value, "durable");
+		assert.equal(overlay.committedGen, 2);
+	} finally {
+		await overlay.dispose();
+		await resourcesFor(root).close();
+		await rm(root, { recursive: true, force: true });
+	}
+});

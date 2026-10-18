@@ -185,22 +185,31 @@ export class TableOverlay {
 	 */
 	async applyLocal(frames: UpdateFrame[]): Promise<void> {
 		return this.serialize(async () => {
-			for (const frame of frames) {
-				// Another same-process reader may already have consumed this frame.
-				if (frame.gen <= this.committedGen) continue;
-				const encoded = encodeFrame(frame);
-				this.cursor.anchor = {
-					offset: this.cursor.offset,
-					header: encoded.subarray(0, 8).toString("hex"),
-				};
-				this.cursor.offset += encoded.length;
-				await this.applyFrame(frame);
+			try {
+				for (const frame of frames) {
+					// Another same-process reader may already have consumed this frame.
+					if (frame.gen <= this.committedGen) continue;
+					const encoded = encodeFrame(frame);
+					this.cursor.anchor = {
+						offset: this.cursor.offset,
+						header: encoded.subarray(0, 8).toString("hex"),
+					};
+					this.cursor.offset += encoded.length;
+					await this.applyFrame(frame);
+				}
+				const current = await this.currentStat();
+				this.scannedSize = current.size;
+				this.scannedStamp = current.stamp;
+				this.scannedIdentity = current.identity;
+				this.tornTail = false;
+			} catch (error) {
+				// The durable append can succeed while rebuilding scratch fails.
+				// The cursor may already have advanced: never trust that partial
+				// overlay on retry. Rebuild from the authoritative log instead.
+				this.scannedSize = -1;
+				this.scannedStamp = "";
+				throw error;
 			}
-			const current = await this.currentStat();
-			this.scannedSize = current.size;
-			this.scannedStamp = current.stamp;
-			this.scannedIdentity = current.identity;
-			this.tornTail = false;
 		});
 	}
 
