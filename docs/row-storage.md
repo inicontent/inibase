@@ -59,7 +59,7 @@ not justified by a read-kernel microbenchmark alone.
 The builder spools fixed-size ID/location entries sequentially, then partitions
 them on disk with a reusable 128 KiB workspace. A 32 KiB index page stays dirty in
 memory until it is evicted or construction finishes. Partition traversal uses a
-bounded stack of filenames; it does not retain open handles or recursive async
+bounded stack of numeric partition identifiers; it does not retain open handles or recursive async
 frames. Collisions and wraparound still use the same disk linear-probe format.
 Checksums and expected entry counts are verified before publication. Private
 partition files need not be synchronized: the completed authoritative index is

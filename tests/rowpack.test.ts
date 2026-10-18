@@ -82,6 +82,82 @@ for (const phase of [
 async function* stream(rows: PackedRow[]) {
 	yield* rows;
 }
+
+test(
+	"cross-process builders publish complete generations to active readers",
+	{ timeout: 30000 },
+	async () => {
+		const directory = await mkdtemp(join(tmpdir(), "inibase-rowpack-process-")),
+			resources = new DatabaseResources();
+		const launch = (mode: string) => {
+			const child = spawn(
+				process.execPath,
+				[
+					"--import",
+					"tsx",
+					new URL("./rowpack.process.child.ts", import.meta.url).pathname,
+					directory,
+					mode,
+				],
+				{ stdio: ["ignore", "pipe", "pipe", "ipc"] },
+			);
+			let errors = "",
+				reads = 0;
+			child.stderr.on("data", (bytes) => {
+				errors += bytes;
+			});
+			child.stdout.resume();
+			let readyResolve!: () => void, readyReject!: (error: Error) => void;
+			const ready = new Promise<void>((resolve, reject) => {
+				readyResolve = resolve;
+				readyReject = reject;
+			});
+			// Writer callers do not wait for readiness; suppress only that unused promise.
+			if (mode !== "reader") ready.catch(() => {});
+			child.on("message", (message: any) => {
+				if (message.ready) readyResolve();
+				if (message.reads !== undefined) reads = message.reads;
+			});
+			const done = new Promise<void>((resolve, reject) => {
+				child.on("error", (error) => {
+					readyReject(error);
+					reject(error);
+				});
+				child.on("exit", (code, signal) => {
+					readyReject(new Error(`exit before ready: ${code}/${signal}`));
+					code === 0
+						? resolve()
+						: reject(new Error(`${mode}: ${code}/${signal}: ${errors}`));
+				});
+			});
+			return { child, ready, done, reads: () => reads };
+		};
+		let reader: ReturnType<typeof launch> | undefined;
+		try {
+			async function* rows() {
+				for (let id = 0; id < 1500; id++)
+					yield { id, bytes: Buffer.from(`generation-0:${id}`) };
+			}
+			await buildRowPack(directory, rows(), 1500, true, resources);
+			reader = launch("reader");
+			await reader.ready;
+			const results = await Promise.allSettled([
+				launch("0").done,
+				launch("1").done,
+			]);
+			reader.child.send("stop");
+			await reader.done;
+			for (const result of results)
+				if (result.status === "rejected") throw result.reason;
+			assert.ok(reader.reads() > 0);
+		} finally {
+			if (reader?.child.connected) reader.child.send("stop");
+			await reader?.done.catch(() => {});
+			await resources.close();
+			await rm(directory, { recursive: true, force: true });
+		}
+	},
+);
 const collect = async (pack: RowPack, id: number) => {
 	const chunks: Buffer[] = [];
 	for await (const chunk of pack.read(id)) chunks.push(chunk);
