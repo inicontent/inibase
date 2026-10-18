@@ -1,4 +1,4 @@
-# Local qualification, workload version 3
+# Local qualification, workload versions 3–5
 
 These scripts are copied from the existing sibling benchmarks `src/local-*.mjs`
 (version 2), then extended with `baseline-indexed`. Historical benchmark files and
@@ -113,3 +113,50 @@ The initial version-1 concurrent smoke fixture had trailing spaces. Existing ini
 string validation trims strings, so the strict equal-data assertion failed before
 reader sampling. Its raw results/databases remain in concurrent-smoke/. Version 2
 normalizes the input for both engines before seeding; no engine validation changed.
+
+## Version 5: four public options and automatic indexing
+
+`--publicOptions=true` supplies only the supported application options and adds a
+separate post-training key phase. The first 16 probes and an explicit benchmark-only
+maintenance drain measure learning/build cost; ordinary `get()` does not drain.
+SQLite still creates its key index during table creation. This mode does not enable
+the legacy log or tombstone format. Inherited `pending*` phase names describe reads
+after committed base rewrites in this mode. Historical defaults remain version 4.
+The runner now checks process-inspection permission before starting; use
+`--allowMissingSampler=true` only for explicitly limited diagnostic runs.
+
+The October 18 reproduction uses source archives so pre-existing local edits are
+included exactly without committing someone else's changes into the engine commits:
+
+```sh
+# From this repository, with the recorded lockfile dependencies already installed.
+mkdir -p /private/tmp/inibase-auto-repro-base /private/tmp/inibase-auto-repro-candidate
+tar -xzf benchmark/results/automatic-20261018/baseline-source.tar.gz -C /private/tmp/inibase-auto-repro-base
+tar -xzf benchmark/results/automatic-20261018/candidate-source.tar.gz -C /private/tmp/inibase-auto-repro-candidate
+ln -s "$PWD/node_modules" /private/tmp/inibase-auto-repro-base/node_modules
+ln -s "$PWD/node_modules" /private/tmp/inibase-auto-repro-candidate/node_modules
+node node_modules/typescript/bin/tsc --project /private/tmp/inibase-auto-repro-base/tsconfig.json
+node node_modules/typescript/bin/tsc --project /private/tmp/inibase-auto-repro-candidate/tsconfig.json
+node benchmark/qualification/automatic-run.mjs \
+  --baseline=/private/tmp/inibase-auto-repro-base/dist/index.js \
+  --optimized=/private/tmp/inibase-auto-repro-candidate/dist/index.js \
+  --baselineCommit=5dd5d0ef351aa4e3f4eb5611fdd7417ab7acc950 \
+  --optimizedCommit=5e15b17 \
+  --output=/private/tmp/inibase-automatic-repro-1/final
+node benchmark/qualification/automatic-report.mjs /private/tmp/inibase-automatic-repro-1
+
+node benchmark/qualification/checks.mjs
+node node_modules/typescript/bin/tsc --noEmit
+env INIBASE_MEMORY_BYTES=262144 node --import tsx tests/rowpack.test.ts
+```
+
+Use fresh destination directories. Process-tree sampling needs permission to run
+`ps`. The orchestrator runs the 81 public-API trials, 54 immutable-row-kernel trials
+and three instrumented trials sequentially, rotating engine order within repeats.
+The public matrix uses compact, repetitive CMS and high-entropy datasets at 1k,
+10k and 100k records, 16 samples per key phase, two individual mutations per phase,
+eight batch updates and two mixed rounds. These are short qualification runs, not
+endurance tests. All raw latency/CPU/I/O/disk/RSS samples and errors are retained.
+The profiling pass is excluded from latency comparisons. Read the separate row
+kernel's limitations before interpreting its SQLite comparison: it does not
+implement the public engine's features or mutability.

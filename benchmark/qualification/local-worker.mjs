@@ -17,7 +17,7 @@ const row = (seq) => ({ seq, key: key(seq), title: `Article ${seq}`, category: `
 		: profile === "mixed" ? Array.from({ length: 20 }, (_, j) => createHash("sha256").update(`seed-42:${seq}:${j}`).digest("hex")).join("")
 		: `Item ${seq}`, score: seq % 10000 });
 const app = (value) => fields.map((field) => value[field]);
-const result = { workloadVersion: 4, engine, profile, rows: n, options, timings: {}, latency: {}, phases: [], phaseCpu: {}, phaseIO: {},
+const result = { workloadVersion: options.publicOptions ? 5 : 4, engine, profile, rows: n, options, timings: {}, latency: {}, phases: [], phaseCpu: {}, phaseIO: {},
 	config: { durability: "full", cacheCondition: "OS-cache-affected; reopen does not evict OS cache", engineBudgetBytes: Number(process.env.INIBASE_MEMORY_BYTES) },
 	runtimeBaselineRss: process.memoryUsage().rss, startUsage: process.resourceUsage(), operationErrors: [] };
 const phase = (name) => { result.phases.push({ name, time: Date.now(), rss: process.memoryUsage().rss, engineMemory: db?.memoryUsage?.() ?? null }); process.send?.({ phase: name }); };
@@ -77,8 +77,8 @@ const open = async () => {
 		db = new Engine("db", directory);
 		if (!(await db.getTable("records").catch((error) => { if (error.name === "TABLE_NOT_EXISTS") return null; throw error; })))
 			await db.createTable("records", fields.map((field) => ({ key: field, type: ["seq", "score"].includes(field) ? "number" : "string", required: true })),
-				{ compression: true, decodeID: true, cache: false, log: true,
-					...(!isBaseline ? { seekable: true, indexes: indexed ? ["seq", "key"] : [], tombstones: true, blockBytes: options.blockBytes ?? 131072 } : {}) });
+				{ compression: true, decodeID: true, cache: false, ...(options.publicOptions ? {} : { log: true }),
+					...(!options.publicOptions && !isBaseline ? { seekable: true, indexes: indexed ? ["seq", "key"] : [], tombstones: true, blockBytes: options.blockBytes ?? 131072 } : {}) });
 		result.artifact = { modulePath, sha256: createHash("sha256").update(await readFile(modulePath)).digest("hex") };
 	}
 };
@@ -130,7 +130,17 @@ try {
 	const random = Array.from({ length: count }, (_, i) => 1 + ((i * 7919 + 42) % n));
 	const check = (value, seq) => assert.deepEqual(app(value), app(row(seq)));
 	await samples("randomKey", random, point, check);
-	await samples("sequentialKey", Array.from({ length: Math.min(count, n) }, (_, i) => i + 1), point, check);
+	if (options.publicOptions) {
+        // Drain only in this labeled benchmark phase; normal get() does not wait.
+        if (!isSql) {
+          const { resourcesFor } = await import(pathToFileURL(join(modulePath, "..", "resources.js")));
+          await timed("automaticBuildDrain", () => resourcesFor(join(directory, "db")).drainMaintenance?.() ?? Promise.resolve());
+          result.automatic = db.memoryUsage?.();
+          result.learnedConfig = await readFile(join(directory, "db/records/.seek.config"), "utf8").catch(() => null);
+        }
+        await samples("afterTrainingKey", random, point, check);
+    }
+    await samples("sequentialKey", Array.from({ length: Math.min(count, n) }, (_, i) => i + 1), point, check);
 	await samples("hotKey", Array.from({ length: count }, () => random[0]), point, check);
 	await samples("missingKey", random.map((seq) => seq + n), point, (value) => assert.equal(value ?? null, null));
 	await timed("nonIndexedFilter", async () => {
@@ -142,8 +152,8 @@ try {
 	// engines store the same additional rows, and their files are counted.
 	if (isSql) sql.exec("CREATE TABLE individual_records (seq INTEGER PRIMARY KEY, key TEXT NOT NULL, title TEXT NOT NULL, category TEXT NOT NULL, body TEXT NOT NULL, score INTEGER NOT NULL); CREATE INDEX individual_records_key ON individual_records(key)");
 	else await db.createTable("individual_records", fields.map((field) => ({ key: field, type: ["seq", "score"].includes(field) ? "number" : "string", required: true })),
-		{ compression: true, decodeID: true, cache: false, log: true,
-			...(!isBaseline ? { seekable: true, indexes: indexed ? ["seq", "key"] : [], tombstones: true, blockBytes: options.blockBytes ?? 131072 } : {}) });
+		{ compression: true, decodeID: true, cache: false, ...(options.publicOptions ? {} : { log: true }),
+			...(!options.publicOptions && !isBaseline ? { seekable: true, indexes: indexed ? ["seq", "key"] : [], tombstones: true, blockBytes: options.blockBytes ?? 131072 } : {}) });
 	const individualInsert = isSql ? sql.prepare("INSERT INTO individual_records VALUES (?,?,?,?,?,?)") : null;
 	await samples("individualDurableInserts", Array.from({ length: options.writes ?? 32 }, (_, i) => row(n + i + 1)),
 		async (value) => isSql ? individualInsert.run(...app(value)) : db.post("individual_records", value));

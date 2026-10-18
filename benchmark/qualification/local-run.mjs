@@ -6,6 +6,9 @@ import os from "node:os";
 
 const args = Object.fromEntries(process.argv.slice(2).map((arg) => arg.replace(/^--/, "").split("=")));
 if (!args.baseline || !args.optimized) throw new Error("Explicit --baseline=/path/dist/index.js and --optimized=/path/dist/index.js are required");
+// Memory evidence is required unless explicitly opting into a limited diagnostic run.
+try { execFileSync("ps", ["-o", "rss=", "-p", String(process.pid)], {stdio: "pipe"}); }
+catch (error) { if (args.allowMissingSampler !== "true") throw new Error("Process sampler unavailable; rerun with process-inspection permission or explicitly use --allowMissingSampler=true", {cause: error}); }
 const output = resolve(args.output ?? "results/local-optimization/comparison");
 await mkdir(dirname(output), { recursive: true });
 await mkdir(output); // Refuse to overwrite raw evidence from an earlier run.
@@ -25,11 +28,12 @@ const identity = async (modulePath) => {
 	}
 	return { modulePath: resolve(modulePath), hashes, treeSha256: createHash("sha256").update(JSON.stringify(hashes)).digest("hex") };
 };
-const metadata = { workloadVersion: 4, date: new Date().toISOString(), node: process.versions, os: os.release(),
+const metadata = { workloadVersion: args.publicOptions === "true" ? 5 : 4, date: new Date().toISOString(), node: process.versions, os: os.release(),
 	platform: process.platform, arch: process.arch, cpu: os.cpus()[0].model, cores: os.cpus().length, ram: os.totalmem(),
 	baseline: { ...await identity(args.baseline), sourceCommit: args.baselineCommit ?? null },
 	optimized: { ...await identity(args.optimized), sourceCommit: args.optimizedCommit ?? null }, sizes, engines, profiles, repeats,
 	seed: 42, budgetBytes: Number(args.budget ?? 16777216), samples: Number(args.samples ?? 128),
+	publicOptions: args.publicOptions === "true",
 	notes: ["Dataset generation is batch bounded; explicit full-read results are caller materializations.",
 		"RSS is sampled across the worker process tree every 100 ms; sampling can miss short-lived peaks.",
 		"Darwin reports maxRSS and CPU/IO counters through process.resourceUsage; unavailable IO counters are retained as zero.",
@@ -72,7 +76,7 @@ for (const rows of sizes) for (const profile of profiles) for (let repeat = 0; r
 		console.log(`Running ${id}`);
 		const options = { engine, profile, rows, directory, destination, repeat: repeat + 1,
 			baseline: resolve(args.baseline), optimized: resolve(args.optimized), samples: metadata.samples,
-			writes: Number(args.writes ?? 32), blockBytes: Number(args.blockBytes ?? 131072), instrument: args.instrument === "true" };
+			writes: Number(args.writes ?? 32), blockBytes: Number(args.blockBytes ?? 131072), instrument: args.instrument === "true", publicOptions: args.publicOptions === "true" };
 		options.pending = Number(args.pending ?? 1024);
 		Object.assign(options, mixedOptions);
 		const child = fork(new URL("./local-worker.mjs", import.meta.url), [JSON.stringify(options)], {

@@ -1,0 +1,59 @@
+tests/automatic.test.ts:95:4 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    93 │ 		assert.equal(resources.stats().maintenanceErrors, 1);
+    94 │ 		assert.match(
+  > 95 │ 			resources.stats().maintenanceLastError!,
+       │ 			^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    96 │ 			/AUTOMATIC_BUILD_BUDGET/,
+    97 │ 		);
+  
+
+tests/automatic.test.ts:147:16 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    145 │ 		);
+    146 │ 		assert.deepEqual(
+  > 147 │ 			Object.keys((await db.getTable("records"))!.config).sort(),
+        │ 			            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    148 │ 			["cache", "compression", "decodeID", "prepend"],
+    149 │ 		);
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+    145 145 │   		);
+    146 146 │   		assert.deepEqual(
+    147     │ - → → → Object.keys((await·db.getTable("records"))!.config).sort(),
+        147 │ + → → → Object.keys((await·db.getTable("records"))?.config).sort(),
+    148 148 │   			["cache", "compression", "decodeID", "prepend"],
+    149 149 │   		);
+  
+
+tests/automatic.test.ts:180:16 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    178 │ 		);
+    179 │ 		assert.deepEqual(
+  > 180 │ 			Object.keys((await db.getTable("records"))!.config).sort(),
+        │ 			            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    181 │ 			["cache", "compression", "decodeID", "prepend"],
+    182 │ 		);
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+    178 178 │   		);
+    179 179 │   		assert.deepEqual(
+    180     │ - → → → Object.keys((await·db.getTable("records"))!.config).sort(),
+        180 │ + → → → Object.keys((await·db.getTable("records"))?.config).sort(),
+    181 181 │   			["cache", "compression", "decodeID", "prepend"],
+    182 182 │   		);
+  
+
+Skipped 2 suggested fixes.
+If you wish to apply the suggested (unsafe) fixes, use the command biome check --write --unsafe
+
+Checked 1 file in 7ms. Fixed 1 file.
+Found 3 warnings.
