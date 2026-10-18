@@ -1,5 +1,9 @@
 # Local qualification, workload versions 3–5
 
+The additive [three-engine qualification](postgres/README.md) compares the public
+iniBase API against SQLite and native PostgreSQL, including separate concurrent
+and process-crash scenarios. Historical workloads below remain unchanged.
+
 These scripts are copied from the existing sibling benchmarks `src/local-*.mjs`
 (version 2), then extended with `baseline-indexed`. Historical benchmark files and
 results are unchanged. Version 3 compares the starting working tree and candidate
