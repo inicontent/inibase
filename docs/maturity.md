@@ -17,8 +17,8 @@ high availability require separate designs and qualification if added.
 
 | Gate | Evidence required | Current gap |
 |---|---|---|
-| Public behavior | Existing validation, uniqueness, relations, computed fields, ordering, prepend, projections, pagination and transactions pass against the replacement | Replacement is still an immutable storage kernel |
-| Durable mutation | Acknowledged commits survive injected process crashes; append, sync and publication failures return correct errors | Mutable row log/delta indexes are unfinished |
+| Public behavior | Existing validation, uniqueness, relations, computed fields, ordering, prepend, projections, pagination and transactions pass against the replacement | Mutable byte-record kernel exists; public behavior is not integrated |
+| Durable mutation | Acknowledged commits survive injected process crashes; append, sync and publication failures return correct errors | Mutable kernel has primary-ID COW batches and focused crash/sync checks; application indexes, full API and broader qualification remain unfinished |
 | Transactions | Documented isolation and atomicity; rollback, partial failure, cross-table changes and concurrent conflicts qualified | Existing engine tests do not qualify a replacement |
 | Corruption handling | Checksums, malformed lengths, stale generations, truncated/replaced logs, disk-full and I/O failures fail safely | Kernel checksums and crash tests cover only part of this |
 | Maintenance | Sustained writes/deletes across repeated bounded compactions, active readers and generation reclamation | Mutable compaction and safe reclamation are unfinished |
@@ -49,6 +49,12 @@ cluster with no TCP listener. Keep `fsync`, `synchronous_commit` and
 Its shared buffers, per-operation memory and background processes differ from
 an embedded cache budget. They are recorded separately rather than described as
 an equal total memory cap. SQLite uses WAL/FULL; iniBase uses full durability.
+
+On Darwin, those historical default settings did not request equal drive-cache
+flushing: Node/libuv requests F_FULLFSYNC, SQLite fullfsync was OFF and PostgreSQL
+used open_datasync. New `--flush=write-through` comparisons explicitly request
+SQLite fullfsync and PostgreSQL fsync_writethrough, preserving iniBase's sync.
+See the [flush correction and mutable-kernel scope](mutable-row-storage.md).
 
 Include complete PostgreSQL cluster/WAL footprint as well as relation/database
 size and empty-cluster baseline. Include client and server processes; summed RSS

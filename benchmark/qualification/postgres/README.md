@@ -5,6 +5,28 @@ benchmarks are unchanged. It compares the **current public iniBase engine**,
 Node's SQLite, and a real local PostgreSQL server, through Node clients.
 PostgreSQL is a benchmark-only dependency; it is not part of iniBase's runtime.
 
+**Darwin flush correction:** historical `platform-default` runs used SQLite
+fullfsync=OFF and PostgreSQL open_datasync, whereas Node/libuv requests
+F_FULLFSYNC. They did not request equal drive-cache flushing. Keep those samples
+as historical defaults; use additive `--flush=write-through` runs to request
+SQLite fullfsync/checkpoint_fullfsync and PostgreSQL fsync_writethrough on macOS.
+iniBase sync is unchanged. See [the protocol correction](../../../docs/mutable-row-storage.md).
+
+The separate `--scenario=rowstore` workload compares encoded byte records using
+the internal mutable row kernel, SQLite BLOB and PostgreSQL BYTEA. It bypasses
+the public API and does not qualify application-key indexes, scans, validation,
+relations, cross-table transactions or compaction. Write-cycle latency includes
+a verifying point read; full reopen verification streams every ID. Do not pool
+its samples with `standard`. For example, use fresh output directories with:
+
+```sh
+node benchmark/qualification/postgres/run.mjs \
+  --scenario=rowstore --flush=write-through \
+  --rows=1000,10000,100000 --profiles=compact,cms,entropy \
+  --repeats=3 --samples=32 --writes=8 \
+  --output=/private/tmp/inibase-rowstore-fresh
+```
+
 Install native PostgreSQL separately (the measured local version is 18.6), then:
 
 ```sh

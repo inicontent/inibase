@@ -26,8 +26,11 @@ const binaryDirectory = resolve(
 );
 const modulePath = resolve(args.module ?? "dist/index.js");
 const budget = Number(args.budget ?? 16777216);
+const flush = args.flush ?? "platform-default";
+if (!["platform-default", "write-through"].includes(flush))
+	throw new Error(`Unknown flush policy: ${flush}`);
 const scenario = args.scenario ?? "standard";
-if (!["standard", "concurrent", "recovery"].includes(scenario))
+if (!["standard", "concurrent", "recovery", "rowstore"].includes(scenario))
 	throw new Error(`Unknown scenario: ${scenario}`);
 const workerName = scenario === "standard" ? "worker.mjs" : `${scenario}.mjs`;
 await mkdir(resolve(".work"), { recursive: true });
@@ -46,6 +49,7 @@ for (const name of [
 	"adapter.mjs",
 	"concurrent.mjs",
 	"recovery.mjs",
+	"rowstore.mjs",
 	"package.json",
 	"package-lock.json",
 ])
@@ -57,6 +61,7 @@ const metadata = {
 	date: new Date().toISOString(),
 	options: args,
 	budget,
+	flush,
 	runtime: process.versions,
 	platform: process.platform,
 	os: os.release(),
@@ -72,6 +77,10 @@ const metadata = {
 	cache: "OS cache is not evicted; reopen is not cold disk",
 	memory:
 		"Cache allowances are not total memory limits. PostgreSQL RSS sums double-count shared mappings. V8 heap cap is not an RSS limit.",
+	flushPolicy:
+		flush === "write-through"
+			? "SQLite fullfsync/checkpoint_fullfsync ON; PostgreSQL fsync_writethrough on Darwin, fsync elsewhere; iniBase retains Node FileHandle.sync. Actual hardware power loss not qualified."
+			: "Historical platform defaults: SQLite fullfsync OFF, PostgreSQL default WAL method, Node libuv platform sync. On Darwin these do not request equal drive-cache flushing.",
 	transport:
 		"PostgreSQL persistent Unix-domain connection; embedded engines direct calls. Connection setup reported separately.",
 };
@@ -201,6 +210,11 @@ outer: for (const rows of (args.rows ?? "1000,10000,100000")
 								"fsync = on",
 								"synchronous_commit = on",
 								"full_page_writes = on",
+								...(flush === "write-through"
+									? [
+											`wal_sync_method = '${process.platform === "darwin" ? "fsync_writethrough" : "fsync"}'`,
+										]
+									: []),
 								"autovacuum = on",
 								`shared_buffers = '${Math.floor(budget / 1024)}kB'`,
 								"work_mem = '1MB'",
@@ -246,6 +260,7 @@ outer: for (const rows of (args.rows ?? "1000,10000,100000")
 								modulePath,
 								socket,
 								budget,
+								flush,
 								binaryDirectory,
 								rows,
 								profile,

@@ -1,5 +1,12 @@
 # PostgreSQL comparison and concurrency fixes
 
+**Later durability correction:** these retained macOS samples use platform
+defaults, not equal requested drive-cache flushing. Node/libuv sync requests
+F_FULLFSYNC; SQLite fullfsync was OFF and PostgreSQL used open_datasync. Interpret
+the write-latency ratios under those exact settings. See the
+[correction and additive write-through protocol](../../../docs/mutable-row-storage.md).
+The raw samples and original workloads below are unchanged.
+
 PostgreSQL is now a native local comparison engine alongside SQLite. These are
 **public iniBase API measurements**, separate from the earlier immutable
 row-kernel experiment. They do not establish PostgreSQL-level maturity or finish

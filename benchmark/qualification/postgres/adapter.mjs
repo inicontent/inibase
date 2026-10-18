@@ -79,6 +79,8 @@ export async function adapter(options) {
 				db.exec(
 					`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA cache_size=-${Math.floor(budget / 1024)}`,
 				);
+				if (options.flush === "write-through")
+					db.exec("PRAGMA fullfsync=ON; PRAGMA checkpoint_fullfsync=ON");
 			},
 			async close() {
 				db?.close();
@@ -142,6 +144,7 @@ export async function adapter(options) {
 							"journal_mode",
 							"synchronous",
 							"fullfsync",
+							"checkpoint_fullfsync",
 							"cache_size",
 							"page_size",
 							"mmap_size",
