@@ -3,10 +3,12 @@ import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
 	appendFile,
+	copyFile,
 	mkdtemp,
 	open,
 	readdir,
 	readFile,
+	rename,
 	rm,
 	stat,
 	truncate,
@@ -562,6 +564,42 @@ test("committed truncation and replacement fail closed", async () => {
 		);
 	} finally {
 		await env.close();
+	}
+});
+
+test("replaced generation paths cannot receive writes through a stale pooled descriptor", async () => {
+	const env = await setup(),
+		other = await setup();
+	try {
+		await env.store.commit(batch([{ id: 1, value: Buffer.from("first") }]));
+		await other.store.commit(batch([{ id: 1, value: Buffer.from("other") }]));
+		const retained = await env.store.snapshot();
+		const manifest = await readFile(join(env.directory, "CURRENT.rowstore")),
+			state = decodeHeader(manifest),
+			otherState = decodeHeader(
+				await readFile(join(other.directory, "CURRENT.rowstore")),
+			),
+			path = join(env.directory, state.file);
+		await rename(path, `${path}.retained`);
+		await copyFile(join(other.directory, otherState.file), path);
+		await assert.rejects(env.store.snapshot(), /ROWSTORE_REPLACED/);
+		await assert.rejects(
+			env.store.commit(
+				batch([{ id: 1, value: Buffer.from("must not acknowledge") }]),
+			),
+			/ROWSTORE_REPLACED/,
+		);
+		assert.deepEqual(
+			await readFile(join(env.directory, "CURRENT.rowstore")),
+			manifest,
+		);
+		assert.equal((await collect(retained, 1)).toString(), "first");
+		await env.resources.releaseIdleFiles();
+		await assert.rejects(env.store.snapshot(), /ROWSTORE_GENERATION/);
+		await assert.rejects(collect(retained, 1), /ROWSTORE_GENERATION/);
+	} finally {
+		await env.close();
+		await other.close();
 	}
 });
 

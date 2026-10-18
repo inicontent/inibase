@@ -53,6 +53,14 @@ silently treated as an uncommitted tail. Older snapshots stay readable after
 new commits. A failed sync after rename can leave a visible new generation and
 returns an error: callers must treat such a commit outcome as indeterminate.
 
+Fresh snapshots and writers compare the opened descriptor's exact inode/device
+with the current generation path and validate its header and minimum size. A
+replaced path cannot silently receive acknowledged writes through a cached old
+descriptor. Captured readers can keep using their validated old descriptor;
+after descriptor eviction/reopen they revalidate the generation before index or
+value reads. Arbitrary unlocked external modification of database files remains
+unsupported. Engine publication never replaces an immutable generation path.
+
 ## Resource accounting
 
 Mutations reserve up to 512 KiB before allocating their workspace, capped at

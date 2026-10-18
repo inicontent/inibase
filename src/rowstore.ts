@@ -1,6 +1,6 @@
 /** Internal mutable-kernel experiment. Not the public iniBase backend. */
 import { randomUUID } from "node:crypto";
-import { type FileHandle, mkdir, rename, unlink } from "node:fs/promises";
+import { type FileHandle, mkdir, rename, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import * as File from "./file.js";
@@ -46,6 +46,26 @@ const identity = (state: State) => ({
 	file: state.file,
 	compression: state.compression,
 });
+const validateGeneration = async (
+	file: FileHandle,
+	path: string,
+	state: State,
+) => {
+	const [descriptor, named] = await Promise.all([
+		file.stat({ bigint: true }),
+		stat(path, { bigint: true }),
+	]);
+	if (descriptor.dev !== named.dev || descriptor.ino !== named.ino)
+		throw new Error("ROWSTORE_REPLACED");
+	const header = Buffer.alloc(HEADER);
+	await readExact(file, header, 0);
+	if (
+		descriptor.size < BigInt(state.end) ||
+		named.size < BigInt(state.end) ||
+		JSON.stringify(decodeHeader(header)) !== JSON.stringify(identity(state))
+	)
+		throw new Error("ROWSTORE_GENERATION");
+};
 const syncDirectory = (directory: string, resources: DatabaseResources) =>
 	resources.transientFile(directory, "r", (handle) => handle.sync());
 const current = (
@@ -401,19 +421,18 @@ export class RowStore {
 		const state = await this.resources.withWorking(4096, () =>
 			current(this.directory, this.resources),
 		);
-		await this.resources.withWorking(4096, () =>
+		const validatedHandle = await this.resources.withWorking(4096, () =>
 			this.resources.file(join(this.directory, state.file), async (file) => {
-				const header = Buffer.alloc(HEADER);
-				await readExact(file, header, 0);
-				if (
-					JSON.stringify(decodeHeader(header)) !==
-						JSON.stringify(identity(state)) ||
-					(await file.stat()).size < state.end
-				)
-					throw new Error("ROWSTORE_GENERATION");
+				await validateGeneration(file, join(this.directory, state.file), state);
+				return file;
 			}),
 		);
-		return new RowSnapshot(this.directory, state, this.resources);
+		return new RowSnapshot(
+			this.directory,
+			state,
+			this.resources,
+			validatedHandle,
+		);
 	}
 	async commit(
 		mutations: AsyncIterable<RowMutation>,
@@ -431,14 +450,7 @@ export class RowStore {
 					await this.resources.file(
 						filePath,
 						async (file) => {
-							const header = Buffer.alloc(HEADER);
-							await readExact(file, header, 0);
-							if (
-								JSON.stringify(decodeHeader(header)) !==
-									JSON.stringify(identity(state)) ||
-								(await file.stat()).size < state.end
-							)
-								throw new Error("ROWSTORE_GENERATION");
+							await validateGeneration(file, filePath, state);
 							// An unpublished append is never part of a reader's snapshot.
 							await file.truncate(state.end);
 							const small = this.resources.limit < 512 * 1024;
@@ -544,7 +556,18 @@ export class RowSnapshot {
 		private directory: string,
 		private state: State,
 		private resources: DatabaseResources,
+		private validatedHandle?: FileHandle,
 	) {}
+	private file<T>(fn: (handle: FileHandle) => Promise<T>): Promise<T> {
+		const path = join(this.directory, this.state.file);
+		return this.resources.file(path, async (handle) => {
+			if (handle !== this.validatedHandle) {
+				await validateGeneration(handle, path, this.state);
+				this.validatedHandle = handle;
+			}
+			return fn(handle);
+		});
+	}
 	get rows() {
 		return this.state.rows;
 	}
@@ -554,7 +577,7 @@ export class RowSnapshot {
 	private async locate(id: number) {
 		validID(id);
 		return this.resources.withWorking(4096, () =>
-			this.resources.file(join(this.directory, this.state.file), (file) =>
+			this.file((file) =>
 				find(this.state, id, (at, bytes) => readExact(file, bytes, at)),
 			),
 		);
@@ -582,41 +605,35 @@ export class RowSnapshot {
 			throw new Error("ROWSTORE_VALUE_BOUNDS");
 		while (remaining) {
 			const chunk = await this.resources.withWorking(WORKING, () =>
-				this.resources.file(
-					join(this.directory, this.state.file),
-					async (file) => {
-						if (position + 16 > end) throw new Error("ROWSTORE_CHUNK_BOUNDS");
-						const entry = Buffer.alloc(16);
-						await readExact(file, entry, position);
-						const length = entry.readUInt32LE(),
-							raw = entry.readUInt32LE(4);
-						if (
-							checksum(entry.subarray(0, 12)) !== entry.readUInt32LE(12) ||
-							!length ||
-							length > CHUNK + 1024 ||
-							!raw ||
-							raw > CHUNK ||
-							raw > remaining ||
-							position + 16 + length > end
-						)
-							throw new Error("ROWSTORE_CHUNK_BOUNDS");
-						const encoded = Buffer.allocUnsafe(length);
-						await readExact(file, encoded, position + 16);
-						const bytes = this.state.compression
-							? gunzipSync(encoded, { maxOutputLength: CHUNK })
-							: encoded;
-						if (
-							bytes.length !== raw ||
-							checksum(bytes) !== entry.readUInt32LE(8)
-						)
-							throw new Error("ROWSTORE_CHECKSUM");
-						position += 16 + length;
-						remaining -= raw;
-						if (!remaining && position !== end)
-							throw new Error("ROWSTORE_VALUE_BOUNDS");
-						return bytes;
-					},
-				),
+				this.file(async (file) => {
+					if (position + 16 > end) throw new Error("ROWSTORE_CHUNK_BOUNDS");
+					const entry = Buffer.alloc(16);
+					await readExact(file, entry, position);
+					const length = entry.readUInt32LE(),
+						raw = entry.readUInt32LE(4);
+					if (
+						checksum(entry.subarray(0, 12)) !== entry.readUInt32LE(12) ||
+						!length ||
+						length > CHUNK + 1024 ||
+						!raw ||
+						raw > CHUNK ||
+						raw > remaining ||
+						position + 16 + length > end
+					)
+						throw new Error("ROWSTORE_CHUNK_BOUNDS");
+					const encoded = Buffer.allocUnsafe(length);
+					await readExact(file, encoded, position + 16);
+					const bytes = this.state.compression
+						? gunzipSync(encoded, { maxOutputLength: CHUNK })
+						: encoded;
+					if (bytes.length !== raw || checksum(bytes) !== entry.readUInt32LE(8))
+						throw new Error("ROWSTORE_CHECKSUM");
+					position += 16 + length;
+					remaining -= raw;
+					if (!remaining && position !== end)
+						throw new Error("ROWSTORE_VALUE_BOUNDS");
+					return bytes;
+				}),
 			);
 			yield chunk; // Returned bytes belong to the caller, outside the engine budget.
 		}
