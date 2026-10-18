@@ -216,3 +216,11 @@ checkpoint/close is separate. Disk data exceeds the configured cache/reservation
 budgets, but those budgets do not enforce a total RSS ceiling. Closing/reopening
 does not clear the OS cache. Diagnostics do not contribute latency samples to the
 ordinary benchmark comparisons.
+
+# Total-memory limits
+
+The [total-memory protocol](MEMORY.md) distinguishes cache allowances from a
+whole-deployment memory limit. Its Linux cgroup launcher includes server/client
+descendants and retains out-of-memory failures. Linux enforcement remains
+unqualified on the local Mac; see the
+[local audit](../results/memory-20261018/REPORT.md).
