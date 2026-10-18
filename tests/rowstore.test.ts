@@ -21,7 +21,7 @@ import {
 	type RowSnapshot,
 	RowStore,
 } from "../src/rowstore.js";
-import { decodeHeader } from "../src/seek.js";
+import { decodeHeader, encodeHeader } from "../src/seek.js";
 
 async function* batch(mutations: RowMutation[]) {
 	yield* mutations;
@@ -122,6 +122,48 @@ test("mutable rows preserve sparse IDs, atomic batches, tombstones and old snaps
 			"twice",
 		);
 		await assert.rejects(env.store.create(), /ROWSTORE_EXISTS/);
+	} finally {
+		await env.close();
+	}
+});
+
+test("versioned commit boundaries preserve the entire published block prefix", async () => {
+	const env = await setup();
+	try {
+		const initial = decodeHeader(
+			await readFile(join(env.directory, "CURRENT.rowstore")),
+		);
+		assert.equal(initial.v, 2);
+		assert.equal(initial.end, 4096);
+		await env.store.commit(batch([{ id: 1, value: randomBytes(5000) }]));
+		const manifest = await readFile(join(env.directory, "CURRENT.rowstore")),
+			state = decodeHeader(manifest),
+			path = join(env.directory, state.file),
+			prefix = await readFile(path);
+		assert.equal(state.end % 4096, 0);
+		assert.equal(prefix.length, state.end);
+		await env.store.commit(
+			batch(
+				Array.from({ length: 128 }, (_, id) => ({
+					id,
+					value: Buffer.from(`revision:${id}`),
+				})),
+			),
+		);
+		assert.deepEqual((await readFile(path)).subarray(0, state.end), prefix);
+		assert.equal(
+			decodeHeader(await readFile(join(env.directory, "CURRENT.rowstore")))
+				.end % 4096,
+			0,
+		);
+		const latest = await readFile(join(env.directory, "CURRENT.rowstore"));
+		await writeFile(
+			join(env.directory, "CURRENT.rowstore"),
+			encodeHeader({ ...decodeHeader(latest), v: 1 }),
+		);
+		await assert.rejects(env.store.snapshot(), /ROWSTORE_MANIFEST/);
+		await assert.rejects(env.store.commit(batch([])), /ROWSTORE_MANIFEST/);
+		await writeFile(join(env.directory, "CURRENT.rowstore"), latest);
 	} finally {
 		await env.close();
 	}
@@ -539,7 +581,7 @@ test("compressed data corruption and invalid IDs do not produce successful reads
 			),
 			file = await open(join(env.directory, state.file), "r+");
 		try {
-			await file.write(Buffer.from([0xff]), 0, 1, 256 + 16);
+			await file.write(Buffer.from([0xff]), 0, 1, 4096 + 16);
 		} finally {
 			await file.close();
 		}

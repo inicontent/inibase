@@ -10,11 +10,12 @@ import { decodeHeader, encodeHeader, readExact, writeExact } from "./seek.js";
 import { checksum } from "./updatelog.js";
 
 const HEADER = 256,
+	ALIGNMENT = 4096,
 	NODE = 192,
 	CHUNK = 32768,
 	WORKING = 256 * 1024;
 interface State {
-	v: 1;
+	v: 2;
 	kind: "rowstore";
 	file: string;
 	compression: boolean;
@@ -40,7 +41,7 @@ const nibble = (id: number, shift: number) => Math.floor(id / 2 ** shift) % 16;
 const prefix = (id: number, shift: number) => Math.floor(id / 2 ** (shift + 4));
 const integer = (value: number) => Number.isSafeInteger(value) && value >= 0;
 const identity = (state: State) => ({
-	v: 1,
+	v: 2,
 	kind: "rowstore-data",
 	file: state.file,
 	compression: state.compression,
@@ -60,14 +61,15 @@ const current = (
 			const state = decodeHeader(bytes) as State;
 			if (
 				(await file.stat()).size !== HEADER ||
-				state.v !== 1 ||
+				state.v !== 2 ||
 				state.kind !== "rowstore" ||
 				!/^[a-f0-9-]{36}\.rows$/.test(state.file) ||
 				typeof state.compression !== "boolean" ||
 				![state.root, state.end, state.rows, state.sequence].every(integer) ||
-				state.end < HEADER ||
+				state.end < ALIGNMENT ||
+				state.end % ALIGNMENT !== 0 ||
 				(state.root !== 0 &&
-					(state.root < HEADER || state.root + NODE > state.end)) ||
+					(state.root < ALIGNMENT || state.root + NODE > state.end)) ||
 				(state.root === 0 && state.rows !== 0)
 			)
 				throw new Error("ROWSTORE_MANIFEST");
@@ -243,7 +245,7 @@ const nodeAt = async (
 	end: number,
 	below = 56,
 ): Promise<Node> => {
-	if (!integer(offset) || offset < HEADER || offset + NODE > end)
+	if (!integer(offset) || offset < ALIGNMENT || offset + NODE > end)
 		throw new Error("ROWSTORE_POINTER");
 	const bytes = Buffer.alloc(NODE);
 	await read(offset, bytes);
@@ -372,12 +374,12 @@ export class RowStore {
 					if (error.code !== "ENOENT") throw error;
 				}
 				const state: State = {
-					v: 1,
+					v: 2,
 					kind: "rowstore",
 					file: `${randomUUID()}.rows`,
 					compression,
 					root: 0,
-					end: HEADER,
+					end: ALIGNMENT,
 					rows: 0,
 					sequence: 0,
 				};
@@ -386,6 +388,7 @@ export class RowStore {
 					"wx",
 					async (file) => {
 						await writeExact(file, encodeHeader(identity(state)), 0);
+						await file.truncate(ALIGNMENT);
 						await file.sync();
 					},
 				);
@@ -512,6 +515,10 @@ export class RowStore {
 										append,
 									);
 								}
+								// Never append into a block containing an acknowledged prefix.
+								const padding =
+									(ALIGNMENT - (append.end % ALIGNMENT)) % ALIGNMENT;
+								if (padding) await append.append(Buffer.alloc(padding));
 								await append.finish();
 								await encoder?.close();
 								state.end = append.end;
@@ -567,7 +574,7 @@ export class RowSnapshot {
 			!integer(position) ||
 			!integer(remaining) ||
 			!integer(span) ||
-			position < HEADER ||
+			position < ALIGNMENT ||
 			!integer(end) ||
 			end > node.offset ||
 			(remaining === 0 && span !== 0)

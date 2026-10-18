@@ -1,4 +1,4 @@
-# Mutable row-storage kernel, experimental version 1
+# Mutable row-storage kernel, experimental version 2
 
 `src/rowstore.ts` implements durable byte-record batches, stable numeric-ID
 lookups, deletes and retained read snapshots. It is an **internal kernel**, not
@@ -28,6 +28,16 @@ paths. Published bytes are immutable. Nodes created within the current batch
 can be updated in place because no published snapshot can reach them. This
 avoids retaining a fresh path for every insertion within a bulk transaction.
 
+Version 2 starts the append region at 4 KiB and pads every committed end to a
+4 KiB boundary. The next transaction never modifies a filesystem block containing
+the previous committed prefix under this block-size assumption. Version 1 lacked
+this separation; its process-crash samples are retained as intermediate evidence,
+not a power-loss-safe format claim. The format-2 kernel rejects version 1 rather
+than attempting an in-place upgrade. This changes only experimental files;
+existing public iniBase databases are unaffected. Larger storage sectors/write
+units and actual failure atomicity still require platform qualification.
+Padding adds at most 4,095 bytes per transaction, including bulk batches.
+
 Commit synchronizes the data/index append file, writes and synchronizes a
 checksummed staged manifest, renames it over CURRENT.rowstore and synchronizes
 the directory. Success is returned only afterward. Synchronization is not
@@ -45,8 +55,8 @@ returns an error: callers must treat such a commit outcome as indeterminate.
 
 ## Resource accounting
 
-Mutations reserve 512 KiB before allocating their workspace, or 256 KiB when
-the configured database budget is smaller. Decompression reserves 256 KiB.
+Mutations reserve up to 512 KiB before allocating their workspace, capped at
+the configured database allowance (256 KiB minimum). Decompression reserves 256 KiB.
 That includes a 64 KiB append buffer, 32 KiB raw chunk, bounded reusable
 compression output/native context allowance and bounded index path state.
 A private dirty-page cache holds at most sixteen 4 KiB index pages, or four at
