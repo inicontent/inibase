@@ -1,0 +1,570 @@
+{
+  "workloadVersion": "mutable-row-kernel-1",
+  "options": {
+    "engine": "sqlite",
+    "directory": "/Users/karimamahtil/APPS/inibase/.work/postgres-compare-tlaAci",
+    "modulePath": "/Users/karimamahtil/APPS/inibase/dist/index.js",
+    "budget": 16777216,
+    "flush": "write-through",
+    "binaryDirectory": "/opt/homebrew/opt/postgresql@18/bin",
+    "rows": 10000,
+    "profile": "compact",
+    "repeat": 1,
+    "samples": 32,
+    "writes": 8,
+    "mixedRounds": 3,
+    "destination": "/Users/karimamahtil/APPS/inibase/benchmark/results/rowstore-20261018/kernel-qualified/sqlite-compact-10000-2.json"
+  },
+  "runtime": {
+    "node": "26.9.0",
+    "acorn": "8.18.0",
+    "ada": "4.0.0",
+    "amaro": "1.1.11",
+    "ares": "1.34.8",
+    "brotli": "1.2.0",
+    "cldr": "48.0",
+    "icu": "78.3",
+    "libffi": "3.8.0",
+    "llhttp": "9.4.3",
+    "merve": "1.2.2",
+    "modules": "147",
+    "napi": "10",
+    "nbytes": "0.1.4",
+    "ncrypto": "0.0.1",
+    "nghttp2": "1.70.0",
+    "nghttp3": "",
+    "ngtcp2": "",
+    "openssl": "3.6.4",
+    "simdjson": "4.6.11",
+    "simdutf": "7.7.0",
+    "sqlite": "3.53.4",
+    "tz": "2026a",
+    "undici": "8.10.2",
+    "unicode": "17.0",
+    "uv": "1.52.1",
+    "uvwasi": "0.0.23",
+    "v8": "14.6.202.34-node.32",
+    "zlib": "1.2.12",
+    "zstd": "1.5.7"
+  },
+  "runtimeBaselineRss": 50675712,
+  "verified": true,
+  "timings": {
+    "create": {
+      "ms": 11.913792,
+      "cpu": {
+        "user": 413,
+        "system": 728
+      }
+    },
+    "bulkInsert": {
+      "ms": 48.104916,
+      "cpu": {
+        "user": 13578,
+        "system": 3833
+      }
+    },
+    "randomID": {
+      "ms": 0.6704999999999899,
+      "cpu": {
+        "user": 825,
+        "system": 67
+      }
+    },
+    "sequentialID": {
+      "ms": 0.2020830000000018,
+      "cpu": {
+        "user": 178,
+        "system": 24
+      }
+    },
+    "hotID": {
+      "ms": 0.19166699999999537,
+      "cpu": {
+        "user": 230,
+        "system": 27
+      }
+    },
+    "missingID": {
+      "ms": 0.13449999999998852,
+      "cpu": {
+        "user": 147,
+        "system": 22
+      }
+    },
+    "durableInsert": {
+      "ms": 28.45962499999999,
+      "cpu": {
+        "user": 319,
+        "system": 489
+      }
+    },
+    "durableUpdate": {
+      "ms": 27.940958999999992,
+      "cpu": {
+        "user": 324,
+        "system": 512
+      }
+    },
+    "durableDelete": {
+      "ms": 27.012249999999995,
+      "cpu": {
+        "user": 344,
+        "system": 571
+      }
+    },
+    "reopen": {
+      "ms": 6.9430830000000014,
+      "cpu": {
+        "user": 560,
+        "system": 2812
+      }
+    },
+    "verifyEveryID": {
+      "ms": 50.374166,
+      "cpu": {
+        "user": 49031,
+        "system": 8424
+      }
+    }
+  },
+  "latency": {
+    "randomID": [
+      0.3402499999999975,
+      0.02383299999999622,
+      0.012915999999989936,
+      0.011124999999992724,
+      0.010541000000003464,
+      0.008166000000002782,
+      0.009875000000008072,
+      0.007750000000001478,
+      0.011082999999999288,
+      0.012291000000004715,
+      0.009457999999995081,
+      0.008458000000004517,
+      0.01074999999998738,
+      0.008665999999990959,
+      0.009917000000001508,
+      0.008791999999999689,
+      0.017750000000006594,
+      0.00895899999999017,
+      0.01070900000000563,
+      0.009500000000002728,
+      0.010000000000005116,
+      0.007750000000001478,
+      0.0073330000000026985,
+      0.007042000000012649,
+      0.009208000000000993,
+      0.008416000000011081,
+      0.0062500000000085265,
+      0.0061249999999972715,
+      0.0061249999999972715,
+      0.005707999999998492,
+      0.005916999999996619,
+      0.00883300000000986
+    ],
+    "sequentialID": [
+      0.02050000000001262,
+      0.0072499999999990905,
+      0.007999999999995566,
+      0.006166000000007443,
+      0.0057910000000021,
+      0.005459000000001879,
+      0.005416999999994232,
+      0.005624999999994884,
+      0.007125000000002046,
+      0.006000000000000227,
+      0.005334000000004835,
+      0.005542000000005487,
+      0.005416999999994232,
+      0.005958999999990056,
+      0.005207999999996105,
+      0.005250000000003752,
+      0.005332999999993149,
+      0.005250000000003752,
+      0.0050829999999990605,
+      0.0050420000000030996,
+      0.005209000000007791,
+      0.005249999999989541,
+      0.004917000000006055,
+      0.0051250000000067075,
+      0.006999999999990791,
+      0.00520899999999358,
+      0.0050420000000030996,
+      0.006624999999999659,
+      0.0051250000000067075,
+      0.004958000000002016,
+      0.005084000000010747,
+      0.005124999999992497
+    ],
+    "hotID": [
+      0.013542000000001053,
+      0.006875000000007958,
+      0.0060829999999896245,
+      0.00549999999999784,
+      0.005415999999996757,
+      0.005291999999997188,
+      0.0051250000000067075,
+      0.005290999999999713,
+      0.007625000000004434,
+      0.0074160000000063064,
+      0.005459000000001879,
+      0.005375000000000796,
+      0.005209000000007791,
+      0.005124999999992497,
+      0.005124999999992497,
+      0.005041000000005624,
+      0.0049999999999954525,
+      0.005041000000005624,
+      0.005083999999996536,
+      0.006666999999993095,
+      0.005167000000000144,
+      0.006541999999996051,
+      0.004958999999999492,
+      0.004958000000002016,
+      0.006708000000003267,
+      0.004958999999999492,
+      0.0049999999999954525,
+      0.005124999999992497,
+      0.005000000000009663,
+      0.0050409999999914135,
+      0.004874999999998408,
+      0.006125000000011482
+    ],
+    "missingID": [
+      0.02433399999999608,
+      0.004874999999998408,
+      0.0036249999999995453,
+      0.003375000000005457,
+      0.003207999999986555,
+      0.0030830000000037217,
+      0.00304199999999355,
+      0.0030000000000001137,
+      0.00666599999999562,
+      0.004374999999996021,
+      0.003249999999994202,
+      0.0030830000000037217,
+      0.003166999999990594,
+      0.003250000000008413,
+      0.004457999999999629,
+      0.003124999999997158,
+      0.00304199999999355,
+      0.0030000000000001137,
+      0.0029590000000041528,
+      0.004124999999987722,
+      0.0030420000000077607,
+      0.0027499999999918145,
+      0.0027089999999958536,
+      0.0026670000000024174,
+      0.00420799999999133,
+      0.0027910000000019863,
+      0.002666000000004942,
+      0.0026659999999907313,
+      0.0025830000000013342,
+      0.0026249999999947704,
+      0.0040000000000048885,
+      0.0027919999999994616
+    ],
+    "durableInsert": [
+      3.383499999999998,
+      3.164332999999999,
+      4.046417000000005,
+      3.7810830000000095,
+      3.301124999999999,
+      3.7013749999999987,
+      3.0844589999999954,
+      3.990542000000005
+    ],
+    "durableUpdate": [
+      3.1345000000000027,
+      3.758499999999998,
+      3.1944579999999974,
+      3.9954579999999993,
+      3.0477500000000077,
+      3.937999999999988,
+      3.857250000000022,
+      3.0008339999999976
+    ],
+    "durableDelete": [
+      3.08491699999999,
+      3.8254579999999976,
+      3.9664999999999964,
+      3.0028330000000096,
+      2.131833999999998,
+      4.106666999999987,
+      3.762625000000014,
+      3.1215830000000153
+    ]
+  },
+  "phases": [
+    {
+      "name": "create",
+      "processMemory": {
+        "rss": 50692096,
+        "heapTotal": 8798208,
+        "heapUsed": 6819952,
+        "external": 2583082,
+        "arrayBuffers": 143775
+      },
+      "memory": null
+    },
+    {
+      "name": "create:end",
+      "processMemory": {
+        "rss": 52166656,
+        "heapTotal": 9060352,
+        "heapUsed": 6643008,
+        "external": 2640073,
+        "arrayBuffers": 143791
+      },
+      "memory": null
+    },
+    {
+      "name": "bulkInsert",
+      "processMemory": {
+        "rss": 52166656,
+        "heapTotal": 9060352,
+        "heapUsed": 6643936,
+        "external": 2640073,
+        "arrayBuffers": 143791
+      },
+      "memory": null
+    },
+    {
+      "name": "bulkInsert:end",
+      "processMemory": {
+        "rss": 59719680,
+        "heapTotal": 11943936,
+        "heapUsed": 6957472,
+        "external": 3033673,
+        "arrayBuffers": 340591
+      },
+      "memory": null
+    },
+    {
+      "name": "randomID",
+      "processMemory": {
+        "rss": 59719680,
+        "heapTotal": 11943936,
+        "heapUsed": 6959496,
+        "external": 3033673,
+        "arrayBuffers": 340591
+      },
+      "memory": null
+    },
+    {
+      "name": "randomID:end",
+      "processMemory": {
+        "rss": 59965440,
+        "heapTotal": 11943936,
+        "heapUsed": 7129792,
+        "external": 2938019,
+        "arrayBuffers": 411401
+      },
+      "memory": null
+    },
+    {
+      "name": "sequentialID",
+      "processMemory": {
+        "rss": 59965440,
+        "heapTotal": 11943936,
+        "heapUsed": 7131960,
+        "external": 2938019,
+        "arrayBuffers": 411401
+      },
+      "memory": null
+    },
+    {
+      "name": "sequentialID:end",
+      "processMemory": {
+        "rss": 60063744,
+        "heapTotal": 11943936,
+        "heapUsed": 7219816,
+        "external": 2942956,
+        "arrayBuffers": 416338
+      },
+      "memory": null
+    },
+    {
+      "name": "hotID",
+      "processMemory": {
+        "rss": 60063744,
+        "heapTotal": 11943936,
+        "heapUsed": 7222248,
+        "external": 2942956,
+        "arrayBuffers": 416338
+      },
+      "memory": null
+    },
+    {
+      "name": "hotID:end",
+      "processMemory": {
+        "rss": 60145664,
+        "heapTotal": 11943936,
+        "heapUsed": 7323064,
+        "external": 2947916,
+        "arrayBuffers": 421298
+      },
+      "memory": null
+    },
+    {
+      "name": "missingID",
+      "processMemory": {
+        "rss": 60145664,
+        "heapTotal": 11943936,
+        "heapUsed": 7325616,
+        "external": 2947916,
+        "arrayBuffers": 421298
+      },
+      "memory": null
+    },
+    {
+      "name": "missingID:end",
+      "processMemory": {
+        "rss": 60211200,
+        "heapTotal": 11943936,
+        "heapUsed": 7379944,
+        "external": 2947916,
+        "arrayBuffers": 421298
+      },
+      "memory": null
+    },
+    {
+      "name": "durableInsert",
+      "processMemory": {
+        "rss": 60211200,
+        "heapTotal": 11943936,
+        "heapUsed": 7382016,
+        "external": 2947916,
+        "arrayBuffers": 421298
+      },
+      "memory": null
+    },
+    {
+      "name": "durableInsert:end",
+      "processMemory": {
+        "rss": 60276736,
+        "heapTotal": 11943936,
+        "heapUsed": 7423560,
+        "external": 2949220,
+        "arrayBuffers": 422602
+      },
+      "memory": null
+    },
+    {
+      "name": "durableUpdate",
+      "processMemory": {
+        "rss": 60276736,
+        "heapTotal": 11943936,
+        "heapUsed": 7425352,
+        "external": 2949220,
+        "arrayBuffers": 422602
+      },
+      "memory": null
+    },
+    {
+      "name": "durableUpdate:end",
+      "processMemory": {
+        "rss": 60325888,
+        "heapTotal": 11943936,
+        "heapUsed": 7466528,
+        "external": 2950528,
+        "arrayBuffers": 423910
+      },
+      "memory": null
+    },
+    {
+      "name": "durableDelete",
+      "processMemory": {
+        "rss": 60325888,
+        "heapTotal": 11943936,
+        "heapUsed": 7468320,
+        "external": 2950528,
+        "arrayBuffers": 423910
+      },
+      "memory": null
+    },
+    {
+      "name": "durableDelete:end",
+      "processMemory": {
+        "rss": 60424192,
+        "heapTotal": 11943936,
+        "heapUsed": 7491008,
+        "external": 2950528,
+        "arrayBuffers": 423910
+      },
+      "memory": null
+    },
+    {
+      "name": "reopen",
+      "processMemory": {
+        "rss": 60424192,
+        "heapTotal": 11943936,
+        "heapUsed": 7493000,
+        "external": 2950528,
+        "arrayBuffers": 423910
+      },
+      "memory": null
+    },
+    {
+      "name": "reopen:end",
+      "processMemory": {
+        "rss": 60440576,
+        "heapTotal": 11943936,
+        "heapUsed": 7509016,
+        "external": 2950528,
+        "arrayBuffers": 423910
+      },
+      "memory": null
+    },
+    {
+      "name": "verifyEveryID",
+      "processMemory": {
+        "rss": 60440576,
+        "heapTotal": 11943936,
+        "heapUsed": 7510008,
+        "external": 2950528,
+        "arrayBuffers": 423910
+      },
+      "memory": null
+    },
+    {
+      "name": "verifyEveryID:end",
+      "processMemory": {
+        "rss": 67436544,
+        "heapTotal": 12992512,
+        "heapUsed": 8749760,
+        "external": 3036138,
+        "arrayBuffers": 509520
+      },
+      "memory": null
+    }
+  ],
+  "errors": [],
+  "commitTraces": [],
+  "settings": {
+    "synchronous": 2,
+    "journal_mode": "wal",
+    "fullfsync": 1,
+    "checkpoint_fullfsync": 1,
+    "cache_size": -16384
+  },
+  "usageEnd": {
+    "userCPUTime": 133241,
+    "systemCPUTime": 30084,
+    "maxRSS": 65856,
+    "sharedMemorySize": 0,
+    "unsharedDataSize": 0,
+    "unsharedStackSize": 0,
+    "minorPageFault": 4762,
+    "majorPageFault": 105,
+    "swappedOut": 0,
+    "fsRead": 0,
+    "fsWrite": 0,
+    "ipcSent": 22,
+    "ipcReceived": 0,
+    "signalsCount": 0,
+    "voluntaryContextSwitches": 153,
+    "involuntaryContextSwitches": 277
+  }
+}

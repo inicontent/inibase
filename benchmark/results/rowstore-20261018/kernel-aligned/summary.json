@@ -1,0 +1,2207 @@
+{
+  "environment": {
+    "version": 1,
+    "date": "2026-10-18T20:34:17.499Z",
+    "options": {
+      "scenario": "rowstore",
+      "flush": "write-through",
+      "rows": "1000,10000,100000",
+      "profiles": "compact,cms,entropy",
+      "repeats": "3",
+      "samples": "32",
+      "writes": "8",
+      "output": "benchmark/results/rowstore-20261018/kernel-aligned"
+    },
+    "budget": 16777216,
+    "flush": "write-through",
+    "runtime": {
+      "node": "26.9.0",
+      "acorn": "8.18.0",
+      "ada": "4.0.0",
+      "amaro": "1.1.11",
+      "ares": "1.34.8",
+      "brotli": "1.2.0",
+      "cldr": "48.0",
+      "icu": "78.3",
+      "libffi": "3.8.0",
+      "llhttp": "9.4.3",
+      "merve": "1.2.2",
+      "modules": "147",
+      "napi": "10",
+      "nbytes": "0.1.4",
+      "ncrypto": "0.0.1",
+      "nghttp2": "1.70.0",
+      "nghttp3": "",
+      "ngtcp2": "",
+      "openssl": "3.6.4",
+      "simdjson": "4.6.11",
+      "simdutf": "7.7.0",
+      "sqlite": "3.53.4",
+      "tz": "2026a",
+      "undici": "8.10.2",
+      "unicode": "17.0",
+      "uv": "1.52.1",
+      "uvwasi": "0.0.23",
+      "v8": "14.6.202.34-node.32",
+      "zlib": "1.2.12",
+      "zstd": "1.5.7"
+    },
+    "platform": "darwin",
+    "os": "27.0.0",
+    "cpu": "Apple M5",
+    "ram": 17179869184,
+    "postgres": "postgres (PostgreSQL) 18.6 (Homebrew)",
+    "hashes": {
+      "automatic.js": "9370c2b13ffde2b631e171b5f39fdf2fc6a31d4178bf217cef6dcc1a1e45bf3d",
+      "cli.js": "8f807df8c400aafbded2d87ecdc52060f19ea6a7e28fc65b4d5c74cd80bfafda",
+      "disk-overlay.js": "8d34ce160734f930eca2ccb9f5e6a409d9a23696d16aadf8a6333624de4239f9",
+      "expression.js": "7e999b2969300d5ef9f7a9435fd4659b6e146448b14df74589854a6c5847aa83",
+      "file.js": "0de90ce5dc54b97532ae97a3e86cf2bc5db6268a55d0f32a74b0ced76f1c9dce",
+      "format.js": "3095e3d0f05f7d7809f1db7e7f7f570634b0a5424b7992e1997dc7ba95ae2336",
+      "index.js": "c8f7182acd76e780eeedba5ee66c95ea2e07cb6377707bd1d3b447a6831aafb2",
+      "journal.js": "6078f59c32fd7e5b19a12eff8b73f506eed1884e5b34ba3cdf6e4dc30a40a6b4",
+      "key-index.js": "1147bd63691820780b30eeca01f3d9d0f52919888cad446064fb6e633255eaf4",
+      "overlay.js": "cac35e0995de2726f3931d51aeb87338d738fd5465ceec0d349dc7d6486f49d6",
+      "resources.js": "e99b76e3c27c16c595c2b191615f43865d814f5b041fa2839fd08f97b6354966",
+      "row-encoder.js": "8686b380fa4f9c918ad22f9b29f93b28f05e6edd9b4462a6f5e6598079cfe6cf",
+      "row-index.js": "31be7e011b1fedec5aa6030760e3b859eb922c46b13d40dae9b82956952d727a",
+      "rowpack.js": "fa009188dc3444e691a8dce293d8629506713be07b6bfbcda907f3a2b8662fb0",
+      "rowstore.js": "3fbfb317cd01ef0d0a565f361864ca28173d66b3a2cf69e16ecc2f6e36575797",
+      "seek.js": "67b381b18469fd40421c91a4268e2ed1a1b43186323ec264c5c3e8c95b6f1bf9",
+      "updatelog.js": "93838e2b0c15499d4e09cdac90009003b1500c820de295d6de923bba5e4cf4d2",
+      "utils.js": "f29ddf432c4d3c7d639bea52848af24c2dfd503b2f514095703a1732710dcc43",
+      "utils.server.js": "ecfb602d389487135f18276f6b303c8ea47fa93c37ec8d27c104f471c6fe4a16"
+    },
+    "tools": {
+      "run.mjs": "4cd508d06ea13564783783371ce87d6c1a746b30f6d8bc1f52d2dfc045219de5",
+      "worker.mjs": "4ce2cf73c60a7f568e62a5798f07e93a9664dcdd4e75fb3c48bd18d7a0bf0bb0",
+      "adapter.mjs": "5c19d5c8d52b498c22fd3f936c15ea0f8fcc0c103ec4a614b457f2a19cd4112c",
+      "concurrent.mjs": "9e2f95fb13d1f2bb0a74ebd83049a723cffe13217fabf3649ea20b90da863b07",
+      "recovery.mjs": "676955f96b8729c422de2b73a12fdf431c10a2b8d6c4f280d86422fa1a71f0ae",
+      "rowstore.mjs": "6630b05eac0dc81cdff4278abb3288cf58e99b737c060cf83050997b3c045849",
+      "package.json": "b2d0f55e376860a3809f8974939a8a80a8da9b6ddd980edcd897894cf1622c49",
+      "package-lock.json": "92eb9c752e2098e8363095ce9c12d1c06bcd8d3686416d8c03d348eed6a1b35b"
+    },
+    "modulePath": "/Users/karimamahtil/APPS/inibase/dist/index.js",
+    "binaryDirectory": "/opt/homebrew/opt/postgresql@18/bin",
+    "cache": "OS cache is not evicted; reopen is not cold disk",
+    "memory": "Cache allowances are not total memory limits. PostgreSQL RSS sums double-count shared mappings. V8 heap cap is not an RSS limit.",
+    "flushPolicy": "SQLite fullfsync/checkpoint_fullfsync ON; PostgreSQL fsync_writethrough on Darwin, fsync elsewhere; iniBase retains Node FileHandle.sync. Actual hardware power loss not qualified.",
+    "transport": "PostgreSQL persistent Unix-domain connection; embedded engines direct calls. Connection setup reported separately."
+  },
+  "audit": {
+    "trials": 81,
+    "verified": 81,
+    "failures": [],
+    "operationErrors": [],
+    "samplerErrors": []
+  },
+  "summaries": [
+    {
+      "profile": "compact",
+      "rows": 1000,
+      "engine": "inibase",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "create": 28.844708000000004,
+        "bulkInsert": 50.707834,
+        "randomID": 6.171209000000005,
+        "sequentialID": 4.247666999999993,
+        "hotID": 4.1887920000000065,
+        "missingID": 3.649084000000002,
+        "durableInsert": 121.83808299999998,
+        "durableUpdate": 122.48641599999996,
+        "durableDelete": 123.962916,
+        "reopen": 0.3904160000000161,
+        "verifyEveryID": 145.53679199999993
+      },
+      "latency": {
+        "randomID": {
+          "samples": 96,
+          "p50": 0.1553339999999963,
+          "p95": 0.26916699999999594,
+          "p99": null
+        },
+        "sequentialID": {
+          "samples": 96,
+          "p50": 0.12920800000000554,
+          "p95": 0.18933400000000233,
+          "p99": null
+        },
+        "hotID": {
+          "samples": 96,
+          "p50": 0.12583300000000008,
+          "p95": 0.18687499999998636,
+          "p99": null
+        },
+        "missingID": {
+          "samples": 96,
+          "p50": 0.07504199999999628,
+          "p95": 0.1436250000000001,
+          "p99": null
+        },
+        "durableInsert": {
+          "samples": 24,
+          "p50": 14.90787499999999,
+          "p95": 18.981625000000008,
+          "p99": null
+        },
+        "durableUpdate": {
+          "samples": 24,
+          "p50": 15.095583000000005,
+          "p95": 16.79970800000001,
+          "p99": null
+        },
+        "durableDelete": {
+          "samples": 24,
+          "p50": 15.70474999999999,
+          "p95": 17.343166999999994,
+          "p99": null
+        }
+      },
+      "commitStages": {
+        "appended": {
+          "samples": 72,
+          "p50CumulativeMs": 4.027832999999987
+        },
+        "data-synced": {
+          "samples": 72,
+          "p50CumulativeMs": 7.406042000000014
+        },
+        "manifest-synced": {
+          "samples": 72,
+          "p50CumulativeMs": 11.400417000000004
+        },
+        "published": {
+          "samples": 72,
+          "p50CumulativeMs": 14.663999999999987
+        },
+        "completed": {
+          "samples": 72,
+          "p50CumulativeMs": 14.783999999999992
+        }
+      },
+      "peakWorkerRss": 83263488,
+      "peakSampledTreeRss": 78446592,
+      "peakAccountedBytes": 524288,
+      "allocated": 471040,
+      "logical": 467200,
+      "peakTemporary": 60
+    },
+    {
+      "profile": "compact",
+      "rows": 1000,
+      "engine": "sqlite",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "create": 9.208667000000002,
+        "bulkInsert": 5.805083000000003,
+        "randomID": 0.7211670000000012,
+        "sequentialID": 0.17633299999999963,
+        "hotID": 0.1729169999999982,
+        "missingID": 0.12491599999999892,
+        "durableInsert": 29.4795,
+        "durableUpdate": 28.041250000000005,
+        "durableDelete": 28.888208000000006,
+        "reopen": 4.8170419999999865,
+        "verifyEveryID": 8.036167000000006
+      },
+      "latency": {
+        "randomID": {
+          "samples": 96,
+          "p50": 0.0071669999999954825,
+          "p95": 0.03162499999999824,
+          "p99": null
+        },
+        "sequentialID": {
+          "samples": 96,
+          "p50": 0.0047919999999948,
+          "p95": 0.006833000000000311,
+          "p99": null
+        },
+        "hotID": {
+          "samples": 96,
+          "p50": 0.004542000000000712,
+          "p95": 0.009332999999998037,
+          "p99": null
+        },
+        "missingID": {
+          "samples": 96,
+          "p50": 0.00274999999999892,
+          "p95": 0.005624999999994884,
+          "p99": null
+        },
+        "durableInsert": {
+          "samples": 24,
+          "p50": 3.9127909999999986,
+          "p95": 4.649499999999996,
+          "p99": null
+        },
+        "durableUpdate": {
+          "samples": 24,
+          "p50": 3.121332999999993,
+          "p95": 4.0822080000000085,
+          "p99": null
+        },
+        "durableDelete": {
+          "samples": 24,
+          "p50": 3.8359159999999974,
+          "p95": 4.121458000000004,
+          "p99": null
+        }
+      },
+      "commitStages": {},
+      "peakWorkerRss": 59244544,
+      "peakSampledTreeRss": 0,
+      "peakAccountedBytes": 0,
+      "allocated": 180224,
+      "logical": 180224,
+      "peakTemporary": 0
+    },
+    {
+      "profile": "compact",
+      "rows": 1000,
+      "engine": "postgres",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "create": 9.916542,
+        "bulkInsert": 7.801333,
+        "randomID": 2.539459000000001,
+        "sequentialID": 1.2681660000000008,
+        "hotID": 1.4140000000000015,
+        "missingID": 1.3598750000000024,
+        "durableInsert": 28.791125,
+        "durableUpdate": 31.868459,
+        "durableDelete": 31.82912499999999,
+        "reopen": 3.5139159999999947,
+        "verifyEveryID": 36.433041
+      },
+      "latency": {
+        "randomID": {
+          "samples": 96,
+          "p50": 0.05095800000000139,
+          "p95": 0.163415999999998,
+          "p99": null
+        },
+        "sequentialID": {
+          "samples": 96,
+          "p50": 0.03733400000000131,
+          "p95": 0.06129199999999457,
+          "p99": null
+        },
+        "hotID": {
+          "samples": 96,
+          "p50": 0.03787499999999966,
+          "p95": 0.096584,
+          "p99": null
+        },
+        "missingID": {
+          "samples": 96,
+          "p50": 0.034832999999999004,
+          "p95": 0.0794169999999994,
+          "p99": null
+        },
+        "durableInsert": {
+          "samples": 24,
+          "p50": 3.820999999999998,
+          "p95": 4.25958399999999,
+          "p99": null
+        },
+        "durableUpdate": {
+          "samples": 24,
+          "p50": 3.9669159999999977,
+          "p95": 4.215417000000002,
+          "p99": null
+        },
+        "durableDelete": {
+          "samples": 24,
+          "p50": 3.962292000000005,
+          "p95": 4.552249999999987,
+          "p99": null
+        }
+      },
+      "commitStages": {},
+      "peakWorkerRss": 68599808,
+      "peakSampledTreeRss": 123666432,
+      "peakAccountedBytes": 0,
+      "allocated": 41443328,
+      "logical": 41388833,
+      "peakTemporary": 0
+    },
+    {
+      "profile": "compact",
+      "rows": 10000,
+      "engine": "inibase",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "create": 27.054291999999997,
+        "bulkInsert": 459.96333400000003,
+        "randomID": 6.16575000000006,
+        "sequentialID": 4.403042000000028,
+        "hotID": 4.217583999999988,
+        "missingID": 2.471125000000029,
+        "durableInsert": 110.55574999999999,
+        "durableUpdate": 120.25941599999999,
+        "durableDelete": 125.74487500000009,
+        "reopen": 0.3591670000000704,
+        "verifyEveryID": 1269.516208
+      },
+      "latency": {
+        "randomID": {
+          "samples": 96,
+          "p50": 0.16112500000002683,
+          "p95": 0.2528329999999528,
+          "p99": null
+        },
+        "sequentialID": {
+          "samples": 96,
+          "p50": 0.13458300000002055,
+          "p95": 0.20641699999998764,
+          "p99": null
+        },
+        "hotID": {
+          "samples": 96,
+          "p50": 0.12912500000004457,
+          "p95": 0.16541599999999335,
+          "p99": null
+        },
+        "missingID": {
+          "samples": 96,
+          "p50": 0.07345900000001393,
+          "p95": 0.13320900000002212,
+          "p99": null
+        },
+        "durableInsert": {
+          "samples": 24,
+          "p50": 13.710042000000044,
+          "p95": 15.899332999999956,
+          "p99": null
+        },
+        "durableUpdate": {
+          "samples": 24,
+          "p50": 14.96829200000002,
+          "p95": 17.00350000000003,
+          "p99": null
+        },
+        "durableDelete": {
+          "samples": 24,
+          "p50": 15.720750000000066,
+          "p95": 18.063792000000035,
+          "p99": null
+        }
+      },
+      "commitStages": {
+        "appended": {
+          "samples": 72,
+          "p50CumulativeMs": 3.9201249999999845
+        },
+        "data-synced": {
+          "samples": 72,
+          "p50CumulativeMs": 7.3937499999999545
+        },
+        "manifest-synced": {
+          "samples": 72,
+          "p50CumulativeMs": 10.755415999999968
+        },
+        "published": {
+          "samples": 72,
+          "p50CumulativeMs": 14.454207999999994
+        },
+        "completed": {
+          "samples": 72,
+          "p50CumulativeMs": 14.649792000000048
+        }
+      },
+      "peakWorkerRss": 101695488,
+      "peakSampledTreeRss": 101285888,
+      "peakAccountedBytes": 524288,
+      "allocated": 3788800,
+      "logical": 3784960,
+      "peakTemporary": 60
+    },
+    {
+      "profile": "compact",
+      "rows": 10000,
+      "engine": "sqlite",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "create": 9.627415999999997,
+        "bulkInsert": 48.943833000000005,
+        "randomID": 0.6420420000000036,
+        "sequentialID": 0.19170800000000554,
+        "hotID": 0.18087500000000034,
+        "missingID": 0.12995800000000202,
+        "durableInsert": 24.28045800000001,
+        "durableUpdate": 26.915000000000006,
+        "durableDelete": 26.918000000000006,
+        "reopen": 6.891834000000017,
+        "verifyEveryID": 52.375833
+      },
+      "latency": {
+        "randomID": {
+          "samples": 96,
+          "p50": 0.008459000000001993,
+          "p95": 0.023208999999994262,
+          "p99": null
+        },
+        "sequentialID": {
+          "samples": 96,
+          "p50": 0.004958999999999492,
+          "p95": 0.008834000000007336,
+          "p99": null
+        },
+        "hotID": {
+          "samples": 96,
+          "p50": 0.005290999999999713,
+          "p95": 0.026542000000006283,
+          "p99": null
+        },
+        "missingID": {
+          "samples": 96,
+          "p50": 0.0028750000000030695,
+          "p95": 0.005958000000006791,
+          "p99": null
+        },
+        "durableInsert": {
+          "samples": 24,
+          "p50": 3.016124999999988,
+          "p95": 4.018709000000001,
+          "p99": null
+        },
+        "durableUpdate": {
+          "samples": 24,
+          "p50": 3.1349170000000015,
+          "p95": 4.144041000000001,
+          "p99": null
+        },
+        "durableDelete": {
+          "samples": 24,
+          "p50": 3.1570409999999924,
+          "p95": 4.146791999999991,
+          "p99": null
+        }
+      },
+      "commitStages": {},
+      "peakWorkerRss": 75726848,
+      "peakSampledTreeRss": 61997056,
+      "peakAccountedBytes": 0,
+      "allocated": 1785856,
+      "logical": 1785856,
+      "peakTemporary": 0
+    },
+    {
+      "profile": "compact",
+      "rows": 10000,
+      "engine": "postgres",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "create": 12.807916999999996,
+        "bulkInsert": 73.1105,
+        "randomID": 3.49620800000001,
+        "sequentialID": 1.3931249999999977,
+        "hotID": 1.9325420000000122,
+        "missingID": 1.1788749999999766,
+        "durableInsert": 29.577708,
+        "durableUpdate": 30.86029099999999,
+        "durableDelete": 31.21549999999999,
+        "reopen": 3.2894170000000145,
+        "verifyEveryID": 271.494875
+      },
+      "latency": {
+        "randomID": {
+          "samples": 96,
+          "p50": 0.04800000000000182,
+          "p95": 0.4890840000000054,
+          "p99": null
+        },
+        "sequentialID": {
+          "samples": 96,
+          "p50": 0.04016599999999926,
+          "p95": 0.06937499999999375,
+          "p99": null
+        },
+        "hotID": {
+          "samples": 96,
+          "p50": 0.04966699999999946,
+          "p95": 0.17262499999998226,
+          "p99": null
+        },
+        "missingID": {
+          "samples": 96,
+          "p50": 0.0359590000000054,
+          "p95": 0.12650000000002137,
+          "p99": null
+        },
+        "durableInsert": {
+          "samples": 24,
+          "p50": 3.902415999999988,
+          "p95": 4.226500000000016,
+          "p99": null
+        },
+        "durableUpdate": {
+          "samples": 24,
+          "p50": 3.9538340000000005,
+          "p95": 8.826291999999995,
+          "p99": null
+        },
+        "durableDelete": {
+          "samples": 24,
+          "p50": 3.938749999999999,
+          "p95": 10.346249999999998,
+          "p99": null
+        }
+      },
+      "commitStages": {},
+      "peakWorkerRss": 99958784,
+      "peakSampledTreeRss": 156663808,
+      "peakAccountedBytes": 0,
+      "allocated": 43491328,
+      "logical": 43436837,
+      "peakTemporary": 0
+    },
+    {
+      "profile": "compact",
+      "rows": 100000,
+      "engine": "inibase",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "create": 38.265917,
+        "bulkInsert": 4275.906041,
+        "randomID": 6.066499999999905,
+        "sequentialID": 4.361583000000792,
+        "hotID": 4.6843330000001515,
+        "missingID": 2.4165409999995973,
+        "durableInsert": 118.96508400000039,
+        "durableUpdate": 122.6949169999998,
+        "durableDelete": 127.78320800000074,
+        "reopen": 0.6295419999996739,
+        "verifyEveryID": 12754.268250000001
+      },
+      "latency": {
+        "randomID": {
+          "samples": 96,
+          "p50": 0.16004200000043056,
+          "p95": 0.24258300000019517,
+          "p99": null
+        },
+        "sequentialID": {
+          "samples": 96,
+          "p50": 0.13374999999996362,
+          "p95": 0.16649999999935972,
+          "p99": null
+        },
+        "hotID": {
+          "samples": 96,
+          "p50": 0.14033300000028248,
+          "p95": 0.18112500000006548,
+          "p99": null
+        },
+        "missingID": {
+          "samples": 96,
+          "p50": 0.07041700000081619,
+          "p95": 0.10799999999926513,
+          "p99": null
+        },
+        "durableInsert": {
+          "samples": 24,
+          "p50": 15.055208000000675,
+          "p95": 16.187541999999667,
+          "p99": null
+        },
+        "durableUpdate": {
+          "samples": 24,
+          "p50": 15.2637909999994,
+          "p95": 16.05445899999995,
+          "p99": null
+        },
+        "durableDelete": {
+          "samples": 24,
+          "p50": 15.547833999999966,
+          "p95": 17.016583000000537,
+          "p99": null
+        }
+      },
+      "commitStages": {
+        "appended": {
+          "samples": 72,
+          "p50CumulativeMs": 3.9328749999995125
+        },
+        "data-synced": {
+          "samples": 72,
+          "p50CumulativeMs": 7.3269579999996495
+        },
+        "manifest-synced": {
+          "samples": 72,
+          "p50CumulativeMs": 11.31854199999998
+        },
+        "published": {
+          "samples": 72,
+          "p50CumulativeMs": 14.682625000000371
+        },
+        "completed": {
+          "samples": 72,
+          "p50CumulativeMs": 14.865832999999839
+        }
+      },
+      "peakWorkerRss": 142508032,
+      "peakSampledTreeRss": 142508032,
+      "peakAccountedBytes": 524288,
+      "allocated": 37474304,
+      "logical": 36962560,
+      "peakTemporary": 60
+    },
+    {
+      "profile": "compact",
+      "rows": 100000,
+      "engine": "sqlite",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "create": 9.050209000000002,
+        "bulkInsert": 581.8066670000001,
+        "randomID": 0.952959000000078,
+        "sequentialID": 0.24620800000002419,
+        "hotID": 0.23850000000004457,
+        "missingID": 0.1776670000000422,
+        "durableInsert": 31.43941600000005,
+        "durableUpdate": 31.795583999999963,
+        "durableDelete": 30.928790999999933,
+        "reopen": 12.952416999999969,
+        "verifyEveryID": 472.6337910000001
+      },
+      "latency": {
+        "randomID": {
+          "samples": 96,
+          "p50": 0.012791999999990367,
+          "p95": 0.035290999999915584,
+          "p99": null
+        },
+        "sequentialID": {
+          "samples": 96,
+          "p50": 0.00620800000001509,
+          "p95": 0.010834000000045307,
+          "p99": null
+        },
+        "hotID": {
+          "samples": 96,
+          "p50": 0.006375000000048203,
+          "p95": 0.00975000000005366,
+          "p99": null
+        },
+        "missingID": {
+          "samples": 96,
+          "p50": 0.004125000000044565,
+          "p95": 0.007666999999969448,
+          "p99": null
+        },
+        "durableInsert": {
+          "samples": 24,
+          "p50": 4.000167000000033,
+          "p95": 4.228999999999928,
+          "p99": null
+        },
+        "durableUpdate": {
+          "samples": 24,
+          "p50": 3.953041999999982,
+          "p95": 4.13533300000006,
+          "p99": null
+        },
+        "durableDelete": {
+          "samples": 24,
+          "p50": 3.9632910000000265,
+          "p95": 4.127250000000004,
+          "p99": null
+        }
+      },
+      "commitStages": {},
+      "peakWorkerRss": 121765888,
+      "peakSampledTreeRss": 121503744,
+      "peakAccountedBytes": 0,
+      "allocated": 17858560,
+      "logical": 17858560,
+      "peakTemporary": 0
+    },
+    {
+      "profile": "compact",
+      "rows": 100000,
+      "engine": "postgres",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "create": 12.967417000000001,
+        "bulkInsert": 646.182958,
+        "randomID": 3.5732080000000224,
+        "sequentialID": 1.180250000000001,
+        "hotID": 1.1307920000000422,
+        "missingID": 1.0845000000000482,
+        "durableInsert": 28.18837499999995,
+        "durableUpdate": 29.961125000000038,
+        "durableDelete": 30.756541999999968,
+        "reopen": 4.567957999999976,
+        "verifyEveryID": 2445.430625
+      },
+      "latency": {
+        "randomID": {
+          "samples": 96,
+          "p50": 0.06391599999994924,
+          "p95": 0.31574999999998,
+          "p99": null
+        },
+        "sequentialID": {
+          "samples": 96,
+          "p50": 0.03374999999994088,
+          "p95": 0.06904199999996763,
+          "p99": null
+        },
+        "hotID": {
+          "samples": 96,
+          "p50": 0.034291999999936706,
+          "p95": 0.22462499999994634,
+          "p99": null
+        },
+        "missingID": {
+          "samples": 96,
+          "p50": 0.03312500000004093,
+          "p95": 0.18091600000002472,
+          "p99": null
+        },
+        "durableInsert": {
+          "samples": 24,
+          "p50": 3.797957999999994,
+          "p95": 4.1598339999999325,
+          "p99": null
+        },
+        "durableUpdate": {
+          "samples": 24,
+          "p50": 3.8978329999999914,
+          "p95": 4.208499999999958,
+          "p99": null
+        },
+        "durableDelete": {
+          "samples": 24,
+          "p50": 3.9624580000000833,
+          "p95": 4.1410829999999805,
+          "p99": null
+        }
+      },
+      "commitStages": {},
+      "peakWorkerRss": 147095552,
+      "peakSampledTreeRss": 230899712,
+      "peakAccountedBytes": 0,
+      "allocated": 98459648,
+      "logical": 98405160,
+      "peakTemporary": 0
+    },
+    {
+      "profile": "cms",
+      "rows": 1000,
+      "engine": "inibase",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "create": 29.292832999999998,
+        "bulkInsert": 53.899958,
+        "randomID": 7.567916999999994,
+        "sequentialID": 4.370208000000005,
+        "hotID": 4.470084,
+        "missingID": 2.4930419999999884,
+        "durableInsert": 125.53175000000002,
+        "durableUpdate": 119.04216600000001,
+        "durableDelete": 123.01683400000002,
+        "reopen": 0.4204589999999939,
+        "verifyEveryID": 144.671041
+      },
+      "latency": {
+        "randomID": {
+          "samples": 96,
+          "p50": 0.172040999999993,
+          "p95": 0.8511249999999961,
+          "p99": null
+        },
+        "sequentialID": {
+          "samples": 96,
+          "p50": 0.1374580000000094,
+          "p95": 0.17579200000000128,
+          "p99": null
+        },
+        "hotID": {
+          "samples": 96,
+          "p50": 0.13325000000000387,
+          "p95": 0.19654199999999378,
+          "p99": null
+        },
+        "missingID": {
+          "samples": 96,
+          "p50": 0.07370799999999633,
+          "p95": 0.11258300000000077,
+          "p99": null
+        },
+        "durableInsert": {
+          "samples": 24,
+          "p50": 15.904916999999983,
+          "p95": 18.051124999999985,
+          "p99": null
+        },
+        "durableUpdate": {
+          "samples": 24,
+          "p50": 15.02133299999997,
+          "p95": 16.08533299999999,
+          "p99": null
+        },
+        "durableDelete": {
+          "samples": 24,
+          "p50": 15.83933300000001,
+          "p95": 16.27812499999999,
+          "p99": null
+        }
+      },
+      "commitStages": {
+        "appended": {
+          "samples": 72,
+          "p50CumulativeMs": 4.022999999999968
+        },
+        "data-synced": {
+          "samples": 72,
+          "p50CumulativeMs": 7.432290999999964
+        },
+        "manifest-synced": {
+          "samples": 72,
+          "p50CumulativeMs": 11.402709000000016
+        },
+        "published": {
+          "samples": 72,
+          "p50CumulativeMs": 14.724624999999946
+        },
+        "completed": {
+          "samples": 72,
+          "p50CumulativeMs": 14.88300000000001
+        }
+      },
+      "peakWorkerRss": 83017728,
+      "peakSampledTreeRss": 81133568,
+      "peakAccountedBytes": 524288,
+      "allocated": 524288,
+      "logical": 520448,
+      "peakTemporary": 60
+    },
+    {
+      "profile": "cms",
+      "rows": 1000,
+      "engine": "sqlite",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "create": 8.782084000000001,
+        "bulkInsert": 9.986500000000007,
+        "randomID": 0.5920000000000059,
+        "sequentialID": 0.2183339999999987,
+        "hotID": 0.2299159999999958,
+        "missingID": 0.12566699999999997,
+        "durableInsert": 29.588542000000004,
+        "durableUpdate": 28.211334000000008,
+        "durableDelete": 29.760042,
+        "reopen": 7.089874999999978,
+        "verifyEveryID": 10.47120799999999
+      },
+      "latency": {
+        "randomID": {
+          "samples": 96,
+          "p50": 0.00912500000000449,
+          "p95": 0.017042000000003554,
+          "p99": null
+        },
+        "sequentialID": {
+          "samples": 96,
+          "p50": 0.006250000000001421,
+          "p95": 0.01041699999999679,
+          "p99": null
+        },
+        "hotID": {
+          "samples": 96,
+          "p50": 0.006208999999998355,
+          "p95": 0.011790999999995222,
+          "p99": null
+        },
+        "missingID": {
+          "samples": 96,
+          "p50": 0.0028750000000030695,
+          "p95": 0.020040999999999087,
+          "p99": null
+        },
+        "durableInsert": {
+          "samples": 24,
+          "p50": 3.8220000000000027,
+          "p95": 4.392083999999997,
+          "p99": null
+        },
+        "durableUpdate": {
+          "samples": 24,
+          "p50": 3.8820419999999984,
+          "p95": 4.190542000000008,
+          "p99": null
+        },
+        "durableDelete": {
+          "samples": 24,
+          "p50": 3.870834000000002,
+          "p95": 4.155874999999995,
+          "p99": null
+        }
+      },
+      "commitStages": {},
+      "peakWorkerRss": 64094208,
+      "peakSampledTreeRss": 63143936,
+      "peakAccountedBytes": 0,
+      "allocated": 2035712,
+      "logical": 2035712,
+      "peakTemporary": 0
+    },
+    {
+      "profile": "cms",
+      "rows": 1000,
+      "engine": "postgres",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "create": 10.098666999999999,
+        "bulkInsert": 14.388374999999996,
+        "randomID": 2.780457999999996,
+        "sequentialID": 1.3634169999999983,
+        "hotID": 1.4261669999999995,
+        "missingID": 1.3468329999999966,
+        "durableInsert": 29.522709,
+        "durableUpdate": 29.701166,
+        "durableDelete": 30.803708999999984,
+        "reopen": 3.575458999999995,
+        "verifyEveryID": 39.74562499999999
+      },
+      "latency": {
+        "randomID": {
+          "samples": 96,
+          "p50": 0.05316699999999486,
+          "p95": 0.20066599999999823,
+          "p99": null
+        },
+        "sequentialID": {
+          "samples": 96,
+          "p50": 0.04099999999999682,
+          "p95": 0.05629199999999912,
+          "p99": null
+        },
+        "hotID": {
+          "samples": 96,
+          "p50": 0.043250000000000455,
+          "p95": 0.060208000000002926,
+          "p99": null
+        },
+        "missingID": {
+          "samples": 96,
+          "p50": 0.0350830000000002,
+          "p95": 0.11325000000000074,
+          "p99": null
+        },
+        "durableInsert": {
+          "samples": 24,
+          "p50": 3.945208000000001,
+          "p95": 4.214916000000002,
+          "p99": null
+        },
+        "durableUpdate": {
+          "samples": 24,
+          "p50": 3.9477079999999916,
+          "p95": 4.1102499999999935,
+          "p99": null
+        },
+        "durableDelete": {
+          "samples": 24,
+          "p50": 3.9133329999999944,
+          "p95": 4.210250000000002,
+          "p99": null
+        }
+      },
+      "commitStages": {},
+      "peakWorkerRss": 73138176,
+      "peakSampledTreeRss": 136937472,
+      "peakAccountedBytes": 0,
+      "allocated": 42901504,
+      "logical": 42847013,
+      "peakTemporary": 0
+    },
+    {
+      "profile": "cms",
+      "rows": 10000,
+      "engine": "inibase",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "create": 30.445791999999997,
+        "bulkInsert": 446.98258300000003,
+        "randomID": 6.10916700000007,
+        "sequentialID": 4.482708000000002,
+        "hotID": 4.398874999999975,
+        "missingID": 2.374333999999976,
+        "durableInsert": 123.00108399999999,
+        "durableUpdate": 121.87483299999997,
+        "durableDelete": 122.2428339999999,
+        "reopen": 0.43962499999997817,
+        "verifyEveryID": 1260.4445
+      },
+      "latency": {
+        "randomID": {
+          "samples": 96,
+          "p50": 0.15945799999997234,
+          "p95": 0.2709579999999505,
+          "p99": null
+        },
+        "sequentialID": {
+          "samples": 96,
+          "p50": 0.13587499999999864,
+          "p95": 0.21787499999999227,
+          "p99": null
+        },
+        "hotID": {
+          "samples": 96,
+          "p50": 0.13545800000008512,
+          "p95": 0.2032909999999788,
+          "p99": null
+        },
+        "missingID": {
+          "samples": 96,
+          "p50": 0.07349999999996726,
+          "p95": 0.11770799999999326,
+          "p99": null
+        },
+        "durableInsert": {
+          "samples": 24,
+          "p50": 15.194416999999987,
+          "p95": 16.585624999999936,
+          "p99": null
+        },
+        "durableUpdate": {
+          "samples": 24,
+          "p50": 15.054040999999984,
+          "p95": 16.13979100000006,
+          "p99": null
+        },
+        "durableDelete": {
+          "samples": 24,
+          "p50": 15.209375000000023,
+          "p95": 17.90537500000005,
+          "p99": null
+        }
+      },
+      "commitStages": {
+        "appended": {
+          "samples": 72,
+          "p50CumulativeMs": 3.9851659999999356
+        },
+        "data-synced": {
+          "samples": 72,
+          "p50CumulativeMs": 7.405040999999983
+        },
+        "manifest-synced": {
+          "samples": 72,
+          "p50CumulativeMs": 11.430084000000079
+        },
+        "published": {
+          "samples": 72,
+          "p50CumulativeMs": 14.635041999999999
+        },
+        "completed": {
+          "samples": 72,
+          "p50CumulativeMs": 14.838625000000093
+        }
+      },
+      "peakWorkerRss": 108576768,
+      "peakSampledTreeRss": 108544000,
+      "peakAccountedBytes": 524288,
+      "allocated": 4284416,
+      "logical": 4280576,
+      "peakTemporary": 60
+    },
+    {
+      "profile": "cms",
+      "rows": 10000,
+      "engine": "sqlite",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "create": 10.200542000000002,
+        "bulkInsert": 136.727708,
+        "randomID": 0.7269589999999937,
+        "sequentialID": 0.25883300000000986,
+        "hotID": 0.23474999999999113,
+        "missingID": 0.1321670000000097,
+        "durableInsert": 35.27754200000001,
+        "durableUpdate": 30.927458,
+        "durableDelete": 30.010166999999996,
+        "reopen": 5.787374999999997,
+        "verifyEveryID": 75.80725000000001
+      },
+      "latency": {
+        "randomID": {
+          "samples": 96,
+          "p50": 0.010500000000007503,
+          "p95": 0.02833400000000097,
+          "p99": null
+        },
+        "sequentialID": {
+          "samples": 96,
+          "p50": 0.007125000000002046,
+          "p95": 0.010541999999986729,
+          "p99": null
+        },
+        "hotID": {
+          "samples": 96,
+          "p50": 0.006666999999993095,
+          "p95": 0.009542000000010376,
+          "p99": null
+        },
+        "missingID": {
+          "samples": 96,
+          "p50": 0.0029590000000041528,
+          "p95": 0.01291699999998741,
+          "p99": null
+        },
+        "durableInsert": {
+          "samples": 24,
+          "p50": 4.003000000000014,
+          "p95": 7.462250000000012,
+          "p99": null
+        },
+        "durableUpdate": {
+          "samples": 24,
+          "p50": 3.886792000000014,
+          "p95": 4.1387499999999875,
+          "p99": null
+        },
+        "durableDelete": {
+          "samples": 24,
+          "p50": 3.900416000000007,
+          "p95": 4.1307079999999985,
+          "p99": null
+        }
+      },
+      "commitStages": {},
+      "peakWorkerRss": 104054784,
+      "peakSampledTreeRss": 104022016,
+      "peakAccountedBytes": 0,
+      "allocated": 20512768,
+      "logical": 20512768,
+      "peakTemporary": 0
+    },
+    {
+      "profile": "cms",
+      "rows": 10000,
+      "engine": "postgres",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "create": 10.519833000000002,
+        "bulkInsert": 129.353125,
+        "randomID": 2.612832999999995,
+        "sequentialID": 1.4410420000000101,
+        "hotID": 1.3172909999999831,
+        "missingID": 1.3079170000000033,
+        "durableInsert": 30.782375000000002,
+        "durableUpdate": 31.03216599999999,
+        "durableDelete": 31.07454199999998,
+        "reopen": 3.8295420000000036,
+        "verifyEveryID": 334.4337090000001
+      },
+      "latency": {
+        "randomID": {
+          "samples": 96,
+          "p50": 0.05275000000000318,
+          "p95": 0.13454200000001038,
+          "p99": null
+        },
+        "sequentialID": {
+          "samples": 96,
+          "p50": 0.044749999999993406,
+          "p95": 0.06629100000000676,
+          "p99": null
+        },
+        "hotID": {
+          "samples": 96,
+          "p50": 0.04120800000001168,
+          "p95": 0.05362499999998249,
+          "p99": null
+        },
+        "missingID": {
+          "samples": 96,
+          "p50": 0.037499999999994316,
+          "p95": 0.0719580000000235,
+          "p99": null
+        },
+        "durableInsert": {
+          "samples": 24,
+          "p50": 3.975583999999998,
+          "p95": 4.070166999999998,
+          "p99": null
+        },
+        "durableUpdate": {
+          "samples": 24,
+          "p50": 3.9247500000000173,
+          "p95": 4.186334000000016,
+          "p99": null
+        },
+        "durableDelete": {
+          "samples": 24,
+          "p50": 3.9501670000000217,
+          "p95": 4.122667000000007,
+          "p99": null
+        }
+      },
+      "commitStages": {},
+      "peakWorkerRss": 120471552,
+      "peakSampledTreeRss": 193085440,
+      "peakAccountedBytes": 0,
+      "allocated": 74629120,
+      "logical": 74574632,
+      "peakTemporary": 0
+    },
+    {
+      "profile": "cms",
+      "rows": 100000,
+      "engine": "inibase",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "create": 39.003417,
+        "bulkInsert": 4148.8695,
+        "randomID": 6.195708000000195,
+        "sequentialID": 4.445957999999337,
+        "hotID": 4.719458999999915,
+        "missingID": 2.5244580000007772,
+        "durableInsert": 115.04354199999943,
+        "durableUpdate": 116.6454590000003,
+        "durableDelete": 117.21262500000012,
+        "reopen": 0.4960000000000946,
+        "verifyEveryID": 13569.901916
+      },
+      "latency": {
+        "randomID": {
+          "samples": 96,
+          "p50": 0.16483299999981682,
+          "p95": 0.2464589999999589,
+          "p99": null
+        },
+        "sequentialID": {
+          "samples": 96,
+          "p50": 0.1367499999996653,
+          "p95": 0.16962499999999636,
+          "p99": null
+        },
+        "hotID": {
+          "samples": 96,
+          "p50": 0.13758300000063173,
+          "p95": 0.1884170000002996,
+          "p99": null
+        },
+        "missingID": {
+          "samples": 96,
+          "p50": 0.07283400000051188,
+          "p95": 0.10795799999959854,
+          "p99": null
+        },
+        "durableInsert": {
+          "samples": 24,
+          "p50": 14.094208999999864,
+          "p95": 15.35149999999976,
+          "p99": null
+        },
+        "durableUpdate": {
+          "samples": 24,
+          "p50": 14.976916999999958,
+          "p95": 16.00329099999999,
+          "p99": null
+        },
+        "durableDelete": {
+          "samples": 24,
+          "p50": 14.964834000000337,
+          "p95": 16.075667000000067,
+          "p99": null
+        }
+      },
+      "commitStages": {
+        "appended": {
+          "samples": 72,
+          "p50CumulativeMs": 3.894749999999476
+        },
+        "data-synced": {
+          "samples": 72,
+          "p50CumulativeMs": 6.59887499999968
+        },
+        "manifest-synced": {
+          "samples": 72,
+          "p50CumulativeMs": 10.595083000000159
+        },
+        "published": {
+          "samples": 72,
+          "p50CumulativeMs": 14.448832999999468
+        },
+        "completed": {
+          "samples": 72,
+          "p50CumulativeMs": 14.670042000000649
+        }
+      },
+      "peakWorkerRss": 144982016,
+      "peakSampledTreeRss": 144982016,
+      "peakAccountedBytes": 524288,
+      "allocated": 42450944,
+      "logical": 41881856,
+      "peakTemporary": 60
+    },
+    {
+      "profile": "cms",
+      "rows": 100000,
+      "engine": "sqlite",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "create": 12.458374999999997,
+        "bulkInsert": 1344.904833,
+        "randomID": 0.8691250000001673,
+        "sequentialID": 0.2560000000000855,
+        "hotID": 0.23474999999984902,
+        "missingID": 0.1496669999999085,
+        "durableInsert": 33.440791999999874,
+        "durableUpdate": 31.966125000000147,
+        "durableDelete": 30.87133300000005,
+        "reopen": 5.645499999999856,
+        "verifyEveryID": 613.082083
+      },
+      "latency": {
+        "randomID": {
+          "samples": 96,
+          "p50": 0.012333000000126049,
+          "p95": 0.030917000000044936,
+          "p99": null
+        },
+        "sequentialID": {
+          "samples": 96,
+          "p50": 0.007415999999921041,
+          "p95": 0.017166999999972177,
+          "p99": null
+        },
+        "hotID": {
+          "samples": 96,
+          "p50": 0.006582999999864114,
+          "p95": 0.009459000000106244,
+          "p99": null
+        },
+        "missingID": {
+          "samples": 96,
+          "p50": 0.003375000000005457,
+          "p95": 0.00620800000001509,
+          "p99": null
+        },
+        "durableInsert": {
+          "samples": 24,
+          "p50": 3.976374999999962,
+          "p95": 6.7192079999999805,
+          "p99": null
+        },
+        "durableUpdate": {
+          "samples": 24,
+          "p50": 3.9542089999999916,
+          "p95": 4.174959000000172,
+          "p99": null
+        },
+        "durableDelete": {
+          "samples": 24,
+          "p50": 3.8984590000000026,
+          "p95": 4.1404999999999745,
+          "p99": null
+        }
+      },
+      "commitStages": {},
+      "peakWorkerRss": 156762112,
+      "peakSampledTreeRss": 154435584,
+      "peakAccountedBytes": 0,
+      "allocated": 214896640,
+      "logical": 205291520,
+      "peakTemporary": 0
+    },
+    {
+      "profile": "cms",
+      "rows": 100000,
+      "engine": "postgres",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "create": 11.326791000000004,
+        "bulkInsert": 1216.023333,
+        "randomID": 2.9213750000001255,
+        "sequentialID": 1.4795420000000377,
+        "hotID": 1.3672500000000127,
+        "missingID": 1.2606249999998909,
+        "durableInsert": 29.31145800000013,
+        "durableUpdate": 30.093916000000036,
+        "durableDelete": 31.954165999999987,
+        "reopen": 5.293834000000061,
+        "verifyEveryID": 2954.944583
+      },
+      "latency": {
+        "randomID": {
+          "samples": 96,
+          "p50": 0.057542000000012195,
+          "p95": 0.2456250000000182,
+          "p99": null
+        },
+        "sequentialID": {
+          "samples": 96,
+          "p50": 0.044000000000096406,
+          "p95": 0.08500000000003638,
+          "p99": null
+        },
+        "hotID": {
+          "samples": 96,
+          "p50": 0.04187499999989086,
+          "p95": 0.06420800000000781,
+          "p99": null
+        },
+        "missingID": {
+          "samples": 96,
+          "p50": 0.03337499999997817,
+          "p95": 0.05737500000009277,
+          "p99": null
+        },
+        "durableInsert": {
+          "samples": 24,
+          "p50": 3.936958000000004,
+          "p95": 4.198499999999967,
+          "p99": null
+        },
+        "durableUpdate": {
+          "samples": 24,
+          "p50": 3.937375000000202,
+          "p95": 4.188917000000174,
+          "p99": null
+        },
+        "durableDelete": {
+          "samples": 24,
+          "p50": 3.9576670000001286,
+          "p95": 4.110791999999947,
+          "p99": null
+        }
+      },
+      "commitStages": {},
+      "peakWorkerRss": 224477184,
+      "peakSampledTreeRss": 310935552,
+      "peakAccountedBytes": 0,
+      "allocated": 362405888,
+      "logical": 358296362,
+      "peakTemporary": 0
+    },
+    {
+      "profile": "entropy",
+      "rows": 1000,
+      "engine": "inibase",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "create": 27.809125,
+        "bulkInsert": 94.07737500000002,
+        "randomID": 6.821791000000019,
+        "sequentialID": 4.869583000000006,
+        "hotID": 4.597915999999998,
+        "missingID": 2.37824999999998,
+        "durableInsert": 123.31966600000001,
+        "durableUpdate": 123.084792,
+        "durableDelete": 121.87924999999996,
+        "reopen": 0.6581249999999272,
+        "verifyEveryID": 152.02650000000006
+      },
+      "latency": {
+        "randomID": {
+          "samples": 96,
+          "p50": 0.17091700000000287,
+          "p95": 0.46437499999998977,
+          "p99": null
+        },
+        "sequentialID": {
+          "samples": 96,
+          "p50": 0.13879199999999514,
+          "p95": 0.2415420000000097,
+          "p99": null
+        },
+        "hotID": {
+          "samples": 96,
+          "p50": 0.13995800000000713,
+          "p95": 0.23108299999998394,
+          "p99": null
+        },
+        "missingID": {
+          "samples": 96,
+          "p50": 0.071124999999995,
+          "p95": 0.09995800000001509,
+          "p99": null
+        },
+        "durableInsert": {
+          "samples": 24,
+          "p50": 15.062917000000027,
+          "p95": 16.230874999999997,
+          "p99": null
+        },
+        "durableUpdate": {
+          "samples": 24,
+          "p50": 14.979250000000036,
+          "p95": 16.73087499999997,
+          "p99": null
+        },
+        "durableDelete": {
+          "samples": 24,
+          "p50": 15.08966700000002,
+          "p95": 16.995165999999983,
+          "p99": null
+        }
+      },
+      "commitStages": {
+        "appended": {
+          "samples": 72,
+          "p50CumulativeMs": 3.90300000000002
+        },
+        "data-synced": {
+          "samples": 72,
+          "p50CumulativeMs": 7.001833000000005
+        },
+        "manifest-synced": {
+          "samples": 72,
+          "p50CumulativeMs": 10.716458999999986
+        },
+        "published": {
+          "samples": 72,
+          "p50CumulativeMs": 14.530416000000002
+        },
+        "completed": {
+          "samples": 72,
+          "p50CumulativeMs": 14.757166999999981
+        }
+      },
+      "peakWorkerRss": 85114880,
+      "peakSampledTreeRss": 80216064,
+      "peakAccountedBytes": 524288,
+      "allocated": 1200128,
+      "logical": 1196288,
+      "peakTemporary": 60
+    },
+    {
+      "profile": "entropy",
+      "rows": 1000,
+      "engine": "sqlite",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "create": 9.934375,
+        "bulkInsert": 20.027167,
+        "randomID": 0.7871670000000037,
+        "sequentialID": 0.703249999999997,
+        "hotID": 0.37983400000000245,
+        "missingID": 0.13470799999999628,
+        "durableInsert": 30.506125000000004,
+        "durableUpdate": 30.193416999999997,
+        "durableDelete": 28.679374999999993,
+        "reopen": 6.14824999999999,
+        "verifyEveryID": 15.504583000000025
+      },
+      "latency": {
+        "randomID": {
+          "samples": 96,
+          "p50": 0.014958000000000027,
+          "p95": 0.04770899999999756,
+          "p99": null
+        },
+        "sequentialID": {
+          "samples": 96,
+          "p50": 0.011708000000005825,
+          "p95": 0.04391600000000295,
+          "p99": null
+        },
+        "hotID": {
+          "samples": 96,
+          "p50": 0.010624999999997442,
+          "p95": 0.02049999999999841,
+          "p99": null
+        },
+        "missingID": {
+          "samples": 96,
+          "p50": 0.002917000000003611,
+          "p95": 0.008041999999996108,
+          "p99": null
+        },
+        "durableInsert": {
+          "samples": 24,
+          "p50": 3.972291999999996,
+          "p95": 4.121707999999998,
+          "p99": null
+        },
+        "durableUpdate": {
+          "samples": 24,
+          "p50": 3.976832999999999,
+          "p95": 4.139666999999989,
+          "p99": null
+        },
+        "durableDelete": {
+          "samples": 24,
+          "p50": 3.9413339999999835,
+          "p95": 4.1127090000000095,
+          "p99": null
+        }
+      },
+      "commitStages": {},
+      "peakWorkerRss": 67387392,
+      "peakSampledTreeRss": 66043904,
+      "peakAccountedBytes": 0,
+      "allocated": 2072576,
+      "logical": 2072576,
+      "peakTemporary": 0
+    },
+    {
+      "profile": "entropy",
+      "rows": 1000,
+      "engine": "postgres",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "create": 10.854166999999997,
+        "bulkInsert": 26.363166,
+        "randomID": 3.214790999999998,
+        "sequentialID": 1.9712499999999977,
+        "hotID": 1.7766670000000033,
+        "missingID": 1.2132090000000062,
+        "durableInsert": 29.570041000000003,
+        "durableUpdate": 29.071083000000016,
+        "durableDelete": 31.165583000000012,
+        "reopen": 3.389125000000007,
+        "verifyEveryID": 48.082458
+      },
+      "latency": {
+        "randomID": {
+          "samples": 96,
+          "p50": 0.0647080000000031,
+          "p95": 0.3312080000000037,
+          "p99": null
+        },
+        "sequentialID": {
+          "samples": 96,
+          "p50": 0.050249999999991246,
+          "p95": 0.13579199999999503,
+          "p99": null
+        },
+        "hotID": {
+          "samples": 96,
+          "p50": 0.04712499999999409,
+          "p95": 0.08987500000000637,
+          "p99": null
+        },
+        "missingID": {
+          "samples": 96,
+          "p50": 0.032707999999999515,
+          "p95": 0.06979199999999253,
+          "p99": null
+        },
+        "durableInsert": {
+          "samples": 24,
+          "p50": 3.8862499999999898,
+          "p95": 4.118541000000008,
+          "p99": null
+        },
+        "durableUpdate": {
+          "samples": 24,
+          "p50": 3.873209000000003,
+          "p95": 4.300457999999992,
+          "p99": null
+        },
+        "durableDelete": {
+          "samples": 24,
+          "p50": 3.9403330000000096,
+          "p95": 4.158834000000013,
+          "p99": null
+        }
+      },
+      "commitStages": {},
+      "peakWorkerRss": 76234752,
+      "peakSampledTreeRss": 140918784,
+      "peakAccountedBytes": 0,
+      "allocated": 42901504,
+      "logical": 42847013,
+      "peakTemporary": 0
+    },
+    {
+      "profile": "entropy",
+      "rows": 10000,
+      "engine": "inibase",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "create": 30.064208,
+        "bulkInsert": 828.5152919999999,
+        "randomID": 6.37179100000003,
+        "sequentialID": 4.75770799999998,
+        "hotID": 4.791707999999971,
+        "missingID": 2.453708000000006,
+        "durableInsert": 120.52858300000003,
+        "durableUpdate": 116.93162500000005,
+        "durableDelete": 111.91700000000014,
+        "reopen": 0.2413329999999405,
+        "verifyEveryID": 1377.1896250000002
+      },
+      "latency": {
+        "randomID": {
+          "samples": 96,
+          "p50": 0.17799999999999727,
+          "p95": 0.3638750000000073,
+          "p99": null
+        },
+        "sequentialID": {
+          "samples": 96,
+          "p50": 0.14995799999996962,
+          "p95": 0.20429200000000947,
+          "p99": null
+        },
+        "hotID": {
+          "samples": 96,
+          "p50": 0.13941699999998036,
+          "p95": 0.19616599999994833,
+          "p99": null
+        },
+        "missingID": {
+          "samples": 96,
+          "p50": 0.07595800000001418,
+          "p95": 0.10116600000003473,
+          "p99": null
+        },
+        "durableInsert": {
+          "samples": 24,
+          "p50": 14.789083000000005,
+          "p95": 16.43029200000001,
+          "p99": null
+        },
+        "durableUpdate": {
+          "samples": 24,
+          "p50": 14.865707999999813,
+          "p95": 16.105082999999922,
+          "p99": null
+        },
+        "durableDelete": {
+          "samples": 24,
+          "p50": 14.041332999999895,
+          "p95": 16.704042000000072,
+          "p99": null
+        }
+      },
+      "commitStages": {
+        "appended": {
+          "samples": 72,
+          "p50CumulativeMs": 3.8137500000000273
+        },
+        "data-synced": {
+          "samples": 72,
+          "p50CumulativeMs": 6.592540999999983
+        },
+        "manifest-synced": {
+          "samples": 72,
+          "p50CumulativeMs": 10.513000000000147
+        },
+        "published": {
+          "samples": 72,
+          "p50CumulativeMs": 14.182500000000005
+        },
+        "completed": {
+          "samples": 72,
+          "p50CumulativeMs": 14.351125000000138
+        }
+      },
+      "peakWorkerRss": 112230400,
+      "peakSampledTreeRss": 112197632,
+      "peakAccountedBytes": 524288,
+      "allocated": 12034048,
+      "logical": 11038976,
+      "peakTemporary": 60
+    },
+    {
+      "profile": "entropy",
+      "rows": 10000,
+      "engine": "sqlite",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "create": 9.808582999999999,
+        "bulkInsert": 211.96016699999998,
+        "randomID": 1.7548749999999984,
+        "sequentialID": 0.407792000000029,
+        "hotID": 0.46958399999999756,
+        "missingID": 0.13175000000001091,
+        "durableInsert": 33.912916999999965,
+        "durableUpdate": 30.963333000000034,
+        "durableDelete": 28.941624999999988,
+        "reopen": 4.966542000000004,
+        "verifyEveryID": 135.10679200000004
+      },
+      "latency": {
+        "randomID": {
+          "samples": 96,
+          "p50": 0.018250000000023192,
+          "p95": 0.4037919999999531,
+          "p99": null
+        },
+        "sequentialID": {
+          "samples": 96,
+          "p50": 0.012416999999970812,
+          "p95": 0.024583000000006905,
+          "p99": null
+        },
+        "hotID": {
+          "samples": 96,
+          "p50": 0.011249999999989768,
+          "p95": 0.02199999999999136,
+          "p99": null
+        },
+        "missingID": {
+          "samples": 96,
+          "p50": 0.002999999999985903,
+          "p95": 0.005458000000004404,
+          "p99": null
+        },
+        "durableInsert": {
+          "samples": 24,
+          "p50": 3.9425829999999564,
+          "p95": 8.074166999999989,
+          "p99": null
+        },
+        "durableUpdate": {
+          "samples": 24,
+          "p50": 3.9855830000000196,
+          "p95": 4.074625000000026,
+          "p99": null
+        },
+        "durableDelete": {
+          "samples": 24,
+          "p50": 3.7740839999999594,
+          "p95": 4.192125000000033,
+          "p99": null
+        }
+      },
+      "commitStages": {},
+      "peakWorkerRss": 111050752,
+      "peakSampledTreeRss": 109969408,
+      "peakAccountedBytes": 0,
+      "allocated": 20549632,
+      "logical": 20549632,
+      "peakTemporary": 0
+    },
+    {
+      "profile": "entropy",
+      "rows": 10000,
+      "engine": "postgres",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "create": 11.216624999999997,
+        "bulkInsert": 195.49729200000002,
+        "randomID": 2.82566700000001,
+        "sequentialID": 1.7037090000000035,
+        "hotID": 1.6732079999999883,
+        "missingID": 1.3773749999999723,
+        "durableInsert": 30.294542000000007,
+        "durableUpdate": 31.032332999999994,
+        "durableDelete": 31.67783300000002,
+        "reopen": 4.067250000000001,
+        "verifyEveryID": 403.88079100000004
+      },
+      "latency": {
+        "randomID": {
+          "samples": 96,
+          "p50": 0.058707999999995764,
+          "p95": 0.135249999999985,
+          "p99": null
+        },
+        "sequentialID": {
+          "samples": 96,
+          "p50": 0.049666000000001986,
+          "p95": 0.07941700000000651,
+          "p99": null
+        },
+        "hotID": {
+          "samples": 96,
+          "p50": 0.04754099999999539,
+          "p95": 0.07754200000002243,
+          "p99": null
+        },
+        "missingID": {
+          "samples": 96,
+          "p50": 0.03741700000000492,
+          "p95": 0.07112500000002342,
+          "p99": null
+        },
+        "durableInsert": {
+          "samples": 24,
+          "p50": 3.887957999999969,
+          "p95": 4.144667000000027,
+          "p99": null
+        },
+        "durableUpdate": {
+          "samples": 24,
+          "p50": 3.9683749999999804,
+          "p95": 4.146542000000011,
+          "p99": null
+        },
+        "durableDelete": {
+          "samples": 24,
+          "p50": 3.9504589999999666,
+          "p95": 4.220582999999976,
+          "p99": null
+        }
+      },
+      "commitStages": {},
+      "peakWorkerRss": 123518976,
+      "peakSampledTreeRss": 198148096,
+      "peakAccountedBytes": 0,
+      "allocated": 74629120,
+      "logical": 74574632,
+      "peakTemporary": 0
+    },
+    {
+      "profile": "entropy",
+      "rows": 100000,
+      "engine": "inibase",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "create": 58.42154199999999,
+        "bulkInsert": 7946.169207999999,
+        "randomID": 6.427582999999686,
+        "sequentialID": 5.135583999999653,
+        "hotID": 5.016875000000255,
+        "missingID": 2.661000000000058,
+        "durableInsert": 119.42741599999954,
+        "durableUpdate": 120.96987500000068,
+        "durableDelete": 122.49704199999996,
+        "reopen": 0.7504159999998592,
+        "verifyEveryID": 14786.621125
+      },
+      "latency": {
+        "randomID": {
+          "samples": 96,
+          "p50": 0.16049999999995634,
+          "p95": 0.2638340000003154,
+          "p99": null
+        },
+        "sequentialID": {
+          "samples": 96,
+          "p50": 0.14770800000042072,
+          "p95": 0.29783299999962765,
+          "p99": null
+        },
+        "hotID": {
+          "samples": 96,
+          "p50": 0.1544160000003103,
+          "p95": 0.22058300000026065,
+          "p99": null
+        },
+        "missingID": {
+          "samples": 96,
+          "p50": 0.079583000000639,
+          "p95": 0.11254099999950995,
+          "p99": null
+        },
+        "durableInsert": {
+          "samples": 24,
+          "p50": 14.926666999999725,
+          "p95": 15.813583000000108,
+          "p99": null
+        },
+        "durableUpdate": {
+          "samples": 24,
+          "p50": 15.029708000000028,
+          "p95": 16.116958999999042,
+          "p99": null
+        },
+        "durableDelete": {
+          "samples": 24,
+          "p50": 15.109375,
+          "p95": 16.530416999999943,
+          "p99": null
+        }
+      },
+      "commitStages": {
+        "appended": {
+          "samples": 72,
+          "p50CumulativeMs": 4.022375000000466
+        },
+        "data-synced": {
+          "samples": 72,
+          "p50CumulativeMs": 6.594499999999243
+        },
+        "manifest-synced": {
+          "samples": 72,
+          "p50CumulativeMs": 10.627709000000323
+        },
+        "published": {
+          "samples": 72,
+          "p50CumulativeMs": 14.56420799999978
+        },
+        "completed": {
+          "samples": 72,
+          "p50CumulativeMs": 14.73700000000099
+        }
+      },
+      "peakWorkerRss": 164003840,
+      "peakSampledTreeRss": 163643392,
+      "peakAccountedBytes": 524288,
+      "allocated": 117989376,
+      "logical": 109498624,
+      "peakTemporary": 60
+    },
+    {
+      "profile": "entropy",
+      "rows": 100000,
+      "engine": "sqlite",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "create": 10.674957999999997,
+        "bulkInsert": 2014.002042,
+        "randomID": 0.9179169999999885,
+        "sequentialID": 0.4099590000000717,
+        "hotID": 0.4393329999998059,
+        "missingID": 0.13783399999988433,
+        "durableInsert": 34.68070799999987,
+        "durableUpdate": 31.199291999999787,
+        "durableDelete": 27.783042000000023,
+        "reopen": 5.3738750000002256,
+        "verifyEveryID": 1338.758041
+      },
+      "latency": {
+        "randomID": {
+          "samples": 96,
+          "p50": 0.017166999999972177,
+          "p95": 0.028542000000015832,
+          "p99": null
+        },
+        "sequentialID": {
+          "samples": 96,
+          "p50": 0.01170799999999872,
+          "p95": 0.016957999999931417,
+          "p99": null
+        },
+        "hotID": {
+          "samples": 96,
+          "p50": 0.011667000000215921,
+          "p95": 0.02204200000005585,
+          "p99": null
+        },
+        "missingID": {
+          "samples": 96,
+          "p50": 0.0028339999998934218,
+          "p95": 0.006542000000081316,
+          "p99": null
+        },
+        "durableInsert": {
+          "samples": 24,
+          "p50": 3.9881250000003092,
+          "p95": 7.786499999999933,
+          "p99": null
+        },
+        "durableUpdate": {
+          "samples": 24,
+          "p50": 3.9394999999999527,
+          "p95": 4.160750000000007,
+          "p99": null
+        },
+        "durableDelete": {
+          "samples": 24,
+          "p50": 3.7767500000004475,
+          "p95": 4.138875000000098,
+          "p99": null
+        }
+      },
+      "commitStages": {},
+      "peakWorkerRss": 165756928,
+      "peakSampledTreeRss": 164888576,
+      "peakAccountedBytes": 0,
+      "allocated": 215990272,
+      "logical": 205328384,
+      "peakTemporary": 0
+    },
+    {
+      "profile": "entropy",
+      "rows": 100000,
+      "engine": "postgres",
+      "trials": 3,
+      "verified": 3,
+      "phases": {
+        "create": 13.941000000000003,
+        "bulkInsert": 2031.8161249999998,
+        "randomID": 3.2789590000002136,
+        "sequentialID": 1.5424579999998969,
+        "hotID": 1.5251250000001164,
+        "missingID": 1.4415420000000267,
+        "durableInsert": 28.08370799999966,
+        "durableUpdate": 29.78729199999998,
+        "durableDelete": 31.61583299999984,
+        "reopen": 4.944082999999864,
+        "verifyEveryID": 3738.106708
+      },
+      "latency": {
+        "randomID": {
+          "samples": 96,
+          "p50": 0.06387499999982538,
+          "p95": 0.34570800000005875,
+          "p99": null
+        },
+        "sequentialID": {
+          "samples": 96,
+          "p50": 0.04554199999984121,
+          "p95": 0.06841699999995399,
+          "p99": null
+        },
+        "hotID": {
+          "samples": 96,
+          "p50": 0.045666999999866675,
+          "p95": 0.06154199999991761,
+          "p99": null
+        },
+        "missingID": {
+          "samples": 96,
+          "p50": 0.03216699999984485,
+          "p95": 0.07941699999992125,
+          "p99": null
+        },
+        "durableInsert": {
+          "samples": 24,
+          "p50": 3.706000000000131,
+          "p95": 4.191209000000072,
+          "p99": null
+        },
+        "durableUpdate": {
+          "samples": 24,
+          "p50": 3.948374999999942,
+          "p95": 4.201042000000143,
+          "p99": null
+        },
+        "durableDelete": {
+          "samples": 24,
+          "p50": 3.9247080000000096,
+          "p95": 4.137749999999869,
+          "p99": null
+        }
+      },
+      "commitStages": {},
+      "peakWorkerRss": 227622912,
+      "peakSampledTreeRss": 314327040,
+      "peakAccountedBytes": 0,
+      "allocated": 384917504,
+      "logical": 375073579,
+      "peakTemporary": 0
+    }
+  ]
+}

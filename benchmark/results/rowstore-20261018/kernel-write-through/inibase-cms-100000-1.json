@@ -1,0 +1,1320 @@
+{
+  "workloadVersion": "mutable-row-kernel-1",
+  "options": {
+    "engine": "inibase",
+    "directory": "/Users/karimamahtil/APPS/inibase/.work/postgres-compare-laARGK",
+    "modulePath": "/Users/karimamahtil/APPS/inibase/dist/index.js",
+    "budget": 16777216,
+    "flush": "write-through",
+    "binaryDirectory": "/opt/homebrew/opt/postgresql@18/bin",
+    "rows": 100000,
+    "profile": "cms",
+    "repeat": 0,
+    "samples": 32,
+    "writes": 8,
+    "mixedRounds": 3,
+    "destination": "/Users/karimamahtil/APPS/inibase/benchmark/results/rowstore-20261018/kernel-write-through/inibase-cms-100000-1.json"
+  },
+  "runtime": {
+    "node": "26.9.0",
+    "acorn": "8.18.0",
+    "ada": "4.0.0",
+    "amaro": "1.1.11",
+    "ares": "1.34.8",
+    "brotli": "1.2.0",
+    "cldr": "48.0",
+    "icu": "78.3",
+    "libffi": "3.8.0",
+    "llhttp": "9.4.3",
+    "merve": "1.2.2",
+    "modules": "147",
+    "napi": "10",
+    "nbytes": "0.1.4",
+    "ncrypto": "0.0.1",
+    "nghttp2": "1.70.0",
+    "nghttp3": "",
+    "ngtcp2": "",
+    "openssl": "3.6.4",
+    "simdjson": "4.6.11",
+    "simdutf": "7.7.0",
+    "sqlite": "3.53.4",
+    "tz": "2026a",
+    "undici": "8.10.2",
+    "unicode": "17.0",
+    "uv": "1.52.1",
+    "uvwasi": "0.0.23",
+    "v8": "14.6.202.34-node.32",
+    "zlib": "1.2.12",
+    "zstd": "1.5.7"
+  },
+  "runtimeBaselineRss": 50479104,
+  "verified": true,
+  "timings": {
+    "create": {
+      "ms": 30.973374999999997,
+      "cpu": {
+        "user": 13629,
+        "system": 3025
+      }
+    },
+    "bulkInsert": {
+      "ms": 12275.371833,
+      "cpu": {
+        "user": 5585008,
+        "system": 5847351
+      }
+    },
+    "randomID": {
+      "ms": 5.974583999999595,
+      "cpu": {
+        "user": 4093,
+        "system": 2539
+      }
+    },
+    "sequentialID": {
+      "ms": 4.330291999998735,
+      "cpu": {
+        "user": 2860,
+        "system": 2100
+      }
+    },
+    "hotID": {
+      "ms": 4.2754580000000715,
+      "cpu": {
+        "user": 2485,
+        "system": 2087
+      }
+    },
+    "missingID": {
+      "ms": 2.350125000000844,
+      "cpu": {
+        "user": 2180,
+        "system": 1183
+      }
+    },
+    "durableInsert": {
+      "ms": 115.84208299999955,
+      "cpu": {
+        "user": 4138,
+        "system": 6241
+      }
+    },
+    "durableUpdate": {
+      "ms": 116.89941699999872,
+      "cpu": {
+        "user": 5394,
+        "system": 8215
+      }
+    },
+    "durableDelete": {
+      "ms": 113.19287500000064,
+      "cpu": {
+        "user": 4405,
+        "system": 8095
+      }
+    },
+    "reopen": {
+      "ms": 0.7469999999993888,
+      "cpu": {
+        "user": 688,
+        "system": 61
+      }
+    },
+    "verifyEveryID": {
+      "ms": 12703.769,
+      "cpu": {
+        "user": 7054867,
+        "system": 6762945
+      }
+    }
+  },
+  "latency": {
+    "randomID": [
+      0.7874589999992168,
+      0.2264580000010028,
+      0.20891699999992852,
+      0.17224999999962165,
+      0.16920799999934388,
+      0.17000000000007276,
+      0.16824999999880674,
+      0.18370799999865994,
+      0.15929200000027777,
+      0.1777910000000702,
+      0.18495900000016263,
+      0.19933299999865994,
+      0.18612500000017462,
+      0.19362499999988358,
+      0.1722090000002936,
+      0.1477500000000873,
+      0.15212500000052387,
+      0.14766700000109267,
+      0.15750000000116415,
+      0.17345800000111922,
+      0.16520800000034797,
+      0.17445799999950395,
+      0.16525000000001455,
+      0.15812499999992724,
+      0.15358299999934388,
+      0.14129200000024866,
+      0.13774999999986903,
+      0.1319579999999405,
+      0.13774999999986903,
+      0.14099999999962165,
+      0.15045800000007148,
+      0.15037499999925785
+    ],
+    "sequentialID": [
+      0.1663749999988795,
+      0.12387500000113505,
+      0.14383300000008603,
+      0.12695800000074087,
+      0.1645829999997659,
+      0.13616600000023027,
+      0.12208300000020245,
+      0.13904199999888078,
+      0.1406669999996666,
+      0.1479170000002341,
+      0.14462499999899592,
+      0.14470799999980954,
+      0.10966700000062701,
+      0.12029200000142737,
+      0.1016250000011496,
+      0.10787499999969441,
+      0.12595900000087568,
+      0.13100000000122236,
+      0.13370799999938754,
+      0.146708000000217,
+      0.13574999999946158,
+      0.12075000000004366,
+      0.14445899999918765,
+      0.14070799999899464,
+      0.13579099999878963,
+      0.14216700000179117,
+      0.13383299999986775,
+      0.12700000000040745,
+      0.15379199999915727,
+      0.1452079999999114,
+      0.13166699999965203,
+      0.1333329999997659
+    ],
+    "hotID": [
+      0.13333400000010442,
+      0.1263330000001588,
+      0.13400000000001455,
+      0.1309160000000702,
+      0.13245800000004238,
+      0.1268340000005992,
+      0.1242500000007567,
+      0.129917000000205,
+      0.13983299999927112,
+      0.15045800000007148,
+      0.13299999999981083,
+      0.11629100000027393,
+      0.1459999999988213,
+      0.12487499999951979,
+      0.1547499999996944,
+      0.12733299999854353,
+      0.12433299999975134,
+      0.13800000000082946,
+      0.12099999999918509,
+      0.13458299999911105,
+      0.12404199999946286,
+      0.13466699999844423,
+      0.13166699999965203,
+      0.1417089999995369,
+      0.13537499999983993,
+      0.13833299999896553,
+      0.12520800000129384,
+      0.14800000000104774,
+      0.14562500000101863,
+      0.1275420000001759,
+      0.1388329999990674,
+      0.12987500000053842
+    ],
+    "missingID": [
+      0.12420899999960966,
+      0.09383300000081363,
+      0.0814169999994192,
+      0.07795900000019174,
+      0.07012500000018917,
+      0.06979200000023411,
+      0.07037499999933061,
+      0.05737500000032014,
+      0.0770410000004631,
+      0.07991600000059407,
+      0.05949999999938882,
+      0.07841600000028848,
+      0.07029099999999744,
+      0.07083299999976589,
+      0.0829169999997248,
+      0.06441699999959383,
+      0.07133299999986775,
+      0.07604100000025937,
+      0.07341699999960838,
+      0.0759170000001177,
+      0.07416700000067067,
+      0.07533300000068266,
+      0.06462499999906868,
+      0.07191699999930279,
+      0.05754200000046694,
+      0.0714590000006865,
+      0.06212500000037835,
+      0.06783399999949324,
+      0.0748330000005808,
+      0.07579199999963748,
+      0.06745799999953306,
+      0.05587500000001455
+    ],
+    "durableInsert": [
+      14.593375000000378,
+      13.16058300000077,
+      15.105375000001004,
+      13.79162499999984,
+      14.995500000000902,
+      15.035584000001109,
+      14.259374999999636,
+      14.891082999998616
+    ],
+    "durableUpdate": [
+      13.834833000000799,
+      14.225540999999794,
+      15.979666000001089,
+      15.824041000001671,
+      15.249041000000943,
+      13.852666999999201,
+      13.99462499999936,
+      13.92779100000007
+    ],
+    "durableDelete": [
+      13.788500000000568,
+      14.159374999999272,
+      13.879041000000143,
+      14.102249999999913,
+      13.968625000001339,
+      14.173124999999345,
+      13.989999999999782,
+      15.116750000001048
+    ]
+  },
+  "phases": [
+    {
+      "name": "create",
+      "processMemory": {
+        "rss": 50495488,
+        "heapTotal": 8536064,
+        "heapUsed": 6697544,
+        "external": 2583082,
+        "arrayBuffers": 143775
+      },
+      "memory": null
+    },
+    {
+      "name": "create:end",
+      "processMemory": {
+        "rss": 60981248,
+        "heapTotal": 13746176,
+        "heapUsed": 8427352,
+        "external": 3044722,
+        "arrayBuffers": 213075
+      },
+      "memory": {
+        "limitBytes": 16777216,
+        "cacheBytes": 0,
+        "peakCacheBytes": 0,
+        "workingBytes": 0,
+        "peakAccountedBytes": 4096,
+        "maintenanceActive": false,
+        "maintenanceRuns": 0,
+        "maintenanceErrors": 0,
+        "cachedEntries": 0,
+        "openFiles": 0,
+        "maxOpenFiles": 32
+      }
+    },
+    {
+      "name": "bulkInsert",
+      "processMemory": {
+        "rss": 60981248,
+        "heapTotal": 13746176,
+        "heapUsed": 8432424,
+        "external": 3044722,
+        "arrayBuffers": 213075
+      },
+      "memory": {
+        "limitBytes": 16777216,
+        "cacheBytes": 0,
+        "peakCacheBytes": 0,
+        "workingBytes": 0,
+        "peakAccountedBytes": 4096,
+        "maintenanceActive": false,
+        "maintenanceRuns": 0,
+        "maintenanceErrors": 0,
+        "cachedEntries": 0,
+        "openFiles": 0,
+        "maxOpenFiles": 32
+      }
+    },
+    {
+      "name": "bulkInsert:end",
+      "processMemory": {
+        "rss": 163397632,
+        "heapTotal": 70369280,
+        "heapUsed": 8983176,
+        "external": 6743417,
+        "arrayBuffers": 3920751
+      },
+      "memory": {
+        "limitBytes": 16777216,
+        "cacheBytes": 0,
+        "peakCacheBytes": 0,
+        "workingBytes": 0,
+        "peakAccountedBytes": 262144,
+        "maintenanceActive": false,
+        "maintenanceRuns": 0,
+        "maintenanceErrors": 0,
+        "cachedEntries": 0,
+        "openFiles": 1,
+        "maxOpenFiles": 32
+      }
+    },
+    {
+      "name": "randomID",
+      "processMemory": {
+        "rss": 163397632,
+        "heapTotal": 70369280,
+        "heapUsed": 8991240,
+        "external": 6743417,
+        "arrayBuffers": 3920751
+      },
+      "memory": {
+        "limitBytes": 16777216,
+        "cacheBytes": 0,
+        "peakCacheBytes": 0,
+        "workingBytes": 0,
+        "peakAccountedBytes": 262144,
+        "maintenanceActive": false,
+        "maintenanceRuns": 0,
+        "maintenanceErrors": 0,
+        "cachedEntries": 0,
+        "openFiles": 1,
+        "maxOpenFiles": 32
+      }
+    },
+    {
+      "name": "randomID:end",
+      "processMemory": {
+        "rss": 163528704,
+        "heapTotal": 70369280,
+        "heapUsed": 11457752,
+        "external": 7558585,
+        "arrayBuffers": 4705583
+      },
+      "memory": {
+        "limitBytes": 16777216,
+        "cacheBytes": 0,
+        "peakCacheBytes": 0,
+        "workingBytes": 0,
+        "peakAccountedBytes": 262144,
+        "maintenanceActive": false,
+        "maintenanceRuns": 0,
+        "maintenanceErrors": 0,
+        "cachedEntries": 0,
+        "openFiles": 1,
+        "maxOpenFiles": 32
+      }
+    },
+    {
+      "name": "sequentialID",
+      "processMemory": {
+        "rss": 163528704,
+        "heapTotal": 70369280,
+        "heapUsed": 11460040,
+        "external": 7558585,
+        "arrayBuffers": 4705583
+      },
+      "memory": {
+        "limitBytes": 16777216,
+        "cacheBytes": 0,
+        "peakCacheBytes": 0,
+        "workingBytes": 0,
+        "peakAccountedBytes": 262144,
+        "maintenanceActive": false,
+        "maintenanceRuns": 0,
+        "maintenanceErrors": 0,
+        "cachedEntries": 0,
+        "openFiles": 1,
+        "maxOpenFiles": 32
+      }
+    },
+    {
+      "name": "sequentialID:end",
+      "processMemory": {
+        "rss": 163561472,
+        "heapTotal": 70369280,
+        "heapUsed": 13797952,
+        "external": 8343417,
+        "arrayBuffers": 5490415
+      },
+      "memory": {
+        "limitBytes": 16777216,
+        "cacheBytes": 0,
+        "peakCacheBytes": 0,
+        "workingBytes": 0,
+        "peakAccountedBytes": 262144,
+        "maintenanceActive": false,
+        "maintenanceRuns": 0,
+        "maintenanceErrors": 0,
+        "cachedEntries": 0,
+        "openFiles": 1,
+        "maxOpenFiles": 32
+      }
+    },
+    {
+      "name": "hotID",
+      "processMemory": {
+        "rss": 163561472,
+        "heapTotal": 70369280,
+        "heapUsed": 13800272,
+        "external": 8343417,
+        "arrayBuffers": 5490415
+      },
+      "memory": {
+        "limitBytes": 16777216,
+        "cacheBytes": 0,
+        "peakCacheBytes": 0,
+        "workingBytes": 0,
+        "peakAccountedBytes": 262144,
+        "maintenanceActive": false,
+        "maintenanceRuns": 0,
+        "maintenanceErrors": 0,
+        "cachedEntries": 0,
+        "openFiles": 1,
+        "maxOpenFiles": 32
+      }
+    },
+    {
+      "name": "hotID:end",
+      "processMemory": {
+        "rss": 163594240,
+        "heapTotal": 70369280,
+        "heapUsed": 16145576,
+        "external": 9062649,
+        "arrayBuffers": 6209647
+      },
+      "memory": {
+        "limitBytes": 16777216,
+        "cacheBytes": 0,
+        "peakCacheBytes": 0,
+        "workingBytes": 0,
+        "peakAccountedBytes": 262144,
+        "maintenanceActive": false,
+        "maintenanceRuns": 0,
+        "maintenanceErrors": 0,
+        "cachedEntries": 0,
+        "openFiles": 1,
+        "maxOpenFiles": 32
+      }
+    },
+    {
+      "name": "missingID",
+      "processMemory": {
+        "rss": 163594240,
+        "heapTotal": 70369280,
+        "heapUsed": 16147856,
+        "external": 9062649,
+        "arrayBuffers": 6209647
+      },
+      "memory": {
+        "limitBytes": 16777216,
+        "cacheBytes": 0,
+        "peakCacheBytes": 0,
+        "workingBytes": 0,
+        "peakAccountedBytes": 262144,
+        "maintenanceActive": false,
+        "maintenanceRuns": 0,
+        "maintenanceErrors": 0,
+        "cachedEntries": 0,
+        "openFiles": 1,
+        "maxOpenFiles": 32
+      }
+    },
+    {
+      "name": "missingID:end",
+      "processMemory": {
+        "rss": 163676160,
+        "heapTotal": 70369280,
+        "heapUsed": 17501328,
+        "external": 9097081,
+        "arrayBuffers": 6244079
+      },
+      "memory": {
+        "limitBytes": 16777216,
+        "cacheBytes": 0,
+        "peakCacheBytes": 0,
+        "workingBytes": 0,
+        "peakAccountedBytes": 262144,
+        "maintenanceActive": false,
+        "maintenanceRuns": 0,
+        "maintenanceErrors": 0,
+        "cachedEntries": 0,
+        "openFiles": 1,
+        "maxOpenFiles": 32
+      }
+    },
+    {
+      "name": "durableInsert",
+      "processMemory": {
+        "rss": 163676160,
+        "heapTotal": 70369280,
+        "heapUsed": 17664792,
+        "external": 9097081,
+        "arrayBuffers": 6244079
+      },
+      "memory": {
+        "limitBytes": 16777216,
+        "cacheBytes": 0,
+        "peakCacheBytes": 0,
+        "workingBytes": 0,
+        "peakAccountedBytes": 262144,
+        "maintenanceActive": false,
+        "maintenanceRuns": 0,
+        "maintenanceErrors": 0,
+        "cachedEntries": 0,
+        "openFiles": 1,
+        "maxOpenFiles": 32
+      }
+    },
+    {
+      "name": "durableInsert:end",
+      "processMemory": {
+        "rss": 163741696,
+        "heapTotal": 70369280,
+        "heapUsed": 19384216,
+        "external": 10318649,
+        "arrayBuffers": 7465647
+      },
+      "memory": {
+        "limitBytes": 16777216,
+        "cacheBytes": 0,
+        "peakCacheBytes": 0,
+        "workingBytes": 0,
+        "peakAccountedBytes": 262144,
+        "maintenanceActive": false,
+        "maintenanceRuns": 0,
+        "maintenanceErrors": 0,
+        "cachedEntries": 0,
+        "openFiles": 1,
+        "maxOpenFiles": 32
+      }
+    },
+    {
+      "name": "durableUpdate",
+      "processMemory": {
+        "rss": 163741696,
+        "heapTotal": 70369280,
+        "heapUsed": 19386584,
+        "external": 10318649,
+        "arrayBuffers": 7465647
+      },
+      "memory": {
+        "limitBytes": 16777216,
+        "cacheBytes": 0,
+        "peakCacheBytes": 0,
+        "workingBytes": 0,
+        "peakAccountedBytes": 262144,
+        "maintenanceActive": false,
+        "maintenanceRuns": 0,
+        "maintenanceErrors": 0,
+        "cachedEntries": 0,
+        "openFiles": 1,
+        "maxOpenFiles": 32
+      }
+    },
+    {
+      "name": "durableUpdate:end",
+      "processMemory": {
+        "rss": 163905536,
+        "heapTotal": 70369280,
+        "heapUsed": 21323096,
+        "external": 11477497,
+        "arrayBuffers": 8624495
+      },
+      "memory": {
+        "limitBytes": 16777216,
+        "cacheBytes": 0,
+        "peakCacheBytes": 0,
+        "workingBytes": 0,
+        "peakAccountedBytes": 262144,
+        "maintenanceActive": false,
+        "maintenanceRuns": 0,
+        "maintenanceErrors": 0,
+        "cachedEntries": 0,
+        "openFiles": 1,
+        "maxOpenFiles": 32
+      }
+    },
+    {
+      "name": "durableDelete",
+      "processMemory": {
+        "rss": 163905536,
+        "heapTotal": 70369280,
+        "heapUsed": 21325192,
+        "external": 11477497,
+        "arrayBuffers": 8624495
+      },
+      "memory": {
+        "limitBytes": 16777216,
+        "cacheBytes": 0,
+        "peakCacheBytes": 0,
+        "workingBytes": 0,
+        "peakAccountedBytes": 262144,
+        "maintenanceActive": false,
+        "maintenanceRuns": 0,
+        "maintenanceErrors": 0,
+        "cachedEntries": 0,
+        "openFiles": 1,
+        "maxOpenFiles": 32
+      }
+    },
+    {
+      "name": "durableDelete:end",
+      "processMemory": {
+        "rss": 164069376,
+        "heapTotal": 70369280,
+        "heapUsed": 23051016,
+        "external": 12307961,
+        "arrayBuffers": 9454959
+      },
+      "memory": {
+        "limitBytes": 16777216,
+        "cacheBytes": 0,
+        "peakCacheBytes": 0,
+        "workingBytes": 0,
+        "peakAccountedBytes": 262144,
+        "maintenanceActive": false,
+        "maintenanceRuns": 0,
+        "maintenanceErrors": 0,
+        "cachedEntries": 0,
+        "openFiles": 1,
+        "maxOpenFiles": 32
+      }
+    },
+    {
+      "name": "reopen",
+      "processMemory": {
+        "rss": 164069376,
+        "heapTotal": 70369280,
+        "heapUsed": 23053232,
+        "external": 12307961,
+        "arrayBuffers": 9454959
+      },
+      "memory": {
+        "limitBytes": 16777216,
+        "cacheBytes": 0,
+        "peakCacheBytes": 0,
+        "workingBytes": 0,
+        "peakAccountedBytes": 262144,
+        "maintenanceActive": false,
+        "maintenanceRuns": 0,
+        "maintenanceErrors": 0,
+        "cachedEntries": 0,
+        "openFiles": 1,
+        "maxOpenFiles": 32
+      }
+    },
+    {
+      "name": "reopen:end",
+      "processMemory": {
+        "rss": 164167680,
+        "heapTotal": 70369280,
+        "heapUsed": 23086392,
+        "external": 12307961,
+        "arrayBuffers": 9454959
+      },
+      "memory": {
+        "limitBytes": 16777216,
+        "cacheBytes": 0,
+        "peakCacheBytes": 0,
+        "workingBytes": 0,
+        "peakAccountedBytes": 0,
+        "maintenanceActive": false,
+        "maintenanceRuns": 0,
+        "maintenanceErrors": 0,
+        "cachedEntries": 0,
+        "openFiles": 0,
+        "maxOpenFiles": 32
+      }
+    },
+    {
+      "name": "verifyEveryID",
+      "processMemory": {
+        "rss": 164167680,
+        "heapTotal": 70369280,
+        "heapUsed": 23087520,
+        "external": 12307961,
+        "arrayBuffers": 9454959
+      },
+      "memory": {
+        "limitBytes": 16777216,
+        "cacheBytes": 0,
+        "peakCacheBytes": 0,
+        "workingBytes": 0,
+        "peakAccountedBytes": 0,
+        "maintenanceActive": false,
+        "maintenanceRuns": 0,
+        "maintenanceErrors": 0,
+        "cachedEntries": 0,
+        "openFiles": 0,
+        "maxOpenFiles": 32
+      }
+    },
+    {
+      "name": "verifyEveryID:end",
+      "processMemory": {
+        "rss": 164790272,
+        "heapTotal": 70893568,
+        "heapUsed": 34242600,
+        "external": 12224265,
+        "arrayBuffers": 9371263
+      },
+      "memory": {
+        "limitBytes": 16777216,
+        "cacheBytes": 0,
+        "peakCacheBytes": 0,
+        "workingBytes": 0,
+        "peakAccountedBytes": 262144,
+        "maintenanceActive": false,
+        "maintenanceRuns": 0,
+        "maintenanceErrors": 0,
+        "cachedEntries": 0,
+        "openFiles": 1,
+        "maxOpenFiles": 32
+      }
+    }
+  ],
+  "errors": [],
+  "commitTraces": [
+    {
+      "trace": [
+        {
+          "phase": "appended",
+          "ms": 3.6952500000006694
+        },
+        {
+          "phase": "data-synced",
+          "ms": 6.455083000000741
+        },
+        {
+          "phase": "manifest-synced",
+          "ms": 10.46979200000169
+        },
+        {
+          "phase": "published",
+          "ms": 14.296250000001237
+        }
+      ],
+      "completedMs": 14.409500000001572
+    },
+    {
+      "trace": [
+        {
+          "phase": "appended",
+          "ms": 2.979457999999795
+        },
+        {
+          "phase": "data-synced",
+          "ms": 5.697541000001365
+        },
+        {
+          "phase": "manifest-synced",
+          "ms": 8.932791000001089
+        },
+        {
+          "phase": "published",
+          "ms": 12.83416600000055
+        }
+      ],
+      "completedMs": 12.96625000000131
+    },
+    {
+      "trace": [
+        {
+          "phase": "appended",
+          "ms": 4.084167000000889
+        },
+        {
+          "phase": "data-synced",
+          "ms": 7.5842090000005555
+        },
+        {
+          "phase": "manifest-synced",
+          "ms": 11.591959000001225
+        },
+        {
+          "phase": "published",
+          "ms": 14.830167000000074
+        }
+      ],
+      "completedMs": 14.917584000000716
+    },
+    {
+      "trace": [
+        {
+          "phase": "appended",
+          "ms": 2.9627500000005966
+        },
+        {
+          "phase": "data-synced",
+          "ms": 5.5495000000009895
+        },
+        {
+          "phase": "manifest-synced",
+          "ms": 9.518750000001091
+        },
+        {
+          "phase": "published",
+          "ms": 13.541333000001032
+        }
+      ],
+      "completedMs": 13.612041000000318
+    },
+    {
+      "trace": [
+        {
+          "phase": "appended",
+          "ms": 4.079082999998718
+        },
+        {
+          "phase": "data-synced",
+          "ms": 7.672042000000147
+        },
+        {
+          "phase": "manifest-synced",
+          "ms": 11.855457999999999
+        },
+        {
+          "phase": "published",
+          "ms": 14.701332999999067
+        }
+      ],
+      "completedMs": 14.79004199999872
+    },
+    {
+      "trace": [
+        {
+          "phase": "appended",
+          "ms": 3.9932090000002063
+        },
+        {
+          "phase": "data-synced",
+          "ms": 6.942708999999013
+        },
+        {
+          "phase": "manifest-synced",
+          "ms": 10.724874999999884
+        },
+        {
+          "phase": "published",
+          "ms": 14.672083999999813
+        }
+      ],
+      "completedMs": 14.795541999999841
+    },
+    {
+      "trace": [
+        {
+          "phase": "appended",
+          "ms": 4.2477079999989655
+        },
+        {
+          "phase": "data-synced",
+          "ms": 6.696040999999241
+        },
+        {
+          "phase": "manifest-synced",
+          "ms": 10.831749999999374
+        },
+        {
+          "phase": "published",
+          "ms": 13.90074999999888
+        }
+      ],
+      "completedMs": 14.024665999999343
+    },
+    {
+      "trace": [
+        {
+          "phase": "appended",
+          "ms": 3.8881250000013097
+        },
+        {
+          "phase": "data-synced",
+          "ms": 6.381250000000364
+        },
+        {
+          "phase": "manifest-synced",
+          "ms": 10.39704200000051
+        },
+        {
+          "phase": "published",
+          "ms": 14.44983300000058
+        }
+      ],
+      "completedMs": 14.630291999999827
+    },
+    {
+      "trace": [
+        {
+          "phase": "appended",
+          "ms": 3.729750000000422
+        },
+        {
+          "phase": "data-synced",
+          "ms": 6.472250000000713
+        },
+        {
+          "phase": "manifest-synced",
+          "ms": 10.544792000000598
+        },
+        {
+          "phase": "published",
+          "ms": 13.366750000001048
+        }
+      ],
+      "completedMs": 13.50629200000003
+    },
+    {
+      "trace": [
+        {
+          "phase": "appended",
+          "ms": 4.018082999999024
+        },
+        {
+          "phase": "data-synced",
+          "ms": 6.614790999999968
+        },
+        {
+          "phase": "manifest-synced",
+          "ms": 9.61987500000032
+        },
+        {
+          "phase": "published",
+          "ms": 13.802374999999302
+        }
+      ],
+      "completedMs": 13.960583000000042
+    },
+    {
+      "trace": [
+        {
+          "phase": "appended",
+          "ms": 3.952291999999943
+        },
+        {
+          "phase": "data-synced",
+          "ms": 7.544167000000016
+        },
+        {
+          "phase": "manifest-synced",
+          "ms": 11.430625000000873
+        },
+        {
+          "phase": "published",
+          "ms": 15.598125000000437
+        }
+      ],
+      "completedMs": 15.732750000001033
+    },
+    {
+      "trace": [
+        {
+          "phase": "appended",
+          "ms": 3.8790420000004815
+        },
+        {
+          "phase": "data-synced",
+          "ms": 7.450249999999869
+        },
+        {
+          "phase": "manifest-synced",
+          "ms": 11.44012499999917
+        },
+        {
+          "phase": "published",
+          "ms": 15.421875
+        }
+      ],
+      "completedMs": 15.553208999999697
+    },
+    {
+      "trace": [
+        {
+          "phase": "appended",
+          "ms": 4.423458999999639
+        },
+        {
+          "phase": "data-synced",
+          "ms": 7.71954199999891
+        },
+        {
+          "phase": "manifest-synced",
+          "ms": 10.564541999998255
+        },
+        {
+          "phase": "published",
+          "ms": 14.773666999999477
+        }
+      ],
+      "completedMs": 14.9474999999984
+    },
+    {
+      "trace": [
+        {
+          "phase": "appended",
+          "ms": 2.8700410000001284
+        },
+        {
+          "phase": "data-synced",
+          "ms": 5.5257500000006985
+        },
+        {
+          "phase": "manifest-synced",
+          "ms": 9.50683299999946
+        },
+        {
+          "phase": "published",
+          "ms": 13.480750000000626
+        }
+      ],
+      "completedMs": 13.595916000000216
+    },
+    {
+      "trace": [
+        {
+          "phase": "appended",
+          "ms": 2.9066249999996217
+        },
+        {
+          "phase": "data-synced",
+          "ms": 5.511791999999332
+        },
+        {
+          "phase": "manifest-synced",
+          "ms": 9.546207999999751
+        },
+        {
+          "phase": "published",
+          "ms": 13.496082999999999
+        }
+      ],
+      "completedMs": 13.650791999998546
+    },
+    {
+      "trace": [
+        {
+          "phase": "appended",
+          "ms": 2.948707999999897
+        },
+        {
+          "phase": "data-synced",
+          "ms": 5.425708000000668
+        },
+        {
+          "phase": "manifest-synced",
+          "ms": 9.491792000000714
+        },
+        {
+          "phase": "published",
+          "ms": 13.52100000000064
+        }
+      ],
+      "completedMs": 13.64679199999955
+    },
+    {
+      "trace": [
+        {
+          "phase": "appended",
+          "ms": 2.8090420000007725
+        },
+        {
+          "phase": "data-synced",
+          "ms": 5.529125000000931
+        },
+        {
+          "phase": "manifest-synced",
+          "ms": 9.575249999999869
+        },
+        {
+          "phase": "published",
+          "ms": 13.440500000000611
+        }
+      ],
+      "completedMs": 13.55933399999958
+    },
+    {
+      "trace": [
+        {
+          "phase": "appended",
+          "ms": 3.060542000001078
+        },
+        {
+          "phase": "data-synced",
+          "ms": 5.793999999999869
+        },
+        {
+          "phase": "manifest-synced",
+          "ms": 9.679959000000963
+        },
+        {
+          "phase": "published",
+          "ms": 13.83808400000089
+        }
+      ],
+      "completedMs": 13.962750000000597
+    },
+    {
+      "trace": [
+        {
+          "phase": "appended",
+          "ms": 3.1069159999988187
+        },
+        {
+          "phase": "data-synced",
+          "ms": 5.622624999999971
+        },
+        {
+          "phase": "manifest-synced",
+          "ms": 9.69658299999901
+        },
+        {
+          "phase": "published",
+          "ms": 13.563124999998763
+        }
+      ],
+      "completedMs": 13.690207999999984
+    },
+    {
+      "trace": [
+        {
+          "phase": "appended",
+          "ms": 3.100291999999172
+        },
+        {
+          "phase": "data-synced",
+          "ms": 5.7618750000001455
+        },
+        {
+          "phase": "manifest-synced",
+          "ms": 9.867167000000336
+        },
+        {
+          "phase": "published",
+          "ms": 13.73070799999914
+        }
+      ],
+      "completedMs": 13.859957999999097
+    },
+    {
+      "trace": [
+        {
+          "phase": "appended",
+          "ms": 3.123874999999316
+        },
+        {
+          "phase": "data-synced",
+          "ms": 5.547624999999243
+        },
+        {
+          "phase": "manifest-synced",
+          "ms": 9.745249999999942
+        },
+        {
+          "phase": "published",
+          "ms": 13.611832999999024
+        }
+      ],
+      "completedMs": 13.748749999998836
+    },
+    {
+      "trace": [
+        {
+          "phase": "appended",
+          "ms": 2.8905830000003334
+        },
+        {
+          "phase": "data-synced",
+          "ms": 5.83324999999968
+        },
+        {
+          "phase": "manifest-synced",
+          "ms": 9.663708000000042
+        },
+        {
+          "phase": "published",
+          "ms": 13.800665999999183
+        }
+      ],
+      "completedMs": 13.947707999999693
+    },
+    {
+      "trace": [
+        {
+          "phase": "appended",
+          "ms": 3.135874999999942
+        },
+        {
+          "phase": "data-synced",
+          "ms": 5.593249999999898
+        },
+        {
+          "phase": "manifest-synced",
+          "ms": 9.633332999999766
+        },
+        {
+          "phase": "published",
+          "ms": 13.618791999999303
+        }
+      ],
+      "completedMs": 13.77495799999997
+    },
+    {
+      "trace": [
+        {
+          "phase": "appended",
+          "ms": 4.027875000001586
+        },
+        {
+          "phase": "data-synced",
+          "ms": 6.57366600000023
+        },
+        {
+          "phase": "manifest-synced",
+          "ms": 10.623208000000886
+        },
+        {
+          "phase": "published",
+          "ms": 14.59008300000096
+        }
+      ],
+      "completedMs": 14.834083000001556
+    }
+  ],
+  "usageEnd": {
+    "userCPUTime": 12747546,
+    "systemCPUTime": 12656382,
+    "maxRSS": 160944,
+    "sharedMemorySize": 0,
+    "unsharedDataSize": 0,
+    "unsharedStackSize": 0,
+    "minorPageFault": 10802,
+    "majorPageFault": 110,
+    "swappedOut": 0,
+    "fsRead": 0,
+    "fsWrite": 0,
+    "ipcSent": 22,
+    "ipcReceived": 0,
+    "signalsCount": 0,
+    "voluntaryContextSwitches": 1930,
+    "involuntaryContextSwitches": 5073811
+  }
+}

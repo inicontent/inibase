@@ -1,5 +1,11 @@
 # Local qualification, workload versions 3–5
 
+**Darwin flush correction:** earlier default-mode SQLite/PostgreSQL timings did
+not request the same drive-cache flush as Node/libuv. Historical samples remain
+unchanged. Use additive `--flush=write-through` three-engine runs and read the
+[protocol correction](../../docs/mutable-row-storage.md) before interpreting
+durable-write ratios on macOS.
+
 The additive [three-engine qualification](postgres/README.md) compares the public
 iniBase API against SQLite and native PostgreSQL, including separate concurrent
 and process-crash scenarios. Historical workloads below remain unchanged.
