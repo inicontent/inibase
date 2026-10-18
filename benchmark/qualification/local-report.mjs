@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 
 const root = resolve(process.argv[2] ?? "results/local-optimization/comparison");
 const data = JSON.parse(await readFile(join(root, "results.json"), "utf8"));
-const median = (values) => { const sorted = [...values].sort((a, b) => a - b); return sorted[Math.floor(sorted.length / 2)]; };
+const median = (values) => { const sorted = [...values].sort((a, b) => a - b); return sorted.length % 2 ? sorted[Math.floor(sorted.length / 2)] : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2; };
 const percentile = (values, p) => { const sorted = [...values].sort((a, b) => a - b); return sorted[Math.ceil(p * sorted.length) - 1]; };
 const groups = new Map();
 for (const result of data.results) {
@@ -56,6 +56,6 @@ lines.push("", "## Scope and limitations", "", "- `baseline-indexed`: frozen sta
 	"- Observed peak RSS is the maximum of sampled process-tree RSS and the worker maxRSS counter; it remains a lower bound for short-lived child-process peaks.",
 	"- Sampled peak database footprint is not an exact peak temporary-space measurement. Read/write amplification is not fully instrumented.",
 	"- Process-crash qualification is separate from this benchmark and is not power-loss qualification.",
-	"- Historical workloads/results were not rewritten. See ../../README.md for reproduction and remaining requirements.", "");
+	"- Historical workloads/results were not rewritten. See ../../../qualification/README.md for reproduction and remaining requirements.", "");
 await writeFile(join(root, "REPORT.md"), lines.join("\n"));
 console.log(`Wrote ${root}/REPORT.md`);

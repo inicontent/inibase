@@ -81,3 +81,35 @@ Temporary-file peaks are sampled and can miss short-lived files. They count `.tm
 files inside the controlled database directory; this is not complete system-wide
 SQLite temporary-file or physical-device I/O accounting. The runner refuses an
 existing output path to preserve raw evidence.
+
+Reconstruct this experiment's exact baseline, including the original uncommitted
+source changes, into a **new** absolute directory:
+
+```sh
+benchmark/qualification/rebuild-baseline.sh /private/tmp/inibase-reproduced-baseline
+```
+
+It reads the local starting commit, applies the saved initial patch, links the
+installed dependencies and compiles locally. It does not reset this working tree.
+Compare the resulting source and compiled hashes with the recorded manifests.
+
+A separate version-2 concurrent workload starts three writers and one reader at
+an IPC barrier. Each writer changes disjoint application keys, deletes every eighth
+row it visits, and compacts every 32 operations. The reader verifies each sampled
+row against allowed committed states. Final reopen verifies all rows and keys.
+Raw per-cycle writer samples include its reads, deletes and compactions; they are
+not mislabeled as single-statement update latency. Process-tree RSS and per-worker
+CPU/I/O counters are retained. Readers keep at most 2,048 raw latency samples while
+counting every completed read.
+
+```sh
+node benchmark/qualification/concurrent.mjs \
+  --baseline=/absolute/frozen-baseline/dist/index.js \
+  --optimized="$PWD/dist/index.js" --rows=1000 --writes=64 --repeats=3 \
+  --output=/absolute/fresh-concurrent-results
+```
+
+The initial version-1 concurrent smoke fixture had trailing spaces. Existing iniBase
+string validation trims strings, so the strict equal-data assertion failed before
+reader sampling. Its raw results/databases remain in concurrent-smoke/. Version 2
+normalizes the input for both engines before seeding; no engine validation changed.
