@@ -2,13 +2,15 @@ import { DatabaseResources } from "../src/resources.js";
 import { buildRowPack } from "../src/rowpack.js";
 
 const [directory, phase] = process.argv.slice(2);
+const count = phase === "index-partitioned" ? 2048 : 1;
 async function* rows() {
-	yield { id: 0, bytes: Buffer.from("new generation") };
+	for (let id = 0; id < count; id++)
+		yield { id, bytes: Buffer.from("new generation") };
 }
 await buildRowPack(
 	directory,
 	rows(),
-	1,
+	count,
 	true,
 	new DatabaseResources(),
 	(point) => {

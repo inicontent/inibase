@@ -4,23 +4,34 @@
  * hash index. No resident row/ID map. Publication never removes an old generation.
  */
 import { randomUUID } from "node:crypto";
-import { type FileHandle, mkdir, open, rename, unlink } from "node:fs/promises";
+import {
+	type FileHandle,
+	mkdir,
+	open,
+	rename,
+	rm,
+	unlink,
+} from "node:fs/promises";
 import { join } from "node:path";
-import { gunzipSync, gzipSync } from "node:zlib";
+import { gunzipSync } from "node:zlib";
 import * as File from "./file.js";
 import type { DatabaseResources } from "./resources.js";
+import { RowEncoder } from "./row-encoder.js";
+import {
+	rowBucket as bucket,
+	buildRowIndex,
+	closeRowHandles,
+	ROW_SLOT_BYTES,
+	type RowIndexStats,
+	verifyRowSlot as verifySlot,
+} from "./row-index.js";
 import { decodeHeader, encodeHeader, readExact, writeExact } from "./seek.js";
 import { checksum } from "./updatelog.js";
 
 const HEADER = 256,
 	PAGE = 32768,
 	ENTRY = 24,
-	SLOT = 32;
-const bucket = (id: number, capacity: number) =>
-	((Math.imul(id >>> 0, 0x9e3779b1) ^
-		Math.imul(Math.floor(id / 4294967296), 0x85ebca6b)) >>>
-		0) &
-	(capacity - 1);
+	SLOT = ROW_SLOT_BYTES;
 interface Manifest {
 	v: 1;
 	kind: "rowpack";
@@ -39,15 +50,6 @@ export interface PackedRow {
 const validID = (id: number) => {
 	if (!Number.isSafeInteger(id) || id < 0) throw new Error("ROWPACK_ID");
 };
-const verifySlot = (slot: Buffer) => {
-	if (slot.readBigUInt64LE() === 0n) {
-		if (slot.some((byte) => byte !== 0))
-			throw new Error("ROWPACK_SLOT_CHECKSUM");
-		return;
-	}
-	if (checksum(slot.subarray(0, 24)) !== slot.readUInt32LE(24))
-		throw new Error("ROWPACK_SLOT_CHECKSUM");
-};
 const paths = (directory: string, generation: string) => ({
 	data: join(directory, `${generation}.rows`),
 	pages: join(directory, `${generation}.pages`),
@@ -62,7 +64,18 @@ export const buildRowPack = async (
 	compression: boolean,
 	resources: DatabaseResources,
 	hook?: (
-		phase: "files-synced" | "manifest-synced" | "published",
+		phase:
+			| "index-spooled"
+			| "index-partitioned"
+			| "index-built"
+			| "files-synced"
+			| "manifest-synced"
+			| "published",
+		details?: RowIndexStats & {
+			dataBytes: number;
+			directoryBytes: number;
+			spoolBytes: number;
+		},
 	) => void | Promise<void>,
 ): Promise<void> => {
 	if (
@@ -75,15 +88,21 @@ export const buildRowPack = async (
 	return File.runWithIndependentLockStore(async () => {
 		await File.lock(join(directory, ".tmp"));
 		try {
-			await resources.withWorking(256 * 1024, async () => {
+			const workingBytes = Math.min(resources.limit, 512 * 1024);
+			await resources.withWorking(workingBytes, async () => {
 				const generation = randomUUID(),
 					names = paths(directory, generation);
 				const capacity =
 					2 ** Math.ceil(Math.log2(Math.max(16, expectedRows * 2)));
 				const handles: FileHandle[] = [];
 				const manifestTmp = join(directory, `.manifest-${generation}`);
+				const scratch = join(directory, ".tmp", `rowpack-${generation}`);
+				await mkdir(scratch);
 				let published = false;
+				let encoder: RowEncoder | undefined;
 				try {
+					if (compression)
+						encoder = new RowEncoder(PAGE, workingBytes < 512 * 1024);
 					const data = await open(names.data, "wx+");
 					handles.push(data);
 					const pages = await open(names.pages, "wx+");
@@ -93,6 +112,22 @@ export const buildRowPack = async (
 					await data.writeFile(Buffer.alloc(HEADER));
 					await pages.writeFile(Buffer.alloc(HEADER));
 					await ids.truncate(HEADER + capacity * SLOT);
+					const spoolPath = join(scratch, "ids");
+					let spool: FileHandle | undefined = await open(spoolPath, "wx");
+					handles.push(spool);
+					const spoolBuffer = Buffer.allocUnsafe(PAGE);
+					let spoolUsed = 0,
+						spoolOffset = 0;
+					const flushSpool = async () => {
+						if (!spoolUsed || !spool) return;
+						await writeExact(
+							spool,
+							spoolBuffer.subarray(0, spoolUsed),
+							spoolOffset,
+						);
+						spoolOffset += spoolUsed;
+						spoolUsed = 0;
+					};
 					const raw = Buffer.allocUnsafe(PAGE),
 						slot = Buffer.alloc(SLOT);
 					let used = 0,
@@ -103,9 +138,7 @@ export const buildRowPack = async (
 					const flush = async () => {
 						if (!used) return;
 						const bytes = raw.subarray(0, used),
-							encoded = compression
-								? gzipSync(bytes, { level: 1, memLevel: 1 })
-								: bytes;
+							encoded = encoder ? await encoder.encode(bytes) : bytes;
 						const entry = Buffer.alloc(ENTRY);
 						entry.writeBigUInt64LE(BigInt(encodedOffset));
 						entry.writeUInt32LE(encoded.length, 8);
@@ -123,24 +156,14 @@ export const buildRowPack = async (
 						if (!Buffer.isBuffer(record.bytes) || !record.bytes.length)
 							throw new Error("ROWPACK_VALUE");
 						if (++count > expectedRows) throw new Error("ROWPACK_ROW_COUNT");
-						let position = bucket(record.id, capacity),
-							probes = 0;
-						for (;;) {
-							await readExact(ids, slot, HEADER + position * SLOT);
-							verifySlot(slot);
-							const key = slot.readBigUInt64LE();
-							if (key === 0n) break;
-							if (key === BigInt(record.id) + 1n)
-								throw new Error("ROWPACK_DUPLICATE_ID");
-							if (++probes >= capacity) throw new Error("ROWPACK_INDEX_FULL");
-							position = (position + 1) & (capacity - 1);
-						}
 						slot.fill(0);
 						slot.writeBigUInt64LE(BigInt(record.id) + 1n);
 						slot.writeBigUInt64LE(BigInt(rawBytes), 8);
 						slot.writeBigUInt64LE(BigInt(record.bytes.length), 16);
 						slot.writeUInt32LE(checksum(slot.subarray(0, 24)), 24);
-						await writeExact(ids, slot, HEADER + position * SLOT);
+						slot.copy(spoolBuffer, spoolUsed);
+						spoolUsed += SLOT;
+						if (spoolUsed === spoolBuffer.length) await flushSpool();
 						for (let offset = 0; offset < record.bytes.length; ) {
 							const take = Math.min(PAGE - used, record.bytes.length - offset);
 							record.bytes.copy(raw, used, offset, offset + take);
@@ -152,6 +175,25 @@ export const buildRowPack = async (
 					}
 					if (count !== expectedRows) throw new Error("ROWPACK_ROW_COUNT");
 					await flush();
+					await flushSpool();
+					await encoder?.close();
+					await spool.close();
+					handles.splice(handles.indexOf(spool), 1);
+					spool = undefined;
+					await hook?.("index-spooled");
+					const indexStats = await buildRowIndex(
+						spoolPath,
+						ids,
+						capacity,
+						count,
+						() => hook?.("index-partitioned"),
+					);
+					await hook?.("index-built", {
+						...indexStats,
+						dataBytes: encodedOffset - HEADER,
+						directoryBytes: pageCount * ENTRY,
+						spoolBytes: spoolOffset,
+					});
 					const manifest: Manifest = {
 						v: 1,
 						kind: "rowpack",
@@ -184,7 +226,9 @@ export const buildRowPack = async (
 					await File.syncDir(directory);
 					await hook?.("published");
 				} finally {
-					for (const handle of handles) await handle.close();
+					await encoder?.close();
+					await closeRowHandles(handles);
+					await rm(scratch, { recursive: true, force: true });
 					if (!published) {
 						for (const path of [...Object.values(names), manifestTmp])
 							await unlink(path).catch((error) => {

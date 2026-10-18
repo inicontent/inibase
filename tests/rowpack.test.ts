@@ -1,14 +1,28 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+	mkdtemp,
+	readdir,
+	readFile,
+	rm,
+	truncate,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { DatabaseResources } from "../src/resources.js";
+import { rowBucket } from "../src/row-index.js";
 import { buildRowPack, type PackedRow, RowPack } from "../src/rowpack.js";
 
-for (const phase of ["files-synced", "manifest-synced", "published"])
+for (const phase of [
+	"index-spooled",
+	"index-partitioned",
+	"files-synced",
+	"manifest-synced",
+	"published",
+])
 	test(`row pages reopen after process death at ${phase}`, async () => {
 		const directory = await mkdtemp(join(tmpdir(), "inibase-rowpack-kill-"));
 		const resources = new DatabaseResources();
@@ -74,6 +88,85 @@ const collect = async (pack: RowPack, id: number) => {
 	return Buffer.concat(chunks);
 };
 
+test("partitioned ID builds preserve sparse keys, collision chains and wraparound", async () => {
+	const directory = await mkdtemp(
+		join(tmpdir(), "inibase-rowpack-partitions-"),
+	);
+	const resources = new DatabaseResources();
+	try {
+		let base = 0;
+		while (rowBucket(base, 8192) !== 8191) base++;
+		const id = (i: number) => (i < 20 ? base + i * 8192 : 2 ** 40 + i * 104729);
+		async function* records() {
+			for (let i = 0; i < 4096; i++) {
+				const seq = (i * 7919) % 4096;
+				if (seq < 3000)
+					yield { id: id(seq), bytes: Buffer.from(`record-${seq}`) };
+			}
+		}
+		await buildRowPack(directory, records(), 3000, true, resources);
+		const pack = await RowPack.open(directory, resources);
+		for (const i of [
+			...Array.from({ length: 20 }, (_, i) => i),
+			40,
+			1023,
+			2048,
+			2999,
+		])
+			assert.equal((await collect(pack, id(i))).toString(), `record-${i}`);
+		assert.equal((await collect(pack, 2 ** 45)).length, 0);
+		assert.deepEqual(await readdir(join(directory, ".tmp")), []);
+		assert.ok(resources.stats().peakAccountedBytes <= resources.limit);
+	} finally {
+		await resources.close();
+		await rm(directory, { recursive: true, force: true });
+	}
+});
+
+test("a truncated or corrupted private spool cannot publish missing IDs", async () => {
+	const directory = await mkdtemp(join(tmpdir(), "inibase-rowpack-spool-"));
+	const resources = new DatabaseResources();
+	try {
+		const records = [{ id: 0, bytes: Buffer.from("old") }];
+		await buildRowPack(directory, stream(records), 1, true, resources);
+		const original = await readFile(join(directory, "CURRENT.rowpack"));
+		for (const corruption of ["truncate", "checksum"]) {
+			await assert.rejects(
+				buildRowPack(
+					directory,
+					stream(records),
+					1,
+					true,
+					resources,
+					async (phase) => {
+						if (phase !== "index-spooled") return;
+						const name = (await readdir(join(directory, ".tmp"))).find((name) =>
+							name.startsWith("rowpack-"),
+						);
+						assert.ok(name);
+						const spool = join(directory, ".tmp", name, "ids");
+						if (corruption === "truncate") await truncate(spool, 0);
+						else {
+							const bytes = await readFile(spool);
+							bytes[8] ^= 0x80;
+							await writeFile(spool, bytes);
+						}
+					},
+				),
+				/ROWPACK_(SPOOL_SIZE|SLOT_CHECKSUM)/,
+			);
+			assert.deepEqual(
+				await readFile(join(directory, "CURRENT.rowpack")),
+				original,
+			);
+			assert.deepEqual(await readdir(join(directory, ".tmp")), []);
+		}
+	} finally {
+		await resources.close();
+		await rm(directory, { recursive: true, force: true });
+	}
+});
+
 for (const compression of [true, false])
 	test(`row pages: sparse IDs, oversized values, snapshots and failed publication (${compression})`, async () => {
 		const directory = await mkdtemp(join(tmpdir(), "inibase-rowpack-"));
@@ -96,7 +189,11 @@ for (const compression of [true, false])
 				assert.deepEqual(await collect(old, row.id), row.bytes);
 			assert.equal((await collect(old, 123456)).length, 0);
 			const original = await readFile(join(directory, "CURRENT.rowpack"));
-			for (const phase of ["files-synced", "manifest-synced"] as const) {
+			for (const phase of [
+				"index-spooled",
+				"files-synced",
+				"manifest-synced",
+			] as const) {
 				await assert.rejects(
 					buildRowPack(
 						directory,

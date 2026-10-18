@@ -53,3 +53,44 @@ Before this layout can become the default, it needs:
 The selection between row pages, column blocks and a hybrid must follow measured
 point-read, projection, write, memory and storage tradeoffs. A backend switch is
 not justified by a read-kernel microbenchmark alone.
+
+## Construction and memory improvements
+
+The builder spools fixed-size ID/location entries sequentially, then partitions
+them on disk with a reusable 128 KiB workspace. A 32 KiB index page stays dirty in
+memory until it is evicted or construction finishes. Partition traversal uses a
+bounded stack of filenames; it does not retain open handles or recursive async
+frames. Collisions and wraparound still use the same disk linear-probe format.
+Checksums and expected entry counts are verified before publication. Private
+partition files need not be synchronized: the completed authoritative index is
+synchronized before its generation can become visible.
+
+Compressed builds reuse one native raw-deflate context and bounded output buffer.
+Every page remains an independent standard gzip member with its own header,
+checksum and length. Builds reserve 512 KiB when available. At the supported
+256 KiB minimum, the encoder uses a smaller 16 KiB compression window and output
+chunk, with a possible compression-ratio cost. It releases its output workspace
+before index construction. Cache/reservation accounting still does not bound
+Node's entire RSS or all allocations in the existing public engine.
+
+External partitioning exchanges small random operations for larger sequential
+I/O and temporary files. Auxiliary live file payload is bounded by roughly three
+times the 32-byte-per-row spool, plus filesystem metadata, independent of value
+size. Normal completion/failure removes the private directory; SIGKILL can leave
+unpublished generations and private files, whose safe reclamation remains work
+for the replacement backend.
+
+## Migration decision
+
+The final replacement runtime will support its new format only. Legacy readers
+belong in a separate, version-pinned migration tool, invoked through a `.sh`
+entry point. They must not remain branches in the shipped replacement engine.
+The shell entry point is to be delivered with the completed replacement format;
+this construction-only stage does not change the published row-page format and
+does not require conversion.
+
+Migration must preserve schemas, stable IDs, relations, computed definitions,
+ordering and all committed log/tombstone effects. It must validate staged output,
+keep the original recoverable, detect source changes, resume or discard interrupted
+staging safely, and publish only after synchronization and verification. A change
+in runtime compatibility does not waive these migration/recovery requirements.
