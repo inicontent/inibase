@@ -17,6 +17,7 @@ import {
 import { basename, join, parse, resolve } from "node:path";
 import { inspect } from "node:util";
 import Inison from "inison";
+import { observeEqualityScan } from "./automatic.js";
 import {
 	type BinaryOp,
 	buildFieldIndex,
@@ -136,6 +137,10 @@ export interface TableConfig {
 	cache?: boolean;
 	prepend?: boolean;
 	decodeID?: boolean;
+}
+
+/** Persisted compatibility state; not application table options. */
+interface StoredTableConfig extends TableConfig {
 	/**
 	 * Opt a table into the incremental update log (format 2): `put` appends a
 	 * small frame instead of rewriting whole columns, and reads merge the log
@@ -163,6 +168,11 @@ interface SeekConfig {
 export interface TableObject {
 	schema?: Schema;
 	config: TableConfig;
+}
+
+interface StoredTableObject {
+	schema?: Schema;
+	config: StoredTableConfig;
 }
 
 /**
@@ -267,7 +277,7 @@ if (
 
 export const globalConfig: {
 	[database: string]: {
-		tables?: Map<string, TableObject & { timestamp?: Date }>;
+		tables?: Map<string, StoredTableObject & { timestamp?: Date }>;
 	};
 } & { salt?: string | Buffer } = {};
 
@@ -543,6 +553,8 @@ export default class Inibase {
 	public async close(): Promise<void> {
 		if (this.closed) return;
 		if (this.activeTransaction) await this.rollback();
+		this.closed = true;
+		await this.resources.drainMaintenance();
 		for (const overlay of this.overlays.values()) await overlay.dispose();
 		this.overlays.clear();
 		await releaseDatabase(this.databasePath);
@@ -618,7 +630,7 @@ export default class Inibase {
 	 *
 	 * @param {string} tableName
 	 * @param {Schema} [schema]
-	 * @param {TableConfig} [config]
+	 * @param {StoredTableConfig} [config]
 	 */
 	public async createTable(
 		tableName: string,
@@ -633,7 +645,7 @@ export default class Inibase {
 	private async _createTable(
 		tableName: string,
 		schema?: Schema,
-		config?: TableConfig,
+		config?: StoredTableConfig,
 	) {
 		this.validateName(tableName);
 
@@ -759,7 +771,7 @@ export default class Inibase {
 	 *
 	 * @param {string} tableName
 	 * @param {Schema} [schema]
-	 * @param {(TableConfig&{name?: string})} [config]
+	 * @param {(StoredTableConfig&{name?: string})} [config]
 	 */
 	public async updateTable(
 		tableName: string,
@@ -774,7 +786,7 @@ export default class Inibase {
 	private async _updateTable(
 		tableName: string,
 		schema?: Schema,
-		config?: TableConfig & { name?: string },
+		config?: StoredTableConfig & { name?: string },
 	) {
 		this.validateName(tableName);
 
@@ -785,7 +797,7 @@ export default class Inibase {
 
 		if (config?.name) this.validateName(config.name);
 
-		const table = await this.getTable(tableName);
+		const table = await this.loadTable(tableName);
 		if (!table) return;
 		const tablePath = join(this.databasePath, tableName);
 
@@ -808,10 +820,10 @@ export default class Inibase {
 
 	private async updateTableLocked(
 		tableName: string,
-		table: TableObject,
+		table: StoredTableObject,
 		tablePath: string,
 		schema?: Schema,
-		config?: TableConfig & { name?: string },
+		config?: StoredTableConfig & { name?: string },
 	) {
 		// A log table cannot be reshaped in place yet: its log frames reference
 		// column names and its overlay would have to be materialised into the
@@ -1176,9 +1188,25 @@ export default class Inibase {
 	 * Get table schema and config
 	 *
 	 * @param {string} tableName
-	 * @return {*}  {Promise<TableObject | undefined>}
+	 * @return {*}  {Promise<StoredTableObject | undefined>}
 	 */
 	public async getTable(tableName: string): Promise<TableObject | undefined> {
+		const table = await this.loadTable(tableName);
+		if (!table) return undefined;
+		return {
+			...table,
+			config: {
+				decodeID: table.config.decodeID === true,
+				prepend: table.config.prepend === true,
+				compression: table.config.compression === true,
+				cache: table.config.cache === true,
+			},
+		};
+	}
+
+	private async loadTable(
+		tableName: string,
+	): Promise<StoredTableObject | undefined> {
 		this.validateName(tableName);
 
 		const tablePath = join(this.databasePath, tableName);
@@ -1196,7 +1224,7 @@ export default class Inibase {
 			const format = await this.readValidatedFormat(tableName, tablePath);
 			this.tableFormats.set(tableName, format);
 			await this.stampFormat(tableName);
-			const config: TableConfig = {
+			const config: StoredTableConfig = {
 				compression: await File.isExists(
 					join(tablePath, ".compression.config"),
 				),
@@ -1238,9 +1266,9 @@ export default class Inibase {
 		return File.runWithLockStore(async () => {
 			this.validateName(tableName);
 			if (this.activeTransaction) throw this.createError("INVALID_PARAMETERS");
-			await this.getTable(tableName);
+			await this.loadTable(tableName);
 			if (!this.isLogTable(tableName))
-				await this.updateTable(tableName, undefined, { log: true });
+				await this._updateTable(tableName, undefined, { log: true });
 			const tablePath = join(this.databasePath, tableName);
 			await File.lock(join(tablePath, ".tmp"));
 			try {
@@ -1262,7 +1290,7 @@ export default class Inibase {
 	}
 
 	private seekConfig(
-		config: Pick<TableConfig, "indexes" | "blockBytes">,
+		config: Pick<StoredTableConfig, "indexes" | "blockBytes">,
 	): SeekConfig {
 		const blockBytes = config.blockBytes ?? DEFAULT_BLOCK_BYTES;
 		if (![65536, 131072, 262144].includes(blockBytes))
@@ -1291,7 +1319,7 @@ export default class Inibase {
 	/** Explicit, journaled accelerator migration. Existing gzip readers remain compatible. */
 	public async optimize(
 		tableName: string,
-		options: Pick<TableConfig, "indexes" | "blockBytes"> = {},
+		options: Pick<StoredTableConfig, "indexes" | "blockBytes"> = {},
 	): Promise<void> {
 		return File.runWithLockStore(async () => {
 			this.validateName(tableName);
@@ -1299,39 +1327,111 @@ export default class Inibase {
 			await this.ensureDatabaseRecovered();
 			const tablePath = join(this.databasePath, tableName);
 			await File.lock(join(tablePath, ".tmp"));
-			const pairs: (string | null)[][] = [];
 			try {
-				const table = await this.getTable(tableName);
-				const config = this.seekConfig(options);
-				for (const key of config.indexes) {
-					this.validateColumns([key]);
-					if (
-						!table?.schema?.some(
-							(field) => field.key === key && this.isSimpleField(field.type),
-						)
-					)
-						throw this.createError("INVALID_PARAMETERS", `index ${key}`);
-				}
-				const extension = this.getFileExtension(tableName);
-				for (const name of await readdir(tablePath)) {
-					if (!name.endsWith(extension)) continue;
-					const live = join(tablePath, name);
-					const tmp = join(
-						tablePath,
-						".tmp",
-						`${name}.optimize-${randomUUID()}`,
-					);
-					await copyFile(live, tmp);
-					pairs.push([tmp, live]);
-				}
-				await this.prepareAccelerators(tablePath, pairs, config);
-				const tmp = join(tablePath, ".tmp", `seek.config-${randomUUID()}`);
-				await File.write(tmp, JSON.stringify(config));
-				pairs.push([tmp, join(tablePath, ".seek.config")]);
-				await this.commitFiles(tablePath, pairs, null);
-				globalConfig[this.databasePath].tables?.delete(tableName);
+				await this.optimizeLocked(tableName, tablePath, options);
 			} finally {
-				for (const [tmp] of pairs) if (tmp) await unlink(tmp).catch(() => {});
+				await File.unlock(join(tablePath, ".tmp"));
+			}
+		});
+	}
+
+	private async optimizeLocked(
+		tableName: string,
+		tablePath: string,
+		options: Pick<StoredTableConfig, "indexes" | "blockBytes">,
+		budget?: { remainingBytes: number },
+	): Promise<void> {
+		const pairs: (string | null)[][] = [];
+		try {
+			const table = await this.loadTable(tableName);
+			const config = this.seekConfig(options);
+			for (const key of config.indexes) {
+				this.validateColumns([key]);
+				if (
+					!table?.schema?.some(
+						(field) => field.key === key && this.isSimpleField(field.type),
+					)
+				)
+					throw this.createError("INVALID_PARAMETERS", `index ${key}`);
+			}
+			const extension = this.getFileExtension(tableName);
+			for (const name of await readdir(tablePath)) {
+				if (!name.endsWith(extension)) continue;
+				const live = join(tablePath, name);
+				const tmp = join(tablePath, ".tmp", `${name}.optimize-${randomUUID()}`);
+				await copyFile(live, tmp);
+				pairs.push([tmp, live]);
+			}
+			await this.prepareAccelerators(tablePath, pairs, config, budget);
+			const tmp = join(tablePath, ".tmp", `seek.config-${randomUUID()}`);
+			await File.write(tmp, JSON.stringify(config));
+			pairs.push([tmp, join(tablePath, ".seek.config")]);
+			await this.commitFiles(tablePath, pairs, null);
+			globalConfig[this.databasePath].tables?.delete(tableName);
+		} finally {
+			for (const [tmp] of pairs) if (tmp) await unlink(tmp).catch(() => {});
+		}
+	}
+
+	/** Conservative automatic accelerator build; authoritative formats never change. */
+	private async buildAutomaticIndex(
+		tableName: string,
+		key: string,
+	): Promise<void> {
+		return File.runWithIndependentLockStore(async () => {
+			if (this.closed || this.activeTransaction) return;
+			const tablePath = join(this.databasePath, tableName);
+			const databaseJournal = join(this.databasePath, ".tmp", "journal.jsonl");
+			if (await File.isExists(databaseJournal)) return;
+			if (!(await File.tryLock(join(tablePath, ".tmp")))) return;
+			try {
+				if (await File.isExists(databaseJournal)) return;
+				const table = await this.loadTable(tableName);
+				const field = table?.schema?.find((field) => field.key === key);
+				if (!field || field.computed || !this.isSimpleField(field.type)) return;
+				const previous = await this.readSeekConfig(tablePath);
+				if (
+					previous?.indexes.includes(key) ||
+					(previous?.indexes.length ?? 0) >= 8
+				)
+					return;
+				const extension = this.getFileExtension(tableName);
+				let primaryBytes = 0,
+					indexBytes = 0,
+					rows = 0;
+				for (const name of await readdir(tablePath)) {
+					if (name.endsWith(extension))
+						primaryBytes += (await stat(join(tablePath, name))).size;
+					if (name.endsWith(".lookup"))
+						indexBytes += (await stat(join(tablePath, name))).size;
+					if (name.endsWith(".pagination"))
+						rows = Number(parse(name).name.split("-")[1]);
+				}
+				// Until segment publication exists, bound this whole-column operation.
+				if (
+					rows < 128 ||
+					rows > 100000 ||
+					indexBytes + rows * 68 >
+						Math.min(
+							64 * 1024 * 1024,
+							Math.max(1024 * 1024, primaryBytes * 2),
+						) ||
+					primaryBytes > 8 * 1024 * 1024 ||
+					this.resources.limit < 4 * 1024 * 1024
+				)
+					return;
+				await this.resources.withWorking(2 * 1024 * 1024, () =>
+					this.optimizeLocked(
+						tableName,
+						tablePath,
+						{
+							indexes: [...(previous?.indexes ?? []), key],
+							blockBytes: previous?.blockBytes,
+						},
+						{ remainingBytes: 16 * 1024 * 1024 },
+					),
+				);
+			} finally {
 				await File.unlock(join(tablePath, ".tmp"));
 			}
 		});
@@ -1341,6 +1441,7 @@ export default class Inibase {
 		tablePath: string,
 		pairs: (string | null)[][],
 		explicit?: SeekConfig,
+		budget?: { remainingBytes: number },
 	): Promise<void> {
 		const config = explicit ?? (await this.readSeekConfig(tablePath));
 		if (!config) return;
@@ -1366,6 +1467,13 @@ export default class Inibase {
 					live,
 					config.blockBytes,
 					File.appendPrefixOf(pair),
+					budget
+						? (bytes) => {
+								budget.remainingBytes -= bytes;
+								if (budget.remainingBytes < 0)
+									throw new Error("AUTOMATIC_BUILD_BUDGET");
+							}
+						: undefined,
 				),
 			);
 		}
@@ -1378,7 +1486,15 @@ export default class Inibase {
 				(live === idLive ||
 					config.indexes.includes(basename(live).slice(0, -extension.length)))
 			)
-				pairs.push(await prepareKeyIndex(tmp, live, idTmp, idLive));
+				pairs.push(
+					await prepareKeyIndex(
+						tmp,
+						live,
+						idTmp,
+						idLive,
+						budget ? 65536 : Infinity,
+					),
+				);
 		}
 	}
 
@@ -1690,7 +1806,7 @@ export default class Inibase {
 		// prefix corruption cannot be silently erased by compaction.
 		await overlay.log.scan(overlay.baseGen + 1);
 
-		const schema = (await this.getTable(tableName))?.schema ?? [];
+		const schema = (await this.loadTable(tableName))?.schema ?? [];
 		const schemaKeys = new Set(schema.map((field) => field.key));
 		const format = await this.currentFormat(tableName);
 
@@ -1859,7 +1975,7 @@ export default class Inibase {
 	}
 
 	private async throwErrorIfTableEmpty(tableName: string): Promise<void> {
-		const table = await this.getTable(tableName);
+		const table = await this.loadTable(tableName);
 
 		if (!table?.schema) throw this.createError("NO_SCHEMA", tableName);
 
@@ -3590,7 +3706,7 @@ export default class Inibase {
 			);
 			if (await File.isExists(fieldPath)) {
 				// add table to globalConfig
-				await this.getTable(field.table);
+				await this.loadTable(field.table);
 
 				const itemsIDs = (await File.get(fieldPath, linesNumber, {
 					...field,
@@ -3769,6 +3885,7 @@ export default class Inibase {
 					searchComparedAtValue = value;
 				}
 
+				const searchStarted = performance.now();
 				const [searchResult, totalLines, linesNumbers] = await File.search(
 					join(tablePath, `${key}${this.getFileExtension(tableName)}`),
 					searchOperator ?? "=",
@@ -3789,6 +3906,42 @@ export default class Inibase {
 					undefined,
 					await this.overlayColumnOverrides(tableName, key),
 				);
+				if (
+					!this.closed &&
+					!this.activeTransaction &&
+					!searchIn &&
+					!key.includes(".") &&
+					!field.table &&
+					!field.computed &&
+					searchOperator === "=" &&
+					!searchLogicalOperator &&
+					[
+						"string",
+						"text",
+						"textarea",
+						"html",
+						"url",
+						"email",
+						"number",
+						"date",
+						"timestamp",
+						"time",
+						"id",
+					].includes(String(field.type)) &&
+					(typeof searchComparedAtValue === "number" ||
+						(typeof searchComparedAtValue === "string" &&
+							searchComparedAtValue !== "" &&
+							!Utils.isNumber(searchComparedAtValue) &&
+							!/^[{[]/.test(searchComparedAtValue)))
+				) {
+					observeEqualityScan(
+						this.resources,
+						tablePath,
+						key,
+						performance.now() - searchStarted,
+						() => this.buildAutomaticIndex(tableName, key),
+					);
+				}
 				if (!searchResult) {
 					if (allTrue) return null;
 					continue;
@@ -4207,7 +4360,7 @@ export default class Inibase {
 			// Validate every listed table before locking anything.
 			for (const name of uniqueTables) {
 				this.validateName(name);
-				await this.getTable(name); // throws TABLE_NOT_EXISTS
+				await this.loadTable(name); // throws TABLE_NOT_EXISTS
 			}
 
 			const id = randomUUID();
@@ -4615,7 +4768,7 @@ export default class Inibase {
 		let total: number | undefined;
 		let RETURN!: (Data & TData) | (Data & TData)[] | null;
 
-		let schema = structuredClone((await this.getTable(tableName))?.schema);
+		let schema = structuredClone((await this.loadTable(tableName))?.schema);
 
 		if (!schema) throw this.createError("NO_SCHEMA", tableName);
 
@@ -5297,7 +5450,7 @@ export default class Inibase {
 
 		const tablePath = join(this.databasePath, tableName);
 		if (!this.activeTransaction) await this.ensureDatabaseRecovered();
-		await this.getTable(tableName);
+		await this.loadTable(tableName);
 
 		if (!globalConfig[this.databasePath].tables?.get(tableName)?.schema)
 			throw this.createError("NO_SCHEMA", tableName);

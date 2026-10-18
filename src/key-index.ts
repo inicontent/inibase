@@ -21,9 +21,40 @@ const hash = (key: string) =>
 async function* cells(
 	path: string,
 	compressed: boolean,
+	maxCellBytes = Infinity,
 ): AsyncGenerator<string> {
 	const source = createReadStream(path);
 	const input = compressed ? source.pipe(createGunzip()) : source;
+	if (Number.isFinite(maxCellBytes)) {
+		let pieces: Buffer[] = [],
+			length = 0;
+		try {
+			for await (const chunk of input) {
+				const bytes = chunk as Buffer;
+				let start = 0;
+				for (;;) {
+					const end = bytes.indexOf(10, start);
+					const part = bytes.subarray(start, end < 0 ? bytes.length : end);
+					length += part.length;
+					if (length > maxCellBytes) throw new Error("AUTOMATIC_BUILD_BUDGET");
+					pieces.push(part);
+					if (end < 0) break;
+					yield Buffer.concat(pieces, length)
+						.toString("utf8")
+						.replace(/\r$/, "");
+					pieces = [];
+					length = 0;
+					start = end + 1;
+				}
+			}
+			if (length)
+				yield Buffer.concat(pieces, length).toString("utf8").replace(/\r$/, "");
+		} finally {
+			input.destroy();
+			source.destroy();
+		}
+		return;
+	}
 	const lines = createInterface({ input, crlfDelay: Infinity });
 	try {
 		for await (const line of lines) yield line;
@@ -40,11 +71,14 @@ export const prepareKeyIndex = async (
 	live: string,
 	idTmp: string,
 	idLive: string,
+	maxCellBytes = Infinity,
 ): Promise<[string, string]> => {
 	const indexTmp = `${tmp}.lookup`;
 	const output = await open(indexTmp, "wx");
 	const numeric = live === idLive;
-	const idReader = numeric ? undefined : cells(idTmp, idLive.endsWith(".gz"));
+	const idReader = numeric
+		? undefined
+		: cells(idTmp, idLive.endsWith(".gz"), maxCellBytes);
 	let rows = 0,
 		safe = true;
 	try {
@@ -77,7 +111,7 @@ export const prepareKeyIndex = async (
 			else await output.writeFile(buffer.subarray(0, used));
 			used = 0;
 		};
-		for await (const raw of cells(tmp, live.endsWith(".gz"))) {
+		for await (const raw of cells(tmp, live.endsWith(".gz"), maxCellBytes)) {
 			const idValue = numeric ? raw : (await idReader?.next())?.value;
 			const id = Number(idValue);
 			if (

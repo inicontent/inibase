@@ -28,6 +28,13 @@ export class DatabaseResources {
 	private peak = 0;
 	private closed = false;
 	private closing = 0;
+	private working = 0;
+	private peakAccounted = 0;
+	private readonly memoryWaiters = new Set<() => void>();
+	private maintenance: Promise<void> | undefined;
+	private maintenanceRuns = 0;
+	private maintenanceErrors = 0;
+	private maintenanceError: string | undefined;
 
 	get<T>(key: string): T | undefined {
 		const entry = this.cache.get(key);
@@ -39,8 +46,8 @@ export class DatabaseResources {
 
 	set(key: string, value: unknown, bytes: number): void {
 		this.delete(key);
-		if (bytes > this.limit) return;
-		while (this.used + bytes > this.limit) {
+		if (bytes > this.limit - this.working) return;
+		while (this.used + this.working + bytes > this.limit) {
 			const oldest = this.cache.keys().next().value;
 			if (oldest === undefined) break;
 			this.delete(oldest);
@@ -48,6 +55,54 @@ export class DatabaseResources {
 		this.cache.set(key, { value, bytes });
 		this.used += bytes;
 		this.peak = Math.max(this.peak, this.used);
+		this.peakAccounted = Math.max(this.peakAccounted, this.used + this.working);
+	}
+
+	/** Reserve before allocating. Concurrent maintenance shares the cache budget. */
+	async withWorking<T>(bytes: number, fn: () => Promise<T>): Promise<T> {
+		if (!Number.isSafeInteger(bytes) || bytes < 1 || bytes > this.limit)
+			throw new Error("MEMORY_RESERVATION_TOO_LARGE");
+		for (;;) {
+			if (this.closed) throw new Error("DATABASE_RESOURCES_CLOSED");
+			if (this.working + bytes <= this.limit) break;
+			await new Promise<void>((resolve) => this.memoryWaiters.add(resolve));
+		}
+		while (this.used + this.working + bytes > this.limit) {
+			const oldest = this.cache.keys().next().value;
+			if (oldest === undefined) break;
+			this.delete(oldest);
+		}
+		this.working += bytes;
+		this.peakAccounted = Math.max(this.peakAccounted, this.used + this.working);
+		try {
+			return await fn();
+		} finally {
+			this.working -= bytes;
+			for (const wake of this.memoryWaiters) wake();
+			this.memoryWaiters.clear();
+		}
+	}
+
+	/** One task for the entire database, no accumulating background queue. */
+	tryMaintenance(fn: () => Promise<void>): boolean {
+		if (this.closed || this.maintenance) return false;
+		this.maintenance = Promise.resolve()
+			.then(fn)
+			.then(() => {
+				this.maintenanceRuns++;
+			})
+			.catch((error) => {
+				this.maintenanceErrors++;
+				this.maintenanceError = String(error?.message ?? error).slice(0, 512);
+			})
+			.finally(() => {
+				this.maintenance = undefined;
+			});
+		return true;
+	}
+
+	async drainMaintenance(): Promise<void> {
+		await this.maintenance;
 	}
 
 	delete(key: string): void {
@@ -154,6 +209,12 @@ export class DatabaseResources {
 			limitBytes: this.limit,
 			cacheBytes: this.used,
 			peakCacheBytes: this.peak,
+			workingBytes: this.working,
+			peakAccountedBytes: this.peakAccounted,
+			maintenanceActive: Boolean(this.maintenance),
+			maintenanceRuns: this.maintenanceRuns,
+			maintenanceErrors: this.maintenanceErrors,
+			maintenanceLastError: this.maintenanceError,
 			cachedEntries: this.cache.size,
 			openFiles: this.handles.size + this.opening.size + this.closing,
 			maxOpenFiles: this.handleLimit,
@@ -166,6 +227,7 @@ export class DatabaseResources {
 	}
 
 	async close(): Promise<void> {
+		await this.drainMaintenance();
 		for (const pending of this.opening.values()) await pending;
 		for (const path of this.handles.keys()) await this.releaseFile(path);
 		this.cache.clear();

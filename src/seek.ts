@@ -165,6 +165,7 @@ export const prepareSeekable = async (
 	live: string,
 	blockBytes = DEFAULT_BLOCK_BYTES,
 	prefix?: AppendPrefix,
+	consumeBytes?: (bytes: number) => void,
 ): Promise<[string, string]> => {
 	if (![64, 128, 256].some((n) => n * 1024 === blockBytes))
 		throw new Error("INVALID_BLOCK_SIZE");
@@ -230,6 +231,7 @@ export const prepareSeekable = async (
 			await directory.truncate(HEADER + blocks * ENTRY);
 		} else await directory.writeFile(Buffer.alloc(HEADER));
 		const consume = async (bytes: Buffer) => {
+			consumeBytes?.(bytes.length);
 			if (bytes.length) partial = bytes[bytes.length - 1] !== 10;
 			let consumed = 0;
 			while (consumed < bytes.length) {

@@ -143,6 +143,10 @@ export const runWithLockStore = <T>(fn: () => T): T => {
 	return lockContext.run(store, fn);
 };
 
+/** Detached maintenance must never inherit a foreground writer's lock owner. */
+export const runWithIndependentLockStore = <T>(fn: () => T): T =>
+	lockContext.run(new Set(), fn);
+
 // True when this task already owns the lock (depth > 0 and the recorded owner
 // context is this task's context). Bumps the depth and returns.
 const isReentrant = (resolvedPath: string) => {

@@ -1,29 +1,62 @@
 # Experimental disk acceleration (3.9.0-dev.0)
 
 This is a local development build, not a production-readiness or SQLite-superiority claim.
-Existing format-1 and format-2 databases remain readable. No automatic format upgrade,
-secondary indexing, durability reduction, or replacement database engine is introduced.
+Existing format-1, format-2 and format-3 databases remain readable. Automatic tuning
+only creates derived accelerators; it does not change authoritative log formats or
+reduce durability. No replacement database engine is introduced.
 
-## Enable explicitly
+## Application options
 
 ```ts
 await db.createTable("records", schema, {
+  decodeID: true,
+  prepend: false,
   compression: true,
-  log: true,
-  seekable: true,
-  indexes: ["slug"],
-  blockBytes: 131072,
-  tombstones: true,
+  cache: false,
 });
 
-// Existing tables: independent, explicit migrations.
-await db.optimize("records", { indexes: ["slug"], blockBytes: 131072 });
-await db.enableTombstones("records");
-
-await db.compact("records");
 console.log(db.memoryUsage());
-await db.close(); // release private scratch files, caches and reusable handles
+await db.close();
 ```
+
+These are the four exported `TableConfig` properties and the four properties
+returned by `getTable().config`. Existing persisted storage flags and legacy
+runtime inputs remain understood internally. The historical `optimize`,
+`enableTombstones` and `compact` maintenance methods remain available for
+compatibility; ordinary applications need not choose block sizes or indexes.
+
+## Automatic read optimization
+
+The engine observes eligible top-level scalar equality searches without retaining
+query values. After at least 16 probes and 64 ms of cumulative search work, it may
+build a disk index and seek directories using the existing journaled publication
+path. Missing-key probes count too. Numeric-looking string predicates, nested
+fields, relations, computed fields and non-equality operators keep their existing
+paths. The existing internal-ID accelerator is included when a build qualifies.
+
+One maintenance task is allowed per database, shared across instances in the
+process, with no pending-task queue. A nonblocking writer lock prevents competing
+builds across processes. Maintenance gets an independent async lock context so it
+cannot accidentally inherit a foreground operation's reentrant ownership.
+`close()` drains maintenance. Failures retain the scan fallback and are reported
+by `memoryUsage().maintenanceErrors` and `maintenanceLastError`.
+
+This first policy is intentionally limited: 128–100,000 rows, at most 8 MiB of
+compressed/raw primary files, a 16 MiB uncompressed build-work limit and 64 KiB
+indexed cells. It requires a database budget of at least 4 MiB, reserves 2 MiB for
+build working space, limits index growth using the current table footprint, and
+waits ten minutes before another attempt on the same column. Evidence counters
+are evictable entries in the shared cache. Larger tables and values still work;
+they retain existing paths when a build exceeds these limits. The policy does not
+currently measure write/read ratios, remove unused indexes, select block sizes
+from workload evidence or adapt the primary storage layout. Index maintenance can
+increase delete/insert cost; benchmark results include those costs.
+
+Automatic log/tombstone migration is deliberately deferred: the current log
+backend restricts supported transactions and schemas. Turning it on silently
+would break existing features. Future automatic writes need a backend that
+preserves those features first. Column storage is an implementation choice, not
+a project requirement; see [the row-storage experiment](row-storage.md).
 
 `optimize` accepts simple top-level application columns. Unsupported predicate/type
 shapes continue through the existing filtering path; an index is not a new query
@@ -45,7 +78,7 @@ paths; log tables retain their existing simple-schema/append-layout restrictions
   Blocks are 64, 128 (default), or 256 KiB uncompressed. Oversized cells can span
   blocks, including split UTF-8 sequences; only requested cells are assembled.
 * `<column>.lookup` has a version-1 header tied to the primary and ID-file
-  identities. Internal-ID indexes use a sparse numeric directory. Opt-in key
+  identities. Internal-ID indexes use a sparse numeric directory. Automatically learned or historically explicit key
   indexes use on-disk hash buckets and checksummed collision chains. Locations
   include stable IDs and physical row positions; the seek directory makes those
   positions directly readable without decompressing the preceding stream.
@@ -109,10 +142,12 @@ against actual power failures and filesystem/device write-cache behavior is outs
 
 ## Memory and storage: important incomplete requirements
 
-`INIBASE_MEMORY_BYTES` (default 16 MiB, minimum 256 KiB) is a shared **cache-accounting
+`INIBASE_MEMORY_BYTES` (default 16 MiB, minimum 256 KiB) is a shared **cache and reserved-maintenance accounting
 limit** across all instances of one database in a process. It charges overlay page
 buffers, decoded overlay cache entries conservatively, column block buffers and
-directory pages. Overlays themselves are rebuildable sparse disk directories plus
+directory pages, small workload-evidence counters and newly reserved background
+working space. `workingBytes` and `peakAccountedBytes` expose the reservations;
+this is still not all engine allocation. Overlays themselves are rebuildable sparse disk directories plus
 append-only values, not table-sized resident Maps. `INIBASE_MAX_OPEN_FILES` (default
 32, minimum 4) bounds the reusable scratch-handle pool, including in-progress opens
 and closes. `close()` releases that database's resources when its last instance closes.
@@ -142,7 +177,8 @@ Further tradeoffs:
   index is a remaining priority. Non-indexed searches remain scans.
 * The existing per-table log/overlay backpressure settings remain; a large single
   public operation can exceed a pre-write threshold before subsequent maintenance.
-* No group-commit coordinator or background compactor is introduced. Existing
+* No group-commit coordinator or background compactor is introduced. Automatic
+  index preparation is the only new background maintenance. Existing
   fsyncs and cross-process writer locking remain in force.
 
 ## Verification and reproduction
@@ -156,7 +192,7 @@ pnpm exec biome check src
 pnpm exec tsc
 ```
 
-Benchmark tooling, exact artifact identities, raw samples, failed exploratory runs,
-SQLite comparisons and reproduction commands live in the sibling repository under
-`../benchmarks/results/local-optimization/` and `../benchmarks/LOCAL-OPTIMIZATION.md`.
-Read that report before interpreting any performance claim.
+Benchmark tooling, exact artifact identities, raw samples, failures and reproduction
+commands are in [qualification tooling](../benchmark/qualification/README.md),
+[the earlier optimization report](../benchmark/results/optimization-20261017/REPORT.md)
+and [the automatic-options report](../benchmark/results/automatic-20261018/REPORT.md).
