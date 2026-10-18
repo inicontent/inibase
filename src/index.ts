@@ -4567,6 +4567,18 @@ export default class Inibase {
 			tablePath,
 			`dir:${directory.dev}:${directory.ino}:${directory.mtimeNs}:${directory.ctimeNs}`,
 		);
+		// A read may start after ensureTableRecovered() checked but while a
+		// writer is paused between live->backup and tmp->live. File identities
+		// can then stay unchanged for the entire torn read. Bracket the read
+		// with journal absence as well; the existing writer-lock fallback waits
+		// for publication or runs recovery instead of accepting that snapshot.
+		const journalPath = join(tablePath, ".tmp", "journal.jsonl");
+		snapshot.set(
+			journalPath,
+			(await File.isExists(journalPath))
+				? "publication-busy"
+				: "publication-clear",
+		);
 		for (const fileName of await readdir(tablePath).catch(() => [])) {
 			if (
 				!fileName.endsWith(extension) &&
@@ -4591,6 +4603,11 @@ export default class Inibase {
 		snapshot: Map<string, string>,
 	): Promise<boolean> {
 		for (const [filePath, identity] of snapshot) {
+			if (identity === "publication-busy") return false;
+			if (identity === "publication-clear") {
+				if (await File.isExists(filePath)) return false;
+				continue;
+			}
 			const fileStat = await stat(filePath, { bigint: true }).catch(() => null);
 			const observed = !fileStat
 				? "missing"
@@ -6271,22 +6288,34 @@ export default class Inibase {
 				if (inlineLock) await File.unlock(join(tablePath, ".tmp"));
 			}
 		} else if (Utils.isObject(where)) {
-			const lineNumbers = await this.get(
-				tableName,
-				where,
-				undefined,
-				undefined,
-				true,
-			);
-			if (lineNumbers)
-				return this.put<TData>(
+			// Criteria resolve to physical lines too. Keep the writer lock from
+			// selection through the awaited recursive write, exactly as for IDs.
+			let inlineLock = false;
+			try {
+				if (this.activeTransaction) await this.ensureTxnLock(tableName);
+				else {
+					await File.lock(join(tablePath, ".tmp"));
+					inlineLock = true;
+				}
+				const lineNumbers = await this.get(
 					tableName,
-					clonedData,
-					lineNumbers,
-					options,
-					returnUpdatedData as boolean,
+					where,
+					undefined,
+					undefined,
 					true,
 				);
+				if (lineNumbers)
+					return await this.put<TData>(
+						tableName,
+						clonedData,
+						lineNumbers,
+						options,
+						returnUpdatedData as boolean,
+						true,
+					);
+			} finally {
+				if (inlineLock) await File.unlock(join(tablePath, ".tmp"));
+			}
 		} else throw this.createError("INVALID_PARAMETERS");
 	}
 
@@ -6625,20 +6654,30 @@ export default class Inibase {
 			}
 		}
 		if (Utils.isObject(where)) {
-			const lineNumbers = await this.get(
-				tableName,
-				where,
-				undefined,
-				undefined,
-				true,
-			);
-			if (lineNumbers)
-				return this.delete(
+			let inlineLock = false;
+			try {
+				if (this.activeTransaction) await this.ensureTxnLock(tableName);
+				else {
+					await File.lock(join(tablePath, ".tmp"));
+					inlineLock = true;
+				}
+				const lineNumbers = await this.get(
 					tableName,
-					lineNumbers,
+					where,
+					undefined,
+					undefined,
 					true,
-					_cascadeGuard ?? new Set(),
 				);
+				if (lineNumbers)
+					return await this.delete(
+						tableName,
+						lineNumbers,
+						true,
+						_cascadeGuard ?? new Set(),
+					);
+			} finally {
+				if (inlineLock) await File.unlock(join(tablePath, ".tmp"));
+			}
 		} else throw this.createError("INVALID_PARAMETERS");
 		return false;
 	}
