@@ -1,0 +1,26 @@
+✔ automatic point writes/deletes keep base columns untouched and merge indexed keys, metadata and uniqueness (351.679167ms)
+✔ transactions transparently fold prior deltas and retain commit/rollback behavior (601.064333ms)
+✔ schema changes, prepend, broad updates and oversized values preserve supported fallbacks (677.344708ms)
+✔ prepend tables retain existing behavior without automatic append layout (309.381541ms)
+✔ multiple processes see activation, concurrent deltas/deletes, compaction and reopen (1302.131292ms)
+✔ process crash during automatic marker recovers a consistent table (314.928041ms)
+✔ process crash during automatic append recovers a consistent table (305.87325ms)
+✔ process crash during automatic sync recovers a consistent table (308.405542ms)
+✔ automatic append synchronization errors are rejected and subsequent writes recover (303.435375ms)
+✔ process crash partway through compaction preserves acknowledged updates and tombstones (449.212541ms)
+✔ automatic delta reservations and overlay handles share a small database allowance across tables (1557.217ms)
+✔ metadata supplied to a point update retains the existing base-write semantics (282.444333ms)
+✔ successive small column updates fold before a merged overlay row exceeds its allowance (457.682833ms)
+✔ sorted reads fold automatic deltas and retain indexed stable-ID selection after deletes (398.507792ms)
+✔ automatic deltas retain encrypted public IDs across deletion, compaction and reopen (304.523167ms)
+✔ query caches are invalidated by log generations even when compaction preserves row count (335.406625ms)
+✔ a cache-prefix lock never removes another writer's staged columns (269.92375ms)
+✔ compressed sort spools remain protected against an independent writer (517.621208ms)
+ℹ tests 18
+ℹ suites 0
+ℹ pass 18
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 9050.104833
