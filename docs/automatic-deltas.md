@@ -47,6 +47,10 @@ Transactions, schema/config changes, prepend layouts, complex/computed schemas,
 broad changes and oversized payloads retain their existing supported paths.
 Sorted reads with pending automatic deltas fold first and use the existing disk
 sort path, avoiding the explicit-log backend's whole-table JavaScript sort.
+Compressed sort keys are streamed to temporary plain columns and removed afterward;
+native sort receives an explicit working-set size. This trades RAM for temporary
+disk space proportional to the selected sort columns. Valid cached sort results
+avoid that decompression. Query-cache names include the folded log generation.
 When necessary, the engine first folds acknowledged deltas and durably leaves
 automatic log mode under the same writer lock, then performs the operation.
 Transactions retain the existing journal, isolation and one-staged-mutation-per-

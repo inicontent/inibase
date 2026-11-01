@@ -69,10 +69,54 @@ if (mode === "compact-crash") {
 	};
 	syncBuiltinESMExports();
 }
+if (mode === "sort-pause") {
+	const open = fs.promises.open.bind(fs.promises);
+	let paused = false;
+	fs.promises.open = async (...args: Parameters<typeof open>) => {
+		const handle = await open(...args);
+		if (String(args[0]).endsWith(".sort") && args[1] === "wx") {
+			const close = handle.close.bind(handle);
+			handle.close = async () => {
+				await close();
+				if (!paused) {
+					paused = true;
+					process.send?.({ paused: "sort" });
+					await new Promise<void>((resolve) =>
+						process.once("message", () => resolve()),
+					);
+				}
+			};
+		}
+		return handle;
+	};
+	syncBuiltinESMExports();
+}
 const { default: Inibase } = await import("../src/index.js");
 const db = new Inibase("db", root);
 try {
-	if (mode === "crash") await db.put("records", { score: 900 }, 10);
+	if (mode === "cache-lock") {
+		const File = await import("../src/file.js");
+		const path = `${root}/db/records/.tmp`;
+		await File.runWithLockStore(async () => {
+			await File.lock(path, "reader-cache");
+			await File.unlock(path, "reader-cache");
+		});
+	} else if (mode === "sort-pause") {
+		const rows = (await db.get("tiny", undefined, {
+			sort: { score: "DESC" },
+			perPage: 3,
+		})) as any[];
+		if (JSON.stringify(rows.map((r) => r.id)) !== JSON.stringify([64, 63, 62]))
+			throw Error("incorrect protected sort");
+	} else if (mode === "invalid-tiny") {
+		let rejected = false;
+		try {
+			await db.put("tiny", { score: "invalid" }, 10);
+		} catch {
+			rejected = true;
+		}
+		if (!rejected) throw Error("invalid write accepted");
+	} else if (mode === "crash") await db.put("records", { score: 900 }, 10);
 	else if (mode === "failure") {
 		let rejected = false;
 		try {

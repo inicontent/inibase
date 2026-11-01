@@ -421,3 +421,74 @@ test("query caches are invalidated by log generations even when compaction prese
 			10,
 		);
 	}));
+
+test("a cache-prefix lock never removes another writer's staged columns", () =>
+	fixture(async (_db, path) => {
+		const File = await import("../src/file.js");
+		const folder = join(path, ".tmp");
+		await File.runWithLockStore(async () => {
+			await File.lock(folder);
+			let temp: string | null | undefined;
+			try {
+				[temp] = await File.replace(join(path, "score.txt.gz"), { 1: 999 });
+				const run = await child(join(path, "../.."), "cache-lock");
+				await run.done;
+				assert.ok(temp);
+				assert.ok((await readFile(temp)).length > 0);
+			} finally {
+				if (temp) await rm(temp, { force: true });
+				await File.unlock(folder);
+			}
+		});
+	}));
+
+test(
+	"compressed sort spools remain protected against an independent writer",
+	{ timeout: 15000 },
+	() =>
+		fixture(async (db, path) => {
+			await db.createTable("tiny", schema, {
+				compression: true,
+				decodeID: true,
+				cache: false,
+			});
+			await db.post(
+				"tiny",
+				Array.from({ length: 64 }, (_, i) => ({
+					key: `tiny-${i + 1}`,
+					score: i + 1,
+				})),
+			);
+			const reader = await child(join(path, "../.."), "sort-pause");
+			let writer: Awaited<ReturnType<typeof child>> | undefined;
+			try {
+				await new Promise<void>((resolve, reject) => {
+					const timer = setTimeout(
+						() => reject(Error("sort did not pause")),
+						10000,
+					);
+					reader.proc.on("message", (m: any) => {
+						if (m.paused === "sort") {
+							clearTimeout(timer);
+							resolve();
+						}
+					});
+					reader.done.catch(reject);
+				});
+				writer = await child(join(path, "../.."), "invalid-tiny");
+				let finished = false;
+				writer.done.then(() => {
+					finished = true;
+				});
+				await new Promise((resolve) => setTimeout(resolve, 150));
+				assert.equal(finished, false);
+				reader.proc.send({ resume: true });
+				await Promise.all([reader.done, writer.done]);
+			} finally {
+				reader.proc.kill("SIGKILL");
+				writer?.proc.kill("SIGKILL");
+				await reader.done;
+				await writer?.done;
+			}
+		}),
+);

@@ -5091,8 +5091,23 @@ export default class Inibase {
 			const sortCommand = `sort -S ${Math.min(1048576, Math.floor(this.resources.limit / 4))} ${sortColumns} -T='${join(tablePath, ".tmp")}'`;
 
 			const sortTemps: string[] = [];
+			let sortLocked = false,
+				cacheLocked = false;
 			try {
-				if (cacheKey) await File.lock(join(tablePath, ".tmp"), cacheKey);
+				// Protect plain spools from writer cleanup; acquire table before cache.
+				if (filesPathes.some((path) => path.endsWith(".gz"))) {
+					await File.lock(
+						join(tablePath, ".tmp"),
+						undefined,
+						undefined,
+						this.resources,
+					);
+					sortLocked = true;
+				}
+				if (cacheKey) {
+					await File.lock(join(tablePath, ".tmp"), cacheKey);
+					cacheLocked = true;
+				}
 				const cachedSort =
 					Boolean(cacheKey) &&
 					(await File.isExists(
@@ -5198,7 +5213,8 @@ export default class Inibase {
 				await Promise.all(
 					sortTemps.map((path) => unlink(path).catch(() => {})),
 				);
-				if (cacheKey) await File.unlock(join(tablePath, ".tmp"), cacheKey);
+				if (cacheLocked) await File.unlock(join(tablePath, ".tmp"), cacheKey);
+				if (sortLocked) await File.unlock(join(tablePath, ".tmp"));
 			}
 		}
 
