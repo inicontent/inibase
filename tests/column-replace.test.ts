@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { Readable } from "node:stream";
 import { test } from "node:test";
 import { gunzipSync, gzipSync } from "node:zlib";
-import { replacementChunks } from "../src/column-replace.js";
+import { batchCells, replacementChunks } from "../src/column-replace.js";
 import * as File from "../src/file.js";
 
 async function edited(
@@ -131,4 +131,21 @@ test("plain and multi-member gzip sparse rewrites preserve bytes; corrupt stream
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}
+});
+
+test("compaction batches short cells and oversized Unicode values without changing bytes", async () => {
+	async function* cells() {
+		for (let i = 0; i < 100000; i++) yield "1234\n";
+		yield `${"🙂العربية".repeat(10000)}\n`;
+	}
+	const chunks: Buffer[] = [];
+	for await (const chunk of batchCells(cells())) {
+		assert.ok(chunk.length <= 65536);
+		chunks.push(chunk);
+	}
+	assert.ok(chunks.length < 20);
+	assert.equal(
+		Buffer.concat(chunks).toString(),
+		`${"1234\n".repeat(100000) + "🙂العربية".repeat(10000)}\n`,
+	);
 });

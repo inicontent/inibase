@@ -87,3 +87,34 @@ export async function* replacementChunks(
 	}
 	if (used) yield output.subarray(0, used);
 }
+
+/** Backpressured compressor input for asynchronous cell/overlay scans. */
+export async function* batchCells(
+	input: AsyncIterable<string>,
+): AsyncGenerator<Buffer> {
+	const capacity = 65536;
+	let buffer = Buffer.allocUnsafe(capacity),
+		used = 0;
+	for await (const text of input) {
+		for (let start = 0; start < text.length; ) {
+			let end = Math.min(text.length, start + 8192);
+			const last = text.charCodeAt(end - 1);
+			if (end < text.length && last >= 0xd800 && last <= 0xdbff) end--;
+			const bytes = Buffer.from(text.slice(start, end));
+			let offset = 0;
+			while (offset < bytes.length) {
+				const count = Math.min(capacity - used, bytes.length - offset);
+				bytes.copy(buffer, used, offset, offset + count);
+				used += count;
+				offset += count;
+				if (used === capacity) {
+					yield buffer;
+					buffer = Buffer.allocUnsafe(capacity);
+					used = 0;
+				}
+			}
+			start = end;
+		}
+	}
+	if (used) yield buffer.subarray(0, used);
+}

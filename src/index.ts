@@ -825,6 +825,7 @@ export default class Inibase {
 		schema?: Schema,
 		config?: StoredTableConfig & { name?: string },
 	) {
+		await this.leaveAutomaticDeltas(tableName);
 		// A log table cannot be reshaped in place yet: its log frames reference
 		// column names and its overlay would have to be materialised into the
 		// base columns first (compaction, 3.9). Rename/other config are fine.
@@ -1516,6 +1517,117 @@ export default class Inibase {
 		);
 	}
 
+	/** Bound automatic point batches before constructing frames/ID selections. */
+	private deltaPayloadFits(data: unknown, copies = 1): boolean {
+		const rows = Array.isArray(data) ? data : [data];
+		if (!rows.length || rows.length > 256) return false;
+		let bytes = 256;
+		for (const row of rows) {
+			if (!row || typeof row !== "object") return false;
+			// Preserve the existing metadata/ID mutation semantics via the base path.
+			if (Object.hasOwn(row, "id") || Object.hasOwn(row, "createdAt"))
+				return false;
+			for (const [key, value] of Object.entries(row)) {
+				if (value !== null && typeof value === "object") return false;
+				bytes +=
+					6 * (Buffer.byteLength(key) + Buffer.byteLength(String(value))) + 128;
+				if (bytes * copies > Math.min(65536, this.resources.limit / 16))
+					return false;
+			}
+		}
+		return true;
+	}
+
+	/** The caller holds the writer lock throughout transition and mutation. */
+	private async leaveAutomaticDeltas(tableName: string): Promise<void> {
+		const format = await this.currentFormat(tableName);
+		if (!format?.automatic || !format.log) return;
+		await this.compactLogTable(tableName);
+		const tablePath = join(this.databasePath, tableName);
+		const legacy = { format: 1, log: false, baseGen: 0 };
+		await writeFormat(tablePath, legacy);
+		await this.overlays.get(this.overlayKey(tableName))?.dispose();
+		this.overlays.delete(this.overlayKey(tableName));
+		this.tableFormats.set(tableName, legacy);
+		await this.stampFormat(tableName);
+		// Compaction can rename pagination; a transaction must resolve it anew.
+		const entry = this.activeTransaction?.tables.get(tableName);
+		if (entry && !entry.staged.length) {
+			entry.paginationFrom = "";
+			entry.lastId = 0;
+			entry.total = 0;
+		}
+	}
+
+	private async automaticDeltaWrite<T>(
+		tableName: string,
+		eligible: boolean,
+		write: () => Promise<T>,
+	): Promise<T> {
+		this.validateName(tableName);
+		if (this.activeTransaction) {
+			await this.ensureTxnLock(tableName);
+			return write();
+		}
+		await this.ensureDatabaseRecovered();
+		await this.loadTable(tableName);
+		const tablePath = join(this.databasePath, tableName);
+		await File.lock(
+			join(tablePath, ".tmp"),
+			undefined,
+			undefined,
+			this.resources,
+		);
+		try {
+			const table = await this.loadTable(tableName);
+			const compatible =
+				eligible &&
+				!table?.config.prepend &&
+				Boolean(
+					table?.schema?.every(
+						(field) =>
+							typeof field.computed === "undefined" &&
+							this.isSimpleField(field.type),
+					),
+				);
+			let format = await this.currentFormat(tableName);
+			if (format?.automatic && !compatible) {
+				await this.leaveAutomaticDeltas(tableName);
+				format = await this.currentFormat(tableName);
+			}
+			if (
+				compatible &&
+				!format?.log &&
+				(await this.resolvePagination(tableName)).total >= 128
+			) {
+				// Persist an empty log name before publishing the marker. A crash
+				// before the marker leaves an unused file; after it, an empty log.
+				const logPath = join(tablePath, UPDATES_LOG_NAME);
+				await File.write(logPath, "");
+				await File.syncFile(logPath);
+				const next = {
+					format: 3,
+					log: true,
+					baseGen: 0,
+					tombstones: true,
+					automatic: true,
+				};
+				await writeFormat(tablePath, next);
+				this.tableFormats.set(tableName, next);
+				format = next;
+				await this.stampFormat(tableName);
+			}
+			return await (format?.automatic && compatible
+				? this.resources.withWorking(
+						Math.min(this.resources.limit, 512 * 1024),
+						write,
+					)
+				: write());
+		} finally {
+			await File.unlock(join(tablePath, ".tmp"));
+		}
+	}
+
 	/**
 	 * Resolve a table's format marker, revalidating a cached *log* table when
 	 * its `.format` file changed underneath us. A compaction by another process
@@ -1863,6 +1975,7 @@ export default class Inibase {
 				log: true,
 				baseGen: newGen,
 				...(format?.tombstones ? { tombstones: true } : {}),
+				...(format?.automatic ? { automatic: true } : {}),
 			}),
 		);
 		renameList.push([fmtTmp, join(tablePath, FORMAT_FILE)]);
@@ -1887,10 +2000,13 @@ export default class Inibase {
 			log: true,
 			baseGen: newGen,
 			...(format?.tombstones ? { tombstones: true } : {}),
+			...(format?.automatic ? { automatic: true } : {}),
 		});
 		await this.stampFormat(tableName);
 		await overlay.dispose();
 		this.overlays.delete(this.overlayKey(tableName));
+		if (globalConfig[this.databasePath].tables?.get(tableName)?.config.cache)
+			await this.clearCache(tableName);
 		return newGen;
 	}
 
@@ -4239,9 +4355,12 @@ export default class Inibase {
 	/** Lock a table for the open transaction (idempotent per transaction). */
 	private async ensureTxnLock(tableName: string): Promise<void> {
 		const entry = this.txnTableEntry(tableName);
-		if (!entry || entry.locked) return;
-		await File.lock(join(this.databasePath, tableName, ".tmp"));
-		entry.locked = true;
+		if (!entry) return;
+		if (!entry.locked) {
+			await File.lock(join(this.databasePath, tableName, ".tmp"));
+			entry.locked = true;
+		}
+		await this.leaveAutomaticDeltas(tableName);
 	}
 
 	/**
@@ -4702,9 +4821,58 @@ export default class Inibase {
 		onlyOne?: boolean,
 		onlyLinesNumbers?: boolean,
 		_whereIsLinesNumbers?: boolean,
+		materializedSort = false,
 	): Promise<(Data & TData) | number | ((Data & TData) | number)[] | null> {
 		this.validateName(tableName);
 		await this.ensureTableRecovered(tableName);
+
+		// Automatic deltas must not turn a bounded native/disk sort into the
+		// explicit log backend's whole-table JavaScript materialization.
+		if (options.sort && !materializedSort) {
+			await this.loadTable(tableName);
+			if ((await this.currentFormat(tableName))?.automatic) {
+				const tmp = join(this.databasePath, tableName, ".tmp");
+				await File.lock(tmp, undefined, undefined, this.resources);
+				try {
+					const overlay = await this.getOverlay(tableName, true);
+					let stableWhere = where;
+					if (overlay?.size) {
+						if (_whereIsLinesNumbers && where !== undefined) {
+							const ids = await this.overlayLineIds(
+								tableName,
+								(Array.isArray(where) ? where : [where]) as number[],
+							);
+							stableWhere = Array.isArray(where)
+								? [...ids.values()]
+								: [...ids.values()][0];
+						}
+						await this.compactLogTable(tableName);
+						if (
+							globalConfig[this.databasePath].tables?.get(tableName)?.config
+								.cache
+						)
+							await this.clearCache(tableName);
+					}
+					return await this.resources.withWorking(
+						Math.min(this.resources.limit, 2 * 1024 * 1024),
+						() =>
+							this._get<TData>(
+								tableName,
+								stableWhere,
+								options,
+								onlyOne,
+								onlyLinesNumbers,
+								_whereIsLinesNumbers && overlay?.size
+									? false
+									: _whereIsLinesNumbers,
+								true,
+							),
+					);
+				} finally {
+					await File.unlock(tmp);
+				}
+			}
+		}
 
 		// Lock-free reads with optimistic retry: snapshot the identity of every
 		// column + pagination file, run the read, then verify nothing changed
@@ -4846,12 +5014,17 @@ export default class Inibase {
 					.map((column) => [column, true]);
 
 			let cacheKey = "";
+			const cacheGeneration = this.isLogTable(tableName)
+				? [(await this.currentFormat(tableName))?.baseGen ?? 0]
+				: [];
 			// Criteria. The sort cache is versioned by the pagination row count
 			// (see the criteria-cache note) so stale sorted line numbers from
 			// before a post/delete are never replayed.
 			if (globalConfig[this.databasePath].tables?.get(tableName)?.config.cache)
 				cacheKey = UtilsServer.hashString(
-					inspect([sortArray, pagination[1]], { sorted: true }),
+					inspect([sortArray, pagination[1], ...cacheGeneration], {
+						sorted: true,
+					}),
 				);
 
 			if (where) {
@@ -4901,7 +5074,7 @@ export default class Inibase {
 				if (!(await File.isExists(path))) return null;
 
 			// Construct the paste command to merge files and filter lines by IDs
-			const pasteCommand = `paste '${filesPathes.join("' '")}'`;
+			let pasteCommand = `paste '${filesPathes.join("' '")}'`;
 
 			const _idPrepended = !sortArray.find(([key]) => key === "id");
 			const sortColumns = sortArray
@@ -4915,17 +5088,30 @@ export default class Inibase {
 				})
 				.join(" ");
 
-			const sortCommand = `sort ${sortColumns} -T='${join(tablePath, ".tmp")}'`;
+			const sortCommand = `sort -S ${Math.min(1048576, Math.floor(this.resources.limit / 4))} ${sortColumns} -T='${join(tablePath, ".tmp")}'`;
 
+			const sortTemps: string[] = [];
 			try {
 				if (cacheKey) await File.lock(join(tablePath, ".tmp"), cacheKey);
+				const cachedSort =
+					Boolean(cacheKey) &&
+					(await File.isExists(
+						join(tablePath, ".cache", `${cacheKey}${this.fileExtension}`),
+					));
+				if (!cachedSort) {
+					const plain: string[] = [];
+					for (const path of filesPathes) {
+						const ready = await File.prepareSortColumn(path);
+						plain.push(ready);
+						if (ready !== path) sortTemps.push(ready);
+					}
+					pasteCommand = `paste '${plain.join("' '")}'`;
+				}
 				// Combine && Execute the commands synchronously
 				let lines = (
 					await UtilsServer.exec(
 						globalConfig[this.databasePath].tables?.get(tableName)?.config.cache
-							? (await File.isExists(
-									join(tablePath, ".cache", `${cacheKey}${this.fileExtension}`),
-								))
+							? cachedSort
 								? `${awkCommand} '${join(
 										tablePath,
 										".cache",
@@ -4965,7 +5151,13 @@ export default class Inibase {
 
 					// Extract values for each file, including `id${this.getFileExtension(tableName)}`
 					filesPathes.forEach((fileName, index) => {
-						const field = Utils.getField(parse(fileName).name, schema);
+						const field = Utils.getField(
+							basename(fileName).slice(
+								0,
+								-this.getFileExtension(tableName).length,
+							),
+							schema,
+						);
 						if (field) {
 							if (
 								field.key === "id" &&
@@ -4992,7 +5184,7 @@ export default class Inibase {
 					(({ sort, ...rest }) => rest)(options),
 				);
 
-				return restOfColumns
+				const sortedRows = restOfColumns
 					? outputArray.map((item) => ({
 							...item,
 							...restOfColumns.find(
@@ -5001,7 +5193,11 @@ export default class Inibase {
 							),
 						}))
 					: outputArray;
+				return onlyOne ? sortedRows[0] : sortedRows;
 			} finally {
+				await Promise.all(
+					sortTemps.map((path) => unlink(path).catch(() => {})),
+				);
 				if (cacheKey) await File.unlock(join(tablePath, ".tmp"), cacheKey);
 			}
 		}
@@ -5185,12 +5381,15 @@ export default class Inibase {
 				// stale cache written before a post/delete (in this process or
 				// another) is detectable: the candidate filename simply stops
 				// matching and the cache is rebuilt.
+				const generationSuffix = this.isLogTable(tableName)
+					? `-${(await this.currentFormat(tableName))?.baseGen ?? 0}`
+					: "";
 				cachedFilePath = join(
 					tablePath,
 					".cache",
 					`${UtilsServer.hashString(inspect(where, { sorted: true }))}-${
 						pagination[1]
-					}${this.fileExtension}`,
+					}${generationSuffix}${this.fileExtension}`,
 				);
 
 				if (await File.isExists(cachedFilePath)) {
@@ -5702,13 +5901,20 @@ export default class Inibase {
 		_whereIsLinesNumbers?: boolean,
 	): Promise<(Data & TData) | (Data & TData)[] | null | undefined | undefined> {
 		return File.runWithLockStore(() =>
-			this._put<TData>(
+			this.automaticDeltaWrite(
 				tableName,
-				data,
-				where,
-				options,
-				returnUpdatedData,
-				_whereIsLinesNumbers,
+				Boolean(where) &&
+					(!Array.isArray(where) || where.length <= 256) &&
+					this.deltaPayloadFits(data),
+				() =>
+					this._put<TData>(
+						tableName,
+						data,
+						where,
+						options,
+						returnUpdatedData,
+						_whereIsLinesNumbers,
+					),
 			),
 		);
 	}
@@ -5736,7 +5942,11 @@ export default class Inibase {
 		const payloads: (Data & TData)[] = Array.isArray(data) ? data : [data];
 		const isWhereLess = !where;
 		const isLines = _whereIsLinesNumbers === true;
-		const scalarWhere = !isWhereLess && !isLines && !Array.isArray(where);
+		const scalarWhere =
+			!isWhereLess &&
+			!isLines &&
+			!Array.isArray(where) &&
+			!Utils.isObject(where);
 
 		await this.throwErrorIfTableEmpty(tableName);
 
@@ -5759,8 +5969,14 @@ export default class Inibase {
 			// failure surfaces as MAINTENANCE_REQUIRED without losing any
 			// committed update.
 			if (
-				overlay.size >= maxOverlayRecords() ||
-				(await overlay.log.bytes()) >= maxLogBytes()
+				overlay.size >=
+					((await this.currentFormat(tableName))?.automatic
+						? Math.min(2048, maxOverlayRecords())
+						: maxOverlayRecords()) ||
+				(await overlay.log.bytes()) >=
+					((await this.currentFormat(tableName))?.automatic
+						? Math.min(8 * 1024 * 1024, maxLogBytes())
+						: maxLogBytes())
 			) {
 				try {
 					await this.compactLogTable(tableName);
@@ -5799,6 +6015,25 @@ export default class Inibase {
 					: [lines as number];
 			}
 			if (!resolvedLines.length) return undefined;
+			if (
+				(resolvedLines.length > 256 ||
+					!this.deltaPayloadFits(
+						data,
+						Math.ceil(resolvedLines.length / payloads.length),
+					)) &&
+				(await this.currentFormat(tableName))?.automatic
+			) {
+				const ids = await this.overlayLineIds(tableName, resolvedLines);
+				await this.leaveAutomaticDeltas(tableName);
+				return await this._put(
+					tableName,
+					data,
+					[...ids.values()],
+					options,
+					returnUpdatedData,
+					false,
+				);
+			}
 
 			const lineIds = await this.overlayLineIds(tableName, resolvedLines);
 
@@ -5821,7 +6056,8 @@ export default class Inibase {
 			for (let index = 0; index < resolvedLines.length; index++) {
 				const id = lineIds.get(resolvedLines[index]);
 				if (id === undefined) continue;
-				if ((await overlay.get(id))?.deleted) continue;
+				const previous = await overlay.get(id);
+				if (previous?.deleted) continue;
 				const payload =
 					payloads.length === 1
 						? payloads[0]
@@ -5840,6 +6076,24 @@ export default class Inibase {
 					cols[key] = File.encode(value);
 				}
 				cols.updatedAt = now;
+				if (
+					(await this.currentFormat(tableName))?.automatic &&
+					!this.deltaPayloadFits({ ...previous?.cols, ...cols })
+				) {
+					// Several individually small updates must not accumulate an
+					// oversized merged row. Fold first and retry by stable IDs;
+					// stay inside this operation's existing working reservation.
+					const ids = [...lineIds.values()];
+					await this.compactLogTable(tableName);
+					return await this.putViaLog(
+						tableName,
+						data,
+						scalarWhere ? ids[0] : ids,
+						options,
+						returnUpdatedData,
+						false,
+					);
+				}
 				records.push({ id, cols, updatedAt: now });
 			}
 
@@ -6333,7 +6587,12 @@ export default class Inibase {
 		_cascadeGuard?: Set<string>,
 	): Promise<boolean | null> {
 		return File.runWithLockStore(() =>
-			this._delete(tableName, where, _whereIsLinesNumbers, _cascadeGuard),
+			this.automaticDeltaWrite(
+				tableName,
+				Boolean(where) && (!Array.isArray(where) || where.length <= 256),
+				() =>
+					this._delete(tableName, where, _whereIsLinesNumbers, _cascadeGuard),
+			),
 		);
 	}
 
@@ -6350,8 +6609,14 @@ export default class Inibase {
 			let overlay = await this.getOverlay(tableName, true);
 			if (!overlay) throw this.createError("UNSUPPORTED_FORMAT", tableName);
 			if (
-				overlay.size >= maxOverlayRecords() ||
-				(await overlay.log.bytes()) >= maxLogBytes()
+				overlay.size >=
+					((await this.currentFormat(tableName))?.automatic
+						? Math.min(2048, maxOverlayRecords())
+						: maxOverlayRecords()) ||
+				(await overlay.log.bytes()) >=
+					((await this.currentFormat(tableName))?.automatic
+						? Math.min(8 * 1024 * 1024, maxLogBytes())
+						: maxLogBytes())
 			) {
 				await this.compactLogTable(tableName);
 				overlay = await this.getOverlay(tableName, true);
@@ -6366,6 +6631,17 @@ export default class Inibase {
 			const lines = Array.isArray(found)
 				? (found as number[])
 				: [Number(found)];
+			if (
+				lines.length > 256 &&
+				(await this.currentFormat(tableName))?.automatic
+			) {
+				const ids = await this.overlayLineIds(tableName, lines);
+				await this.leaveAutomaticDeltas(tableName);
+				return (
+					(await this._delete(tableName, [...ids.values()], false, guard)) ??
+					false
+				);
+			}
 			const lineIds = await this.overlayLineIds(tableName, lines);
 			const records: UpdateRecord[] = [];
 			const now = Date.now();

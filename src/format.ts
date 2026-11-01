@@ -27,6 +27,8 @@ export interface TableFormat {
 	/** Oldest engine that may open the table, as written into the marker. */
 	minReader?: string;
 	tombstones?: boolean;
+	/** Engine policy only; the data/log encoding remains format 3. */
+	automatic?: boolean;
 }
 
 export const LEGACY_FORMAT: TableFormat = {
@@ -90,6 +92,7 @@ export const readFormat = async (tablePath: string): Promise<TableFormat> => {
 			baseGen: Number(raw?.baseGen) || 0,
 			minReader: typeof raw?.minReader === "string" ? raw.minReader : undefined,
 			...(raw?.tombstones === true ? { tombstones: true } : {}),
+			...(raw?.automatic === true ? { automatic: true } : {}),
 		};
 	} catch (cause) {
 		throw Object.assign(
@@ -112,6 +115,7 @@ export const serializeFormat = (format: TableFormat): string =>
 		log: format.log,
 		baseGen: format.baseGen,
 		...(format.tombstones ? { tombstones: true } : {}),
+		...(format.automatic ? { automatic: true } : {}),
 	})}\n`;
 
 /**

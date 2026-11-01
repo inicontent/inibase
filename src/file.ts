@@ -23,7 +23,7 @@ import {
 import { pipeline } from "node:stream/promises";
 import { createGunzip, createGzip } from "node:zlib";
 import Inison from "inison";
-import { replacementChunks } from "./column-replace.js";
+import { batchCells, replacementChunks } from "./column-replace.js";
 import {
 	type ComparisonOperator,
 	type Field,
@@ -209,7 +209,7 @@ const cleanupStaging = async (folderPath: string) => {
 	// Only engine-generated regular-file names. Unknown files and directories
 	// are retained. The caller exclusively owns this directory's writer lock.
 	const generated =
-		/(?:\.txt(?:\.gz)?\.\d+-[a-z0-9]+|\.optimize-[0-9a-f-]+|\.compact-\d+-[0-9a-f]+|updates\.batch-[0-9a-f-]+|seek\.config-[0-9a-f-]+|^\.format\.[0-9a-f-]+)(?:\.(?:blocks|seek|lookup))?$/;
+		/(?:\.txt(?:\.gz)?\.\d+-[a-z0-9]+|\.optimize-[0-9a-f-]+|\.compact-\d+-[0-9a-f]+|updates\.batch-[0-9a-f-]+|seek\.config-[0-9a-f-]+|^\.format\.[0-9a-f-]+)(?:\.(?:blocks|seek|lookup|sort))?$/;
 	for (const entry of await readdir(folderPath, { withFileTypes: true }))
 		if (entry.isFile() && generated.test(entry.name))
 			await unlink(join(folderPath, entry.name));
@@ -610,7 +610,7 @@ export const rewriteCells = async (
 				if (value !== undefined && value !== DELETED_ROW) yield `${value}\n`;
 			}
 		}
-		const source = Readable.from(cells());
+		const source = Readable.from(batchCells(cells()), { objectMode: false });
 		const output = handle.createWriteStream();
 		if (filePath.endsWith(".gz")) await pipeline(source, createGzip(), output);
 		else await pipeline(source, output);
@@ -1995,3 +1995,25 @@ export const getFileDate = (path: string) =>
 	stat(path)
 		.then((s) => s.mtime || s.birthtime)
 		.catch(() => new Date());
+
+/** Native sorting needs plain column bytes, not gzip members. */
+export const prepareSortColumn = async (filePath: string): Promise<string> => {
+	if (!filePath.endsWith(".gz")) return filePath;
+	const tmp = `${tempPathFor(filePath)}.sort`;
+	let input: FileHandle | undefined, output: FileHandle | undefined;
+	try {
+		input = await open(filePath, "r");
+		output = await open(tmp, "wx");
+		await pipeline(
+			input.createReadStream(),
+			createGunzip(),
+			output.createWriteStream(),
+		);
+		return tmp;
+	} catch (error) {
+		return failWrite(tmp, error);
+	} finally {
+		await input?.close();
+		await output?.close();
+	}
+};
