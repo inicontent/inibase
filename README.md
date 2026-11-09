@@ -1,31 +1,24 @@
-# Inibase :pencil:
+# iniBase :pencil:
 
 > A file-based & memory-efficient, serverless relational database with **crash-atomic ACID: single-table DML + multi-table transactions** :fire: — per-table writer locks, write-ahead journal + crash recovery, fsync-backed durability, and a `begin`/`commit`/`rollback` transaction API (exact scope in [Durability & crash safety](#durability--crash-safety)).
 
-[![Inibase: TypeScript API, column-file storage, relations, transactions, and durability](./.github/assets/overview.svg)](#usage)
+[![iniBase overview showing the TypeScript API, column storage, relations, transactions, and incremental writes](./.github/assets/overview.svg)](#usage)
 
 [![npmjs](https://img.shields.io/npm/dm/inibase.svg?style=flat)](https://www.npmjs.org/package/inibase) [![License](https://img.shields.io/github/license/inicontent/inibase.svg?style=flat&colorA=18181B&colorB=28CF8D)](./LICENSE) [![Activity](https://img.shields.io/github/commit-activity/m/inicontent/inibase)](https://github.com/inicontent/inibase/pulse) [![GitHub stars](https://img.shields.io/github/stars/inicontent/inibase?style=social)](https://github.com/inicontent/inibase)
 
 **[Quick start](#usage) · [How it works](#how-it-works) · [Durability](#durability--crash-safety) · [Benchmarks](#benchmark)**
 
-## Small footprint. Real benchmark results.
+## Storage and write performance
 
-Inibase is a file-based TypeScript database designed for **fast data access and low memory usage**, with column selection, built-in caching, and optional gzip compression.
+In the **100,000-record CMS workload**, iniBase with gzip compression used **12.14 MiB of allocated disk** at the end of the run, compared with **149.48 MiB** for SQLite and **330.14 MiB** for the full PostgreSQL cluster, including its WAL.
 
-In the **100,000-record CMS benchmark**, published **Inibase 3.8.0 with gzip and `log: true`** used **1.64 MiB of allocated disk** after bulk loading — **89.3% less than LevelDB** and **98.7% less than SQLite**. Five committed updates took **175 ms**, versus **5174 ms** with the default gzip update path. A full read took **258 ms**, and a two-column projection took **64 ms**, both before updates.
+[![Final allocated disk for 100,000 CMS records. iniBase used 12.14 MiB, SQLite used 149.48 MiB, and PostgreSQL used 330.14 MiB.](./.github/assets/storage-benchmark-100k.svg)](#benchmark)
 
-[![Database storage comparison for 100,000 CMS records with published Inibase 3.8.0; lower is better](./.github/assets/storage-benchmark-100k-v3.8.0.png)](https://github.com/inicontent/benchmarks/blob/11123a511e1c5dc2dce0b80f113ab1f65c02093d/results/large-cms/REPORT.md)
+Automatic incremental writes brought median single-record update and delete times down to **11.79 ms** and **9.96 ms** in this workload, compared with **101.72 ms** and **1,055.14 ms** in the earlier iniBase build that rewrote columns. SQLite and PostgreSQL each took about **4 ms** per operation.
 
-*Source: [inicontent/benchmarks](https://github.com/inicontent/benchmarks/blob/11123a511e1c5dc2dce0b80f113ab1f65c02093d/results/large-cms/REPORT.md), medians of three trials on Apple M5 with repetitive synthetic CMS content, full durability, and query caching disabled. Storage is measured before updates; reads are affected by the OS cache. Logging is opt-in and defers work to compaction, which may increase delete costs. Indexed competitors remain faster for key lookups. See [all operation timings](#benchmark).*
-
-[Explore the full results](https://github.com/inicontent/benchmarks/blob/11123a511e1c5dc2dce0b80f113ab1f65c02093d/results/large-cms/REPORT.md) · [Read the methodology](https://github.com/inicontent/benchmarks/blob/11123a511e1c5dc2dce0b80f113ab1f65c02093d/METHODOLOGY.md) · [Enable incremental updates](#incremental-update-log)
+[Benchmark and methodology](#benchmark) · [Automatic incremental writes](docs/automatic-deltas.md)
 
 ## Features
-
-> **Local development build:** experimental seekable columns, disk indexes and
-> logged deletes are documented in [storage acceleration](docs/storage-acceleration.md).
-> The hard total-working-memory and bounded-I/O compaction requirements are not yet
-> complete. Published 3.8.0 results below remain historical, not claims about this build.
 
 - **Lightweight** 🪶
 - **Minimalist** :white_circle: (but powerful)
@@ -34,7 +27,7 @@ In the **100,000-record CMS benchmark**, published **Inibase 3.8.0 with gzip and
 - **ATOMIC** :lock: Per-table writer locks, write-ahead journal + crash recovery, fsync-backed durability, and multi-table transactions (`begin`/`commit`/`rollback`) for atomic cascades (exact scope below)
 - **Built-in** form validation (+unique values :new: ) :sunglasses:
 - **Suitable for large data** :page_with_curl: (tested with 4M records)
-- **Incremental updates** :recycle: The compatibility update-log backend appends small frames instead of rewriting whole columns
+- **Incremental writes** :recycle: Eligible updates and deletes automatically append durable log entries
 - **Support Compression** :eight_spoked_asterisk: (using built-in nodejs zlib)
 - **Support Table Joins** :link:
 - **Memory-conscious design** :chart_with_downwards_trend: File-based storage and streaming reads
@@ -189,10 +182,15 @@ the `full` vs `none` throughput comparison.
 
 ## Incremental update log
 
+Eligible small updates and deletes on append-layout tables with at least 128 rows
+and simple, non-computed columns automatically append durable log entries. The
+engine folds those entries into the base columns during compaction. Transactions,
+schema changes and broader mutations retain their existing supported paths. See
+[automatic incremental writes](docs/automatic-deltas.md) for eligibility and recovery.
+
 The supported application table options are `decodeID`, `prepend`, `compression`
-and `cache`. The development engine learns eligible equality indexes automatically;
-see [automatic storage optimization](docs/storage-acceleration.md). It preserves
-existing transaction support and does not silently migrate tables to the log format.
+and `cache`. The engine also learns eligible equality indexes automatically. See
+[storage acceleration](docs/storage-acceleration.md) for the indexing policy.
 
 The append-only **update log** (on-disk format 2) remains supported for existing
 databases and historical runtime configurations. The description below documents
@@ -215,8 +213,7 @@ that compatibility backend; it is not an additional application option to choose
   fails with `MAINTENANCE_REQUIRED` rather than growing without limit.
 - **Requirements.** The table must use the append layout (no `prepend`) and a
   schema of simple top-level fields. Transactions, schema changes, and
-  disabling the log on a log table throw `MAINTENANCE_REQUIRED` for now (they
-  need compaction rewiring, planned for 3.9).
+  disabling the log on a format-2 log table throw `MAINTENANCE_REQUIRED`.
 - **On disk.** A `.format` marker records `format`, `baseGen`, and the
   compatibility contract (`minReader`); `updates.log` holds the frames. A table
   with no `.format` is legacy format 1 and behaves exactly as before.
@@ -1122,41 +1119,25 @@ are derived first, in dependency order.
 
 ## Benchmark
 
-### Published 3.8.0: 100,000 CMS records
+### 100,000 CMS records
 
-**252/252 trials passed** across the comparison suite: eight engines, twelve configurations, three datasets at 1,000 and 10,000 records, plus this 100,000-record CMS run. Every successful trial verifies full content, projections, lookups, updates, and the remaining records after deletion.
+[![Median update and delete times for 100,000 CMS records in milliseconds. iniBase took 11.79 and 9.96, SQLite took 3.93 and 3.98, and PostgreSQL took 3.97 and 3.99.](./.github/assets/write-benchmark-100k.svg)](benchmark/results/automatic-deltas-20261101/REPORT.md)
 
-The table shows **median total milliseconds across three trials; lower is better**. These are database API operations, not HTTP requests.
+The release qualification ran three isolated trials per configuration on Apple M5, with full durability, equal synthetic records and explicit key indexes. iniBase used gzip compression with query caching disabled. The suite verified **81/81 trials** across three engines, three datasets and three record counts.
 
-- **POST:** insert all 100,000 records in batches of 1,000, including commit/flush and excluding separately reported maintenance.
-- **GET:** read all 100,000 records; projection returns only `seq` and `category`. Both are measured before updates and are cache-affected.
-- **PUT:** five separate committed updates selected by application key, setting `score` to `-1`.
-- **DELETE:** five separate committed deletions, including any compaction the engine triggers.
+| Engine | Bulk insert (ms) | Full read (ms) | Projection (ms) | Update p50 (ms) | Delete p50 (ms) | Mixed with maintenance (ms) | Final disk (MiB) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| iniBase | 4,567.13 | 252.13 | 54.99 | 11.79 | 9.96 | 7,449.30 | 12.14 |
+| SQLite | 1,069.86 | 121.73 | 39.67 | 3.93 | 3.98 | 130.29 | 149.48 |
+| PostgreSQL | 1,091.92 | 135.56 | 32.61 | 3.97 | 3.99 | 592.46 | 330.14 |
 
-| Configuration | POST 100k | GET 100k | GET projection 100k | PUT 5 records | DELETE 5 records |
-|---|---:|---:|---:|---:|---:|
-| Inibase 3.8.0 plain | 6629.709 | 229.705 | 58.865 | 738.768 | 1208.188 |
-| Inibase 3.8.0 gzip | 3141.852 | 258.723 | 63.058 | 5174.360 | 1932.057 |
-| Inibase 3.8.0 plain + log | 7305.530 | 257.801 | 64.880 | 178.175 | 1382.575 |
-| Inibase 3.8.0 gzip + log | 3194.676 | 257.580 | 64.079 | 175.072 | 3273.597 |
-| SQLite | 358.504 | 113.873 | 47.684 | 0.731 | 0.302 |
-| DuckDB | 1051.170 | 171.503 | 23.602 | 2.368 | 0.898 |
-| PGlite | 1084.946 | 421.289 | 168.332 | 1.658 | 0.678 |
-| PostgreSQL | 580.652 | 105.262 | 26.082 | 0.995 | 0.486 |
-| MongoDB | 636.233 | 408.611 | 113.722 | 18.148 | 20.182 |
-| LevelDB | 316.729 | 231.328 | 226.973 | 0.793 | 0.452 |
-| LMDB | 522.254 | 167.659 | 113.197 | 19.052 | 19.994 |
-| LMDB LZ4 | 1552.237 | 170.728 | 135.092 | 20.034 | 19.979 |
+Bulk inserts commit in batches of up to 1,000 and include fixture creation. Reads use the existing OS filesystem cache. Update and delete p50s each pool 24 committed operations across the three trials and include first-use activation. The mixed workload includes updates, verification reads, deletes and three maintenance calls. The final disk figures use allocated bytes, and PostgreSQL includes the entire cluster and WAL.
 
-**Small storage, faster incremental updates.** In this workload, gzip + log stores the initial dataset in **1.641 MiB** and reduces the five-update total by **29.6×** compared with the default 3.8.0 gzip path. Bulk insertion remains around **3.2 seconds**. The following five deletes take **3274 ms** with logging versus **1932 ms** without it; that cost includes any triggered compaction.
-
-The [update log](#incremental-update-log) is opt-in and currently restricts transactions and schema changes. This short update test does not measure sustained compaction amortization, pending-overlay read latency, peak log space, or crash recovery. Inibase filters on the application `seq` field; competitors use native primary-key indexes. Durability and feature coverage differ across engines. The corpus is repetitive synthetic CMS content, not production customer data; high-entropy and compact-record controls are included in the main report.
-
-[All datasets and storage results](https://github.com/inicontent/benchmarks/blob/11123a511e1c5dc2dce0b80f113ab1f65c02093d/results/latest/REPORT.md) · [100,000-record report](https://github.com/inicontent/benchmarks/blob/11123a511e1c5dc2dce0b80f113ab1f65c02093d/results/large-cms/REPORT.md) · [Raw samples](https://github.com/inicontent/benchmarks/blob/11123a511e1c5dc2dce0b80f113ab1f65c02093d/results/large-cms/results.json) · [Methodology](https://github.com/inicontent/benchmarks/blob/11123a511e1c5dc2dce0b80f113ab1f65c02093d/METHODOLOGY.md)
+[Qualification report](benchmark/results/automatic-deltas-20261101/REPORT.md) · [Raw results and reproduction](benchmark/results/automatic-deltas-20261101/) · [Historical cross-database results](https://github.com/inicontent/benchmarks/blob/11123a511e1c5dc2dce0b80f113ab1f65c02093d/results/large-cms/REPORT.md)
 
 ### Reproduce and profile
 
-Run the cross-database suite from [inicontent/benchmarks](https://github.com/inicontent/benchmarks). Its package lock pins the published package and competitor versions; instructions include the exact workloads and configuration labels.
+The [qualification reproduction script](benchmark/results/automatic-deltas-20261101/REPRODUCE.sh) rebuilds the archived source and reruns the comparison above.
 
 For local engine development, the following scripts measure different workloads and should not be compared directly with the table above:
 
