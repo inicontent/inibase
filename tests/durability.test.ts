@@ -18,9 +18,8 @@ import { hostname } from "node:os";
 import { basename, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-
-import Inibase from "../src/index.js";
 import * as File from "../src/file.js";
+import Inibase from "../src/index.js";
 
 const dbPath = "test-db-durability";
 
@@ -37,7 +36,8 @@ const simpleSchema = [
 
 const tableDir = (tableName: string) => join(dbPath, tableName);
 const tmpDir = (tableName: string) => join(tableDir(tableName), ".tmp");
-const journalPath = (tableName: string) => join(tmpDir(tableName), "journal.jsonl");
+const journalPath = (tableName: string) =>
+	join(tmpDir(tableName), "journal.jsonl");
 const lockPath = (tableName: string) => join(tmpDir(tableName), ".locked");
 const backupDir = (tableName: string) => join(tmpDir(tableName), "backup");
 const colFiles = (tableName: string) =>
@@ -265,12 +265,7 @@ await test("No temp/journal/backup leftovers after a DML cycle", async () => {
 	const tableName = "t4";
 	await db.createTable(tableName, simpleSchema);
 	for (let i = 0; i < 5; i++)
-		await db.post(
-			tableName,
-			{ name: `n${i}`, workerId: i },
-			undefined,
-			true,
-		);
+		await db.post(tableName, { name: `n${i}`, workerId: i }, undefined, true);
 	assert.equal(
 		await paginationName(tableName),
 		"5-5.pagination",
@@ -283,11 +278,7 @@ await test("No temp/journal/backup leftovers after a DML cycle", async () => {
 	);
 
 	await db.put(tableName, { workerId: 100 }, 3);
-	assert.deepEqual(
-		await tmpLeftovers(tableName),
-		[],
-		"no leftovers after put",
-	);
+	assert.deepEqual(await tmpLeftovers(tableName), [], "no leftovers after put");
 
 	await db.delete(tableName, 2);
 	assert.equal(
@@ -376,11 +367,7 @@ await test("Multi-process concurrent writers stay consistent", async () => {
 	);
 	for (const row of rows) {
 		assert.equal(typeof row.name, "string", "row name column complete");
-		assert.equal(
-			typeof row.workerId,
-			"number",
-			"row workerId column complete",
-		);
+		assert.equal(typeof row.workerId, "number", "row workerId column complete");
 	}
 
 	assert.deepEqual(

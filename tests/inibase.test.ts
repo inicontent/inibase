@@ -1167,8 +1167,8 @@ await test("Name Validation (Security)", async (t) => {
 			{ key: "المنتجات", type: "string" },
 		]);
 		await inibase.post(tableName, {
-			"العميل": { "اسم المنشأة": "شركة النور" },
-			"المنتجات": "أ",
+			العميل: { "اسم المنشأة": "شركة النور" },
+			المنتجات: "أ",
 		});
 		const data = await inibase.get(tableName, undefined, {
 			columns: ["العميل.اسم المنشأة"],
@@ -1182,31 +1182,34 @@ await test("Name Validation (Security)", async (t) => {
 		);
 	});
 
-	await t.test("Reject Malicious Column Names via sum/avg/max/min", async () => {
-		const tableName = "secure_table";
-		for (const column of maliciousNames) {
-			await assert.rejects(
-				inibase.sum(tableName, column),
-				{ name: "INVALID_NAME" },
-				`Should reject column '${column}' in sum`,
-			);
-			await assert.rejects(
-				inibase.avg(tableName, column),
-				{ name: "INVALID_NAME" },
-				`Should reject column '${column}' in avg`,
-			);
-			await assert.rejects(
-				inibase.max(tableName, column),
-				{ name: "INVALID_NAME" },
-				`Should reject column '${column}' in max`,
-			);
-			await assert.rejects(
-				inibase.min(tableName, column),
-				{ name: "INVALID_NAME" },
-				`Should reject column '${column}' in min`,
-			);
-		}
-	});
+	await t.test(
+		"Reject Malicious Column Names via sum/avg/max/min",
+		async () => {
+			const tableName = "secure_table";
+			for (const column of maliciousNames) {
+				await assert.rejects(
+					inibase.sum(tableName, column),
+					{ name: "INVALID_NAME" },
+					`Should reject column '${column}' in sum`,
+				);
+				await assert.rejects(
+					inibase.avg(tableName, column),
+					{ name: "INVALID_NAME" },
+					`Should reject column '${column}' in avg`,
+				);
+				await assert.rejects(
+					inibase.max(tableName, column),
+					{ name: "INVALID_NAME" },
+					`Should reject column '${column}' in max`,
+				);
+				await assert.rejects(
+					inibase.min(tableName, column),
+					{ name: "INVALID_NAME" },
+					`Should reject column '${column}' in min`,
+				);
+			}
+		},
+	);
 
 	await t.test("Accept Valid Names End to End", async () => {
 		removeDatabase();

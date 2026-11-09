@@ -296,7 +296,9 @@ for (const size of sizes) {
 }
 
 console.log("\n--- link-heavy: shared catalog, per-item link hops ---\n");
-console.log(`POST bulk of ${sizes.join("/")} orders (${2 * sizes[sizes.length - 1]} line items max, ${catalogSize}-row product catalog):`);
+console.log(
+	`POST bulk of ${sizes.join("/")} orders (${2 * sizes[sizes.length - 1]} line items max, ${catalogSize}-row product catalog):`,
+);
 for (const size of sizes)
 	console.log(`  ${String(size).padEnd(5)} ${linkPost[size]?.toFixed(2)} ms`);
 console.log(

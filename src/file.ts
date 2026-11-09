@@ -154,7 +154,7 @@ export const runWithIndependentLockStore = <T>(fn: () => T): T =>
 const isReentrant = (resolvedPath: string) => {
 	if (!lockDepths.get(resolvedPath)) return false;
 	if (lockOwners.get(resolvedPath) !== lockContext.getStore()) return false;
-	lockDepths.set(resolvedPath, lockDepths.get(resolvedPath)! + 1);
+	lockDepths.set(resolvedPath, (lockDepths.get(resolvedPath) ?? 0) + 1);
 	return true;
 };
 

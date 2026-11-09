@@ -127,16 +127,15 @@ await test("Advanced Criteria Queries (comparison operators)", async (t) => {
 			{ fruit: "mango", rating: 2 },
 		]);
 		const rows = await inibase.get<Row>(table, { fruit: "![]cherry" });
-		assert.deepEqual(rows?.map((r) => r.fruit), ["banana", "apple", "mango"]);
+		assert.deepEqual(
+			rows?.map((r) => r.fruit),
+			["banana", "apple", "mango"],
+		);
 	});
 
 	await t.test("wildcard match (*)", async () => {
 		const containsI = await inibase.get<Row>(tableName, { name: "*%i%" });
-		assert.deepEqual(await names(containsI), [
-			"Alice",
-			"Charlie",
-			"Fiona",
-		]);
+		assert.deepEqual(await names(containsI), ["Alice", "Charlie", "Fiona"]);
 
 		const startWithCha = await inibase.get<Row>(tableName, { name: "*Cha%" });
 		assert.deepEqual(await names(startWithCha), ["Charlie"]);
@@ -152,13 +151,16 @@ await test("Advanced Criteria Queries (comparison operators)", async (t) => {
 		assert.equal(rows, null);
 	});
 
-	await t.test("empty criteria object/array returns the full page", async () => {
-		const byObj = await inibase.get<Row>(tableName, {});
-		assert.equal(byObj?.length, 6);
+	await t.test(
+		"empty criteria object/array returns the full page",
+		async () => {
+			const byObj = await inibase.get<Row>(tableName, {});
+			assert.equal(byObj?.length, 6);
 
-		const byArr = await inibase.get<Row>(tableName, []);
-		assert.equal(byArr?.length, 6);
-	});
+			const byArr = await inibase.get<Row>(tableName, []);
+			assert.equal(byArr?.length, 6);
+		},
+	);
 });
 
 await test("Advanced Criteria Queries (and / or logic)", async (t) => {
@@ -235,7 +237,10 @@ await test("Pagination, pageInfo and onlyOne", async (t) => {
 
 	const tableName = "logs";
 	await inibase.createTable(tableName, [{ key: "msg", type: "string" }]);
-	await seed(tableName, [...Array(25)].map((_, i) => ({ msg: `log-${i}` })));
+	await seed(
+		tableName,
+		[...Array(25)].map((_, i) => ({ msg: `log-${i}` })),
+	);
 
 	await t.test("pages return the expected slices", async () => {
 		const page1 = await inibase.get<Row>(tableName, undefined, {
@@ -292,7 +297,12 @@ await test("Pagination, pageInfo and onlyOne", async (t) => {
 	});
 
 	await t.test("onlyOne with no match returns null", async () => {
-		const row = await inibase.get<Row>(tableName, { msg: "nope" }, undefined, true);
+		const row = await inibase.get<Row>(
+			tableName,
+			{ msg: "nope" },
+			undefined,
+			true,
+		);
 		assert.equal(row, null);
 	});
 
@@ -300,7 +310,10 @@ await test("Pagination, pageInfo and onlyOne", async (t) => {
 		// 25 records -> levels 1..25
 		const cursorTable = "cursor_logs";
 		await inibase.createTable(cursorTable, [{ key: "level", type: "number" }]);
-		await seed(cursorTable, [...Array(25)].map((_, i) => ({ level: i + 1 })));
+		await seed(
+			cursorTable,
+			[...Array(25)].map((_, i) => ({ level: i + 1 })),
+		);
 
 		const firstPage = await inibase.get<Row>(
 			cursorTable,
@@ -398,13 +411,10 @@ await test("Sorting (string, array and object forms)", async (t) => {
 			sort: "name",
 			perPage: -1,
 		});
-		assert.deepEqual(rows?.map((r) => r.name), [
-			"Alice",
-			"Bob",
-			"Charlie",
-			"Dana",
-			"Zoe",
-		]);
+		assert.deepEqual(
+			rows?.map((r) => r.name),
+			["Alice", "Bob", "Charlie", "Dana", "Zoe"],
+		);
 	});
 
 	await t.test("sort combined with criteria", async () => {
@@ -413,7 +423,10 @@ await test("Sorting (string, array and object forms)", async (t) => {
 			{ age: ">20" },
 			{ sort: "age", perPage: -1 },
 		);
-		assert.deepEqual(rows?.map((r) => r.name), ["Zoe", "Alice", "Bob", "Dana"]);
+		assert.deepEqual(
+			rows?.map((r) => r.name),
+			["Zoe", "Alice", "Bob", "Dana"],
+		);
 	});
 
 	await t.test("sort by explicit id keeps insertion order", async () => {
@@ -421,13 +434,10 @@ await test("Sorting (string, array and object forms)", async (t) => {
 			sort: "id",
 			perPage: -1,
 		});
-		assert.deepEqual(rows?.map((r) => r.name), [
-			"Zoe",
-			"Alice",
-			"Bob",
-			"Charlie",
-			"Dana",
-		]);
+		assert.deepEqual(
+			rows?.map((r) => r.name),
+			["Zoe", "Alice", "Bob", "Charlie", "Dana"],
+		);
 	});
 });
 
@@ -495,15 +505,18 @@ await test("Columns projection (include, exclude, dotted paths)", async (t) => {
 		assert.deepEqual(rows?.[0].address, { city: "Springfield" });
 	});
 
-	await t.test("requesting the parent object returns all children", async () => {
-		const rows = await inibase.get<Row>(tableName, undefined, {
-			columns: ["address"],
-		});
-		assert.deepEqual(rows?.[0].address, {
-			street: "Main",
-			city: "Springfield",
-		});
-	});
+	await t.test(
+		"requesting the parent object returns all children",
+		async () => {
+			const rows = await inibase.get<Row>(tableName, undefined, {
+				columns: ["address"],
+			});
+			assert.deepEqual(rows?.[0].address, {
+				street: "Main",
+				city: "Springfield",
+			});
+		},
+	);
 
 	await t.test("array column projection", async () => {
 		const rows = await inibase.get<Row>(tableName, undefined, {
@@ -524,7 +537,10 @@ await test("decodeID config (numeric IDs end to end)", async (t) => {
 
 	await t.test("ids are returned as numbers", async () => {
 		const rows = await inibase.get<Row>(tableName);
-		assert.deepEqual(rows?.map((r) => r.id), [1, 2, 3]);
+		assert.deepEqual(
+			rows?.map((r) => r.id),
+			[1, 2, 3],
+		);
 	});
 
 	await t.test("fetch by numeric id", async () => {
@@ -539,36 +555,54 @@ await test("decodeID config (numeric IDs end to end)", async (t) => {
 	});
 
 	await t.test("update returns updated data", async () => {
-		const row = await inibase.put(tableName, { name: "B3" }, 2, undefined, true);
+		const row = await inibase.put(
+			tableName,
+			{ name: "B3" },
+			2,
+			undefined,
+			true,
+		);
 		assert.equal((row as Row)?.name, "B3");
 	});
 
 	await t.test("delete by numeric id", async () => {
 		await inibase.delete(tableName, 3);
 		const rows = await inibase.get<Row>(tableName);
-		assert.deepEqual(rows?.map((r) => r.id), [1, 2]);
+		assert.deepEqual(
+			rows?.map((r) => r.id),
+			[1, 2],
+		);
 	});
 
-	await t.test("delete of non-existent ids is a no-op (does not wipe table)", async () => {
-		assert.equal(await inibase.delete(tableName, 99), false);
-		assert.equal(await inibase.delete(tableName, [98, 99]), false);
-		const rows = await inibase.get<Row>(tableName);
-		assert.deepEqual(rows?.map((r) => r.id), [1, 2]);
-	});
+	await t.test(
+		"delete of non-existent ids is a no-op (does not wipe table)",
+		async () => {
+			assert.equal(await inibase.delete(tableName, 99), false);
+			assert.equal(await inibase.delete(tableName, [98, 99]), false);
+			const rows = await inibase.get<Row>(tableName);
+			assert.deepEqual(
+				rows?.map((r) => r.id),
+				[1, 2],
+			);
+		},
+	);
 
 	await t.test("relation lookups embed the referenced numeric id", async () => {
 		const users = "authors_decoded";
 		const posts = "posts_decoded";
-		await inibase.createTable(
-			users,
-			[{ key: "first_name", type: "string" }],
-			{ decodeID: true },
-		);
+		await inibase.createTable(users, [{ key: "first_name", type: "string" }], {
+			decodeID: true,
+		});
 		await inibase.createTable(posts, [
 			{ key: "title", type: "string" },
 			{ key: "user", type: "table", table: users },
 		]);
-		const created = (await inibase.post(users, { first_name: "Karim" }, undefined, true)) as Row;
+		const created = (await inibase.post(
+			users,
+			{ first_name: "Karim" },
+			undefined,
+			true,
+		)) as Row;
 		await inibase.post(posts, { title: "Hello", user: { id: created.id } });
 		const allPosts = (await inibase.get<Row>(posts, undefined, {
 			perPage: -1,
@@ -576,28 +610,28 @@ await test("decodeID config (numeric IDs end to end)", async (t) => {
 		assert.equal(allPosts[0].user.id, created.id);
 	});
 
-	await t.test("post returns a plain numeric id (not an encoded one)", async () => {
-		const returning = "decoded_returning_id";
-		await inibase.createTable(returning, [{ key: "name", type: "string" }], {
-			decodeID: true,
-		});
-		const returned = await inibase.post(returning, { name: "D" });
-		assert.equal(typeof returned, "number");
-		assert.equal(returned, 1);
-		// The returned id is the one every other accessor uses.
-		const row = await inibase.get<Row>(returning, returned);
-		assert.equal(row?.name, "D");
-	});
+	await t.test(
+		"post returns a plain numeric id (not an encoded one)",
+		async () => {
+			const returning = "decoded_returning_id";
+			await inibase.createTable(returning, [{ key: "name", type: "string" }], {
+				decodeID: true,
+			});
+			const returned = await inibase.post(returning, { name: "D" });
+			assert.equal(typeof returned, "number");
+			assert.equal(returned, 1);
+			// The returned id is the one every other accessor uses.
+			const row = await inibase.get<Row>(returning, returned);
+			assert.equal(row?.name, "D");
+		},
+	);
 
 	await t.test("bulk post returns plain numeric ids", async () => {
 		const bulk = "decoded_bulk";
 		await inibase.createTable(bulk, [{ key: "name", type: "string" }], {
 			decodeID: true,
 		});
-		const returned = await inibase.post(bulk, [
-			{ name: "X" },
-			{ name: "Y" },
-		]);
+		const returned = await inibase.post(bulk, [{ name: "X" }, { name: "Y" }]);
 		assert.deepEqual(returned, [1, 2]);
 		assert.deepEqual(
 			((await inibase.get<Row>(bulk, undefined, { perPage: -1 })) as Row[]).map(
@@ -653,7 +687,10 @@ await test("Cache config keeps criteria results fresh after writes", async (t) =
 		await inibase.get<Row>(tableName, { age: ">0" });
 		const cacheDir = join(dbPath, tableName, ".cache");
 		const entries = readdirSync(cacheDir);
-		assert.ok(entries.length > 0, "cache should contain criterion result files");
+		assert.ok(
+			entries.length > 0,
+			"cache should contain criterion result files",
+		);
 	});
 
 	await t.test("post clears the cache and keeps reads fresh", async () => {
@@ -695,7 +732,9 @@ await test("updateTable schema migration preserves data", async (t) => {
 	/** Returns the persisted schema without the auto-managed virtual fields. */
 	const userSchema = async () => {
 		const full = (await inibase.getTableSchema(tableName)) as Schema;
-		return full.filter((f) => !["id", "createdAt", "updatedAt"].includes(f.key));
+		return full.filter(
+			(f) => !["id", "createdAt", "updatedAt"].includes(f.key),
+		);
 	};
 
 	await t.test("adding a field keeps existing rows intact", async () => {
@@ -716,7 +755,12 @@ await test("updateTable schema migration preserves data", async (t) => {
 		// Existing rows have no value yet for the brand-new column
 		assert.equal(rows[0].email, undefined);
 
-		const inserted = (await inibase.post(tableName, { name: "Three", age: 3, email: "three@x.com" }, undefined, true)) as Row;
+		const inserted = (await inibase.post(
+			tableName,
+			{ name: "Three", age: 3, email: "three@x.com" },
+			undefined,
+			true,
+		)) as Row;
 		assert.equal(inserted.email, "three@x.com");
 	});
 
@@ -726,8 +770,14 @@ await test("updateTable schema migration preserves data", async (t) => {
 		await inibase.updateTable(tableName, withoutAge);
 		const rows = (await inibase.get<Row>(tableName)) as Row[];
 		assert.equal(rows.length, 3);
-		assert.ok(rows.every((r) => !("age" in r)), "age column should be gone");
-		assert.ok(rows.every((r) => r.name), "name column should remain");
+		assert.ok(
+			rows.every((r) => !("age" in r)),
+			"age column should be gone",
+		);
+		assert.ok(
+			rows.every((r) => r.name),
+			"name column should remain",
+		);
 	});
 
 	await t.test("metadata APIs reflect the migrated schema", async () => {
@@ -755,7 +805,10 @@ await test("updateTable config toggles", async (t) => {
 	await t.test("decodeID can be enabled after creation", async () => {
 		await inibase.updateTable(tableName, undefined, { decodeID: true });
 		const rows = (await inibase.get<Row>(tableName)) as Row[];
-		assert.deepEqual(rows?.map((r) => r.id), [1, 2]);
+		assert.deepEqual(
+			rows?.map((r) => r.id),
+			[1, 2],
+		);
 	});
 
 	await t.test("decodeID can be disabled again", async () => {
@@ -789,7 +842,10 @@ await test("Field types: password, json, date, format types", async (t) => {
 		assert.match(rows[0].pwd, /^[0-9a-f]{32}:[0-9a-f]{64}$/);
 
 		const byPlain = await inibase.get<Row>(tableName, { pwd: "secret123" });
-		assert.deepEqual(byPlain?.map((r) => r.username), ["joe"]);
+		assert.deepEqual(
+			byPlain?.map((r) => r.username),
+			["joe"],
+		);
 
 		const wrong = await inibase.get<Row>(tableName, { pwd: "guess" });
 		assert.equal(wrong, null);
@@ -880,19 +936,22 @@ await test("Field types: password, json, date, format types", async (t) => {
 		);
 	});
 
-	await t.test("default values are applied for missing optional fields", async () => {
-		const tableName = "defaults";
-		await inibase.createTable(tableName, [
-			{ key: "a", type: "string" },
-			{ key: "b", type: "number" },
-			{ key: "c", type: "boolean" },
-		]);
-		await inibase.post(tableName, { a: "only" });
-		const rows = (await inibase.get<Row>(tableName)) as Row[];
-		assert.equal(rows[0].a, "only");
-		assert.equal(rows[0].b, 0);
-		assert.equal(rows[0].c, false);
-	});
+	await t.test(
+		"default values are applied for missing optional fields",
+		async () => {
+			const tableName = "defaults";
+			await inibase.createTable(tableName, [
+				{ key: "a", type: "string" },
+				{ key: "b", type: "number" },
+				{ key: "c", type: "boolean" },
+			]);
+			await inibase.post(tableName, { a: "only" });
+			const rows = (await inibase.get<Row>(tableName)) as Row[];
+			assert.equal(rows[0].a, "only");
+			assert.equal(rows[0].b, 0);
+			assert.equal(rows[0].c, false);
+		},
+	);
 });
 
 await test("Advanced relationships (criteria, joins, cascade)", async (t) => {
@@ -909,8 +968,18 @@ await test("Advanced relationships (criteria, joins, cascade)", async (t) => {
 		{ key: "author", type: "table", table: authors },
 	]);
 
-	const alice = (await inibase.post(authors, { first_name: "Alice", country: "USA" }, undefined, true)) as Row;
-	const bob = (await inibase.post(authors, { first_name: "Bob", country: "MA" }, undefined, true)) as Row;
+	const alice = (await inibase.post(
+		authors,
+		{ first_name: "Alice", country: "USA" },
+		undefined,
+		true,
+	)) as Row;
+	const bob = (await inibase.post(
+		authors,
+		{ first_name: "Bob", country: "MA" },
+		undefined,
+		true,
+	)) as Row;
 	await inibase.post(posts, [
 		{ title: "P1", author: { id: alice.id } },
 		{ title: "P2", author: { id: bob.id } },
@@ -921,14 +990,20 @@ await test("Advanced relationships (criteria, joins, cascade)", async (t) => {
 		const rows = await inibase.get<Row>(posts, {
 			author: { country: "USA" },
 		});
-		assert.deepEqual(rows?.map((r) => r.title), ["P1", "P3"]);
+		assert.deepEqual(
+			rows?.map((r) => r.title),
+			["P1", "P3"],
+		);
 	});
 
 	await t.test("or/and logic with relation criteria", async () => {
 		const rows = await inibase.get<Row>(posts, {
 			or: { author: { country: "MA" }, title: "P3" },
 		});
-		assert.deepEqual(rows?.map((r) => r.title), ["P2", "P3"]);
+		assert.deepEqual(
+			rows?.map((r) => r.title),
+			["P2", "P3"],
+		);
 	});
 
 	await t.test("related records are denormalized into the result", async () => {
@@ -939,7 +1014,10 @@ await test("Advanced relationships (criteria, joins, cascade)", async (t) => {
 	await t.test("cascade delete removes related rows", async () => {
 		await inibase.delete(authors, { id: alice.id });
 		const remaining = await inibase.get<Row>(posts, undefined, { perPage: -1 });
-		assert.deepEqual(remaining?.map((r) => r.title), ["P2"]);
+		assert.deepEqual(
+			remaining?.map((r) => r.title),
+			["P2"],
+		);
 	});
 
 	await t.test("cascade delete reaches nested related tables", async () => {
@@ -959,10 +1037,30 @@ await test("Advanced relationships (criteria, joins, cascade)", async (t) => {
 			{ key: "post", type: "table", table: p2 },
 		]);
 
-		const alice2 = (await inibase.post(a2, { first_name: "Alice", country: "USA" }, undefined, true)) as Row;
-		const bob2 = (await inibase.post(a2, { first_name: "Bob", country: "MA" }, undefined, true)) as Row;
-		const p1 = (await inibase.post(p2, { title: "P1", author: { id: alice2.id } }, undefined, true)) as Row;
-		const p2row = (await inibase.post(p2, { title: "P2", author: { id: bob2.id } }, undefined, true)) as Row;
+		const alice2 = (await inibase.post(
+			a2,
+			{ first_name: "Alice", country: "USA" },
+			undefined,
+			true,
+		)) as Row;
+		const bob2 = (await inibase.post(
+			a2,
+			{ first_name: "Bob", country: "MA" },
+			undefined,
+			true,
+		)) as Row;
+		const p1 = (await inibase.post(
+			p2,
+			{ title: "P1", author: { id: alice2.id } },
+			undefined,
+			true,
+		)) as Row;
+		const p2row = (await inibase.post(
+			p2,
+			{ title: "P2", author: { id: bob2.id } },
+			undefined,
+			true,
+		)) as Row;
 		await inibase.post(c2, [
 			{ text: "C1", post: { id: p1.id } },
 			{ text: "C2", post: { id: p1.id } },
@@ -972,36 +1070,63 @@ await test("Advanced relationships (criteria, joins, cascade)", async (t) => {
 		await inibase.delete(a2, { id: alice2.id });
 
 		const restPosts = await inibase.get<Row>(p2, undefined, { perPage: -1 });
-		assert.deepEqual(restPosts?.map((r) => r.title), ["P2"]);
+		assert.deepEqual(
+			restPosts?.map((r) => r.title),
+			["P2"],
+		);
 		const restComments = await inibase.get<Row>(c2, undefined, { perPage: -1 });
-		assert.deepEqual(restComments?.map((r) => r.text), ["C3"]);
+		assert.deepEqual(
+			restComments?.map((r) => r.text),
+			["C3"],
+		);
 	});
 
-	await t.test("cascade delete follows criteria matching multiple rows", async () => {
-		const a3 = "authors_casc3";
-		const p3 = "posts_casc3";
-		await inibase.createTable(a3, [
-			{ key: "name", type: "string" },
-			{ key: "country", type: "string" },
-		]);
-		await inibase.createTable(p3, [
-			{ key: "title", type: "string" },
-			{ key: "author", type: "table", table: a3 },
-		]);
-		const a = (await inibase.post(a3, { name: "PA", country: "US" }, undefined, true)) as Row;
-		const b = (await inibase.post(a3, { name: "PB", country: "US" }, undefined, true)) as Row;
-		const c = (await inibase.post(a3, { name: "PC", country: "FR" }, undefined, true)) as Row;
-		await inibase.post(p3, [
-			{ title: "X1", author: { id: a.id } },
-			{ title: "X2", author: { id: b.id } },
-			{ title: "X3", author: { id: c.id } },
-		]);
+	await t.test(
+		"cascade delete follows criteria matching multiple rows",
+		async () => {
+			const a3 = "authors_casc3";
+			const p3 = "posts_casc3";
+			await inibase.createTable(a3, [
+				{ key: "name", type: "string" },
+				{ key: "country", type: "string" },
+			]);
+			await inibase.createTable(p3, [
+				{ key: "title", type: "string" },
+				{ key: "author", type: "table", table: a3 },
+			]);
+			const a = (await inibase.post(
+				a3,
+				{ name: "PA", country: "US" },
+				undefined,
+				true,
+			)) as Row;
+			const b = (await inibase.post(
+				a3,
+				{ name: "PB", country: "US" },
+				undefined,
+				true,
+			)) as Row;
+			const c = (await inibase.post(
+				a3,
+				{ name: "PC", country: "FR" },
+				undefined,
+				true,
+			)) as Row;
+			await inibase.post(p3, [
+				{ title: "X1", author: { id: a.id } },
+				{ title: "X2", author: { id: b.id } },
+				{ title: "X3", author: { id: c.id } },
+			]);
 
-		await inibase.delete(a3, { country: "US" });
+			await inibase.delete(a3, { country: "US" });
 
-		const rest = await inibase.get<Row>(p3, undefined, { perPage: -1 });
-		assert.deepEqual(rest?.map((r) => r.title), ["X3"]);
-	});
+			const rest = await inibase.get<Row>(p3, undefined, { perPage: -1 });
+			assert.deepEqual(
+				rest?.map((r) => r.title),
+				["X3"],
+			);
+		},
+	);
 
 	await t.test("delete all rows cascades to related rows", async () => {
 		const a4 = "authors_casc4";
@@ -1011,7 +1136,12 @@ await test("Advanced relationships (criteria, joins, cascade)", async (t) => {
 			{ key: "title", type: "string" },
 			{ key: "author", type: "table", table: a4 },
 		]);
-		const row = (await inibase.post(a4, { name: "A4" }, undefined, true)) as Row;
+		const row = (await inibase.post(
+			a4,
+			{ name: "A4" },
+			undefined,
+			true,
+		)) as Row;
 		await inibase.post(p4, { title: "Y1", author: { id: row.id } });
 
 		assert.equal(await inibase.delete(a4), true);
@@ -1098,12 +1228,18 @@ await test("Deeply nested array/object trees", async (t) => {
 
 	await t.test("dot-path criteria reaches array children", async () => {
 		const rows = await inibase.get<Row>(tableName, { "root.title": "Tree B" });
-		assert.deepEqual(rows?.map((r) => r.root.title), ["Tree B"]);
+		assert.deepEqual(
+			rows?.map((r) => r.root.title),
+			["Tree B"],
+		);
 
 		const leaves = await inibase.get<Row>(tableName, {
 			"root.branches.label": "b2",
 		});
-		assert.deepEqual(leaves?.map((r) => r.root.title), ["Tree A"]);
+		assert.deepEqual(
+			leaves?.map((r) => r.root.title),
+			["Tree A"],
+		);
 	});
 
 	await t.test("update merges into nested tree data", async () => {
@@ -1116,7 +1252,9 @@ await test("Deeply nested array/object trees", async (t) => {
 			},
 			{ "root.title": "Tree A" },
 		);
-		const rows = (await inibase.get<Row>(tableName, { "root.title": "Tree A" })) as Row[];
+		const rows = (await inibase.get<Row>(tableName, {
+			"root.title": "Tree A",
+		})) as Row[];
 		assert.equal(rows[0].root.branches[0].label, "b1");
 		assert.equal(rows[0].root.branches[0].leaves[0].size, 999);
 	});
@@ -1211,16 +1349,11 @@ await test("Public validateData API", async (t) => {
 	});
 
 	await t.test("rejects missing required fields", () => {
+		assert.throws(() => inibase.validateData({ name: "x" }, schema), {
+			name: "FIELD_REQUIRED",
+		});
 		assert.throws(
-			() => inibase.validateData({ name: "x" }, schema),
-			{ name: "FIELD_REQUIRED" },
-		);
-		assert.throws(
-			() =>
-				inibase.validateData(
-					{ name: "x", count: 1, meta: {} },
-					schema,
-				),
+			() => inibase.validateData({ name: "x", count: 1, meta: {} }, schema),
 			{ name: "FIELD_REQUIRED" },
 		);
 	});
@@ -1231,19 +1364,13 @@ await test("Public validateData API", async (t) => {
 			{ name: "INVALID_TYPE" },
 		);
 		assert.throws(
-			() =>
-				inibase.validateData(
-					{ name: "x", meta: { deep: 456 } },
-					schema,
-				),
+			() => inibase.validateData({ name: "x", meta: { deep: 456 } }, schema),
 			{ name: "INVALID_TYPE" },
 		);
 	});
 
 	await t.test("skipRequiredField bypasses required checks", () => {
-		assert.doesNotThrow(() =>
-			inibase.validateData({ count: 1 }, schema, true),
-		);
+		assert.doesNotThrow(() => inibase.validateData({ count: 1 }, schema, true));
 	});
 });
 
@@ -1259,7 +1386,9 @@ await test("Error handling coverage", async (t) => {
 	});
 
 	await t.test("TABLE_NOT_EXISTS for getTable on a missing table", async () => {
-		await assert.rejects(inibase.getTable("ghost"), { name: "TABLE_NOT_EXISTS" });
+		await assert.rejects(inibase.getTable("ghost"), {
+			name: "TABLE_NOT_EXISTS",
+		});
 	});
 
 	await t.test("NO_SCHEMA for a table created without a schema", async () => {
@@ -1285,7 +1414,13 @@ await test("Error handling coverage", async (t) => {
 		await inibase.createTable("bulk_invalid", [{ key: "v", type: "string" }]);
 		await seed("bulk_invalid", [{ v: "a" }, { v: "b" }]);
 		await assert.rejects(
-			inibase.put("bulk_invalid", [{ v: "x" }, { v: "y" }], undefined, undefined, true),
+			inibase.put(
+				"bulk_invalid",
+				[{ v: "x" }, { v: "y" }],
+				undefined,
+				undefined,
+				true,
+			),
 			{ name: "INVALID_ID" },
 		);
 	});
@@ -1325,13 +1460,19 @@ await test("Bulk operations (post/put/delete with arrays)", async (t) => {
 		const rows = (await inibase.get<Row>(tableName, undefined, {
 			perPage: -1,
 		})) as Row[];
-		assert.deepEqual(rows.map((r) => r.name), ["x1b", "x2", "x3", "x4b"]);
+		assert.deepEqual(
+			rows.map((r) => r.name),
+			["x1b", "x2", "x3", "x4b"],
+		);
 	});
 
 	await t.test("bulk delete by id array", async () => {
 		await inibase.delete(tableName, [ids[1], ids[2]]);
 		const rows = await inibase.get<Row>(tableName, undefined, { perPage: -1 });
-		assert.deepEqual(rows?.map((r) => r.name), ["x1b", "x4b"]);
+		assert.deepEqual(
+			rows?.map((r) => r.name),
+			["x1b", "x4b"],
+		);
 	});
 
 	await t.test("put with no where updates every record", async () => {
@@ -1342,16 +1483,24 @@ await test("Bulk operations (post/put/delete with arrays)", async (t) => {
 		assert.ok(rows.every((r) => r.v === 99));
 	});
 
-	await t.test("put with a criteria that matches nothing is a no-op", async () => {
-		await inibase.put(tableName, { name: "zzz" }, { name: "missing" });
-		const rows = (await inibase.get<Row>(tableName, undefined, {
-			perPage: -1,
-		})) as Row[];
-		assert.ok(rows.every((r) => r.name !== "zzz"));
-	});
+	await t.test(
+		"put with a criteria that matches nothing is a no-op",
+		async () => {
+			await inibase.put(tableName, { name: "zzz" }, { name: "missing" });
+			const rows = (await inibase.get<Row>(tableName, undefined, {
+				perPage: -1,
+			})) as Row[];
+			assert.ok(rows.every((r) => r.name !== "zzz"));
+		},
+	);
 
 	await t.test("row metadata timestamps are maintained", async () => {
-		const single = (await inibase.post(tableName, { name: "fresh", v: 1 }, undefined, true)) as Row;
+		const single = (await inibase.post(
+			tableName,
+			{ name: "fresh", v: 1 },
+			undefined,
+			true,
+		)) as Row;
 		assert.ok(typeof single.createdAt === "number");
 		assert.equal(single.updatedAt, undefined);
 
@@ -1405,26 +1554,41 @@ await test("Decode resilience for `{`/`[`-leading string values", async (t) => {
 		},
 	]);
 
-	await t.test("whole-table listing does not throw and returns every row", async () => {
-		const rows = await inibase.get<Row>(pagesTable, undefined, { perPage: -1 });
-		assert.equal(rows?.length, 3);
-		assert.deepEqual(rows?.map((r) => r.slug), ["/", "form", "users/[id]"]);
-	});
+	await t.test(
+		"whole-table listing does not throw and returns every row",
+		async () => {
+			const rows = await inibase.get<Row>(pagesTable, undefined, {
+				perPage: -1,
+			});
+			assert.equal(rows?.length, 3);
+			assert.deepEqual(
+				rows?.map((r) => r.slug),
+				["/", "form", "users/[id]"],
+			);
+		},
+	);
 
-	await t.test("unparseable brace/bracket values read back verbatim", async () => {
-		const rows = await inibase.get<Row>(
-			pagesTable,
-			{ slug: "users/[id]" },
-			{ perPage: -1 },
-		);
-		const row = rows?.[0];
-		assert.ok(row);
-		assert.equal(row.seo?.title, "{{item.username}} Page");
-		assert.equal(row.seo?.description, "[a,{b]");
-	});
+	await t.test(
+		"unparseable brace/bracket values read back verbatim",
+		async () => {
+			const rows = await inibase.get<Row>(
+				pagesTable,
+				{ slug: "users/[id]" },
+				{ perPage: -1 },
+			);
+			const row = rows?.[0];
+			assert.ok(row);
+			assert.equal(row.seo?.title, "{{item.username}} Page");
+			assert.equal(row.seo?.description, "[a,{b]");
+		},
+	);
 
 	await t.test("criteria lookups for unaffected rows still work", async () => {
-		const rows = await inibase.get<Row>(pagesTable, { slug: "/" }, { perPage: -1 });
+		const rows = await inibase.get<Row>(
+			pagesTable,
+			{ slug: "/" },
+			{ perPage: -1 },
+		);
 		assert.equal(rows?.[0]?.seo?.title, "HomePage");
 	});
 
@@ -1432,7 +1596,11 @@ await test("Decode resilience for `{`/`[`-leading string values", async (t) => {
 		const all = await inibase.get<Row>(pagesTable, undefined, { perPage: -1 });
 		const bad = all?.find((r) => r.slug === "users/[id]");
 		assert.ok(bad);
-		const byId = await inibase.get<Row>(pagesTable, { id: bad.id }, { perPage: -1 });
+		const byId = await inibase.get<Row>(
+			pagesTable,
+			{ id: bad.id },
+			{ perPage: -1 },
+		);
 		assert.equal(byId?.[0]?.seo?.title, "{{item.username}} Page");
 	});
 
@@ -1448,58 +1616,71 @@ await test("Decode resilience for `{`/`[`-leading string values", async (t) => {
 		assert.equal(updated?.[0]?.seo?.description, "updated desc");
 	});
 
-	await t.test("delete of the row with a bracket-bearing slug works", async () => {
-		const rows = await inibase.get<Row>(pagesTable, undefined, { perPage: -1 });
-		const bad = rows?.find((r) => r.slug === "users/[id]");
-		assert.ok(bad);
-		await inibase.delete(pagesTable, [bad.id]);
-		const remaining = await inibase.get<Row>(pagesTable, undefined, { perPage: -1 });
-		assert.equal(remaining?.length, 2);
-	});
+	await t.test(
+		"delete of the row with a bracket-bearing slug works",
+		async () => {
+			const rows = await inibase.get<Row>(pagesTable, undefined, {
+				perPage: -1,
+			});
+			const bad = rows?.find((r) => r.slug === "users/[id]");
+			assert.ok(bad);
+			await inibase.delete(pagesTable, [bad.id]);
+			const remaining = await inibase.get<Row>(pagesTable, undefined, {
+				perPage: -1,
+			});
+			assert.equal(remaining?.length, 2);
+		},
+	);
 
-	await t.test("number/boolean/json/array columns decode normally with a bad string", async () => {
-		const typed = "typed_decode";
-		await inibase.createTable(typed, [
-			{ key: "label", type: "string" },
-			{ key: "count", type: "number" },
-			{ key: "active", type: "boolean" },
-			{ key: "tags", type: "array", children: "string" },
-			{ key: "config", type: "json" },
-		]);
-		await seed(typed, [
-			{
-				label: "{{item.username}}",
-				count: 42,
-				active: true,
-				tags: ["a", "b"],
-				config: { table: "users", segments: {} },
-			},
-			// Brace tokens inside an array of strings round-trip untouched.
-			{ label: "plain", tags: ["plain", "{{item.username}}"] },
-		]);
-		const rows = await inibase.get<Row>(typed, undefined, { perPage: -1 });
-		assert.ok(rows);
-		assert.equal(rows.length, 2);
-		const r0 = rows[0];
-		assert.equal(r0.label, "{{item.username}}");
-		assert.equal(r0.count, 42);
-		assert.equal(r0.active, true);
-		assert.deepEqual(r0.tags, ["a", "b"]);
-		assert.deepEqual(r0.config, { table: "users", segments: {} });
-		assert.equal(rows[1].label, "plain");
-		assert.deepEqual(rows[1].tags, ["plain", "{{item.username}}"]);
-	});
+	await t.test(
+		"number/boolean/json/array columns decode normally with a bad string",
+		async () => {
+			const typed = "typed_decode";
+			await inibase.createTable(typed, [
+				{ key: "label", type: "string" },
+				{ key: "count", type: "number" },
+				{ key: "active", type: "boolean" },
+				{ key: "tags", type: "array", children: "string" },
+				{ key: "config", type: "json" },
+			]);
+			await seed(typed, [
+				{
+					label: "{{item.username}}",
+					count: 42,
+					active: true,
+					tags: ["a", "b"],
+					config: { table: "users", segments: {} },
+				},
+				// Brace tokens inside an array of strings round-trip untouched.
+				{ label: "plain", tags: ["plain", "{{item.username}}"] },
+			]);
+			const rows = await inibase.get<Row>(typed, undefined, { perPage: -1 });
+			assert.ok(rows);
+			assert.equal(rows.length, 2);
+			const r0 = rows[0];
+			assert.equal(r0.label, "{{item.username}}");
+			assert.equal(r0.count, 42);
+			assert.equal(r0.active, true);
+			assert.deepEqual(r0.tags, ["a", "b"]);
+			assert.deepEqual(r0.config, { table: "users", segments: {} });
+			assert.equal(rows[1].label, "plain");
+			assert.deepEqual(rows[1].tags, ["plain", "{{item.username}}"]);
+		},
+	);
 
 	// Boundary: a bracket-leading string that IS valid Inison (autoCorrect can
 	// close it) does not fail parsing, so no fallback applies — it decodes as
 	// an array. Only genuinely unparseable values fall back to the string.
-	await t.test("a parseable `[`-leading string decodes as an array", async () => {
-		const tbl = "bracket_boundary";
-		await inibase.createTable(tbl, [{ key: "text", type: "string" }]);
-		await seed(tbl, [{ text: "[not a real array" }]);
-		const rows = await inibase.get<Row>(tbl, undefined, { perPage: -1 });
-		assert.deepEqual(rows?.[0]?.text, ["not a real array"]);
-	});
+	await t.test(
+		"a parseable `[`-leading string decodes as an array",
+		async () => {
+			const tbl = "bracket_boundary";
+			await inibase.createTable(tbl, [{ key: "text", type: "string" }]);
+			await seed(tbl, [{ text: "[not a real array" }]);
+			const rows = await inibase.get<Row>(tbl, undefined, { perPage: -1 });
+			assert.deepEqual(rows?.[0]?.text, ["not a real array"]);
+		},
+	);
 });
 
 await test("Computed fields (v1 id-only expression language)", async (t) => {
@@ -1508,229 +1689,301 @@ await test("Computed fields (v1 id-only expression language)", async (t) => {
 	/** Round-trips the persisted schema (ids + computed specs). */
 	const userSchema = async (tableName: string) => {
 		const full = (await inibase.getTableSchema(tableName)) as Schema;
-		return full.filter((f) => !["id", "createdAt", "updatedAt"].includes(f.key));
+		return full.filter(
+			(f) => !["id", "createdAt", "updatedAt"].includes(f.key),
+		);
 	};
 
-	await t.test("order totals: quantity x unit price and linked product price", async () => {
-		await inibase.createTable("c_product", [
-			{ key: "name", type: "string" },
-			{ key: "price", type: "number" },
-		]);
-		await inibase.createTable("c_orders", [
-			{ key: "customer", type: "string" },
-			{ key: "status", type: "number" },
-			{
-				key: "items",
-				type: "array",
-				children: [
-					{ key: "product", type: "table", table: "c_product" },
-					{ key: "quantity", type: "number" },
-					{ key: "unitPriceCents", type: "number" },
-				],
-			},
-			// ids: customer=1, status=2, items=3, product=4, quantity=5,
-			// unitPriceCents=6, totalCents=7, totalCentsLive=8
-			{ key: "totalCents", type: "number", computed: "sum(5 * 6)" },
-			{ key: "totalCentsLive", type: "number", computed: "sum(5 * 4.2)" },
-		]);
-
-		const p1 = (await inibase.post("c_product", { name: "widget", price: 199 }, undefined, true)) as Row;
-		const p2 = (await inibase.post("c_product", { name: "gadget", price: 449 }, undefined, true)) as Row;
-		const order = (await inibase.post(
-			"c_orders",
-			{
-				customer: "acme",
-				status: 1,
-				items: [
-					{ product: p1.id, quantity: 2, unitPriceCents: 250 },
-					{ product: p2.id, quantity: 1, unitPriceCents: 100 },
-				],
-			},
-			undefined,
-			true,
-		)) as Row;
-		assert.equal(order.totalCents, 600, "2*250 + 1*100");
-		assert.equal(order.totalCentsLive, 847, "2*199 + 1*449 via link hop");
-
-		// stored computed columns survive a reload-as-read
-		const fetched = (await inibase.get("c_orders", order.id)) as Row;
-		assert.equal(fetched.totalCents, 600);
-		assert.equal(fetched.totalCentsLive, 847);
-	});
-
-	await t.test("batched link hops: bulk posts share one read per distinct linked row", async () => {
-		await inibase.createTable("b_product", [
-			{ key: "name", type: "string" },
-			{ key: "price", type: "number" },
-		]);
-		await inibase.createTable("b_orders", [
-			{ key: "customer", type: "string" },
-			{
-				key: "items",
-				type: "array",
-				children: [
-					{ key: "product", type: "table", table: "b_product" },
-					{ key: "quantity", type: "number" },
-				],
-			},
-			// ids: customer=1, items=2, product=3, quantity=4, total=5
-			{ key: "total", type: "number", computed: "sum(4 * 3.2)" },
-		]);
-
-		// Shared catalog: every order below links back to these few rows, so
-		// the batched reader resolves each (table, column, id) once instead of
-		// once per line item.
-		const catalog = (await seed("b_product", [
-			{ name: "p1", price: 100 },
-			{ name: "p2", price: 300 },
-			{ name: "p3", price: 500 },
-		])) as Row[];
-		const orderCount = 24;
-		const row = (i: number) => ({
-			customer: `c${i}`,
-			items: [
-				{ product: catalog[i % 3].id, quantity: 2 },
-				{ product: catalog[(i + 1) % 3].id, quantity: 1 },
-			],
-		});
-		const posted = (await inibase.post(
-			"b_orders",
-			[...Array(orderCount)].map((_, i) => row(i)),
-			{ perPage: -1 },
-			true,
-		)) as Row[];
-		assert.equal(posted.length, orderCount);
-		for (let i = 0; i < posted.length; i++) {
-			const a = catalog[i % 3].price as number;
-			const b = catalog[(i + 1) % 3].price as number;
-			assert.equal(posted[i].total, 2 * a + 1 * b, `row ${i} total via shared links`);
-		}
-
-		// Where-less put recomputes the whole batch through the same path.
-		await inibase.put("b_orders", {
-			items: [{ product: catalog[2].id, quantity: 5 }],
-		});
-		const reread = (await inibase.get<Row>("b_orders", undefined, {
-			perPage: -1,
-		})) as Row[];
-		assert.equal(reread.length, orderCount);
-		for (const r of reread)
-			assert.equal(r.total, 5 * (catalog[2].price as number), "recomputed after where-less put");
-
-		// A dangling link anywhere in a bulk post still rejects evaluation.
-		await assert.rejects(
-			() =>
-				inibase.post(
-					"b_orders",
-					[
-						{ customer: "ok", items: [{ product: catalog[0].id, quantity: 1 }] },
-						{ customer: "dangling", items: [{ product: 42424242, quantity: 1 }] },
+	await t.test(
+		"order totals: quantity x unit price and linked product price",
+		async () => {
+			await inibase.createTable("c_product", [
+				{ key: "name", type: "string" },
+				{ key: "price", type: "number" },
+			]);
+			await inibase.createTable("c_orders", [
+				{ key: "customer", type: "string" },
+				{ key: "status", type: "number" },
+				{
+					key: "items",
+					type: "array",
+					children: [
+						{ key: "product", type: "table", table: "c_product" },
+						{ key: "quantity", type: "number" },
+						{ key: "unitPriceCents", type: "number" },
 					],
-					{ perPage: -1 },
-					true,
+				},
+				// ids: customer=1, status=2, items=3, product=4, quantity=5,
+				// unitPriceCents=6, totalCents=7, totalCentsLive=8
+				{ key: "totalCents", type: "number", computed: "sum(5 * 6)" },
+				{ key: "totalCentsLive", type: "number", computed: "sum(5 * 4.2)" },
+			]);
+
+			const p1 = (await inibase.post(
+				"c_product",
+				{ name: "widget", price: 199 },
+				undefined,
+				true,
+			)) as Row;
+			const p2 = (await inibase.post(
+				"c_product",
+				{ name: "gadget", price: 449 },
+				undefined,
+				true,
+			)) as Row;
+			const order = (await inibase.post(
+				"c_orders",
+				{
+					customer: "acme",
+					status: 1,
+					items: [
+						{ product: p1.id, quantity: 2, unitPriceCents: 250 },
+						{ product: p2.id, quantity: 1, unitPriceCents: 100 },
+					],
+				},
+				undefined,
+				true,
+			)) as Row;
+			assert.equal(order.totalCents, 600, "2*250 + 1*100");
+			assert.equal(order.totalCentsLive, 847, "2*199 + 1*449 via link hop");
+
+			// stored computed columns survive a reload-as-read
+			const fetched = (await inibase.get("c_orders", order.id)) as Row;
+			assert.equal(fetched.totalCents, 600);
+			assert.equal(fetched.totalCentsLive, 847);
+		},
+	);
+
+	await t.test(
+		"batched link hops: bulk posts share one read per distinct linked row",
+		async () => {
+			await inibase.createTable("b_product", [
+				{ key: "name", type: "string" },
+				{ key: "price", type: "number" },
+			]);
+			await inibase.createTable("b_orders", [
+				{ key: "customer", type: "string" },
+				{
+					key: "items",
+					type: "array",
+					children: [
+						{ key: "product", type: "table", table: "b_product" },
+						{ key: "quantity", type: "number" },
+					],
+				},
+				// ids: customer=1, items=2, product=3, quantity=4, total=5
+				{ key: "total", type: "number", computed: "sum(4 * 3.2)" },
+			]);
+
+			// Shared catalog: every order below links back to these few rows, so
+			// the batched reader resolves each (table, column, id) once instead of
+			// once per line item.
+			const catalog = (await seed("b_product", [
+				{ name: "p1", price: 100 },
+				{ name: "p2", price: 300 },
+				{ name: "p3", price: 500 },
+			])) as Row[];
+			const orderCount = 24;
+			const row = (i: number) => ({
+				customer: `c${i}`,
+				items: [
+					{ product: catalog[i % 3].id, quantity: 2 },
+					{ product: catalog[(i + 1) % 3].id, quantity: 1 },
+				],
+			});
+			const posted = (await inibase.post(
+				"b_orders",
+				[...Array(orderCount)].map((_, i) => row(i)),
+				{ perPage: -1 },
+				true,
+			)) as Row[];
+			assert.equal(posted.length, orderCount);
+			for (let i = 0; i < posted.length; i++) {
+				const a = catalog[i % 3].price as number;
+				const b = catalog[(i + 1) % 3].price as number;
+				assert.equal(
+					posted[i].total,
+					2 * a + 1 * b,
+					`row ${i} total via shared links`,
+				);
+			}
+
+			// Where-less put recomputes the whole batch through the same path.
+			await inibase.put("b_orders", {
+				items: [{ product: catalog[2].id, quantity: 5 }],
+			});
+			const reread = (await inibase.get<Row>("b_orders", undefined, {
+				perPage: -1,
+			})) as Row[];
+			assert.equal(reread.length, orderCount);
+			for (const r of reread)
+				assert.equal(
+					r.total,
+					5 * (catalog[2].price as number),
+					"recomputed after where-less put",
+				);
+
+			// A dangling link anywhere in a bulk post still rejects evaluation.
+			await assert.rejects(
+				() =>
+					inibase.post(
+						"b_orders",
+						[
+							{
+								customer: "ok",
+								items: [{ product: catalog[0].id, quantity: 1 }],
+							},
+							{
+								customer: "dangling",
+								items: [{ product: 42424242, quantity: 1 }],
+							},
+						],
+						{ perPage: -1 },
+						true,
+					),
+				(error: unknown) =>
+					(error as Error).name === "COMPUTED_FIELD_DANGLING_LINK",
+			);
+		},
+	);
+
+	await t.test(
+		"rename-proof: renaming a linked key does not retarget expressions",
+		async () => {
+			// rename c_product.price -> priceCents through a schema round-trip
+			const productSchema = await userSchema("c_product");
+			await inibase.updateTable(
+				"c_product",
+				productSchema.map((f) =>
+					f.key === "price" ? { ...f, key: "priceCents" } : f,
 				),
-			(error: unknown) =>
-				(error as Error).name === "COMPUTED_FIELD_DANGLING_LINK",
-		);
-	});
+			);
+			const order = (await inibase.get<Row>("c_orders")) as Row[];
+			assert.deepEqual(
+				order.map((r) => [r.totalCents, r.totalCentsLive]),
+				[[600, 847]],
+				"totals must be unchanged after the rename",
+			);
+		},
+	);
 
-	await t.test("rename-proof: renaming a linked key does not retarget expressions", async () => {
-		// rename c_product.price -> priceCents through a schema round-trip
-		const productSchema = await userSchema("c_product");
-		await inibase.updateTable(
-			"c_product",
-			productSchema.map((f) => (f.key === "price" ? { ...f, key: "priceCents" } : f)),
-		);
-		const order = (await inibase.get<Row>("c_orders")) as Row[];
-		assert.deepEqual(
-			order.map((r) => [r.totalCents, r.totalCentsLive]),
-			[[600, 847]],
-			"totals must be unchanged after the rename",
-		);
-	});
+	await t.test(
+		"bulk post computes every row; put recomputes by id, criteria and no-where",
+		async () => {
+			await inibase.createTable("c_put", [
+				{ key: "qty", type: "number" },
+				{ key: "price", type: "number" },
+				{ key: "total", type: "number", computed: "1 * 2" },
+			]);
+			await seed("c_put", [
+				{ qty: 1, price: 10 },
+				{ qty: 2, price: 20 },
+				{ qty: 3, price: 30 },
+			]);
+			const totals = (rows: Row[] | null) => rows?.map((r) => r.total);
+			assert.deepEqual(totals(await inibase.get<Row>("c_put")), [10, 40, 90]);
 
-	await t.test("bulk post computes every row; put recomputes by id, criteria and no-where", async () => {
-		await inibase.createTable("c_put", [
-			{ key: "qty", type: "number" },
-			{ key: "price", type: "number" },
-			{ key: "total", type: "number", computed: "1 * 2" },
-		]);
-		await seed("c_put", [
-			{ qty: 1, price: 10 },
-			{ qty: 2, price: 20 },
-			{ qty: 3, price: 30 },
-		]);
-		const totals = (rows: Row[] | null) => rows?.map((r) => r.total);
-		assert.deepEqual(totals(await inibase.get<Row>("c_put")), [10, 40, 90]);
+			const first = (await inibase.get<Row>("c_put")) as Row[];
+			await inibase.put("c_put", { qty: 7 }, first[0].id);
+			assert.deepEqual(totals(await inibase.get<Row>("c_put")), [70, 40, 90]);
 
-		const first = (await inibase.get<Row>("c_put")) as Row[];
-		await inibase.put("c_put", { qty: 7 }, first[0].id);
-		assert.deepEqual(totals(await inibase.get<Row>("c_put")), [70, 40, 90]);
+			await inibase.put("c_put", { qty: 9 }, { price: 30 });
+			assert.deepEqual(totals(await inibase.get<Row>("c_put")), [70, 40, 270]);
 
-		await inibase.put("c_put", { qty: 9 }, { price: 30 });
-		assert.deepEqual(totals(await inibase.get<Row>("c_put")), [70, 40, 270]);
+			await inibase.put("c_put", { price: 100 });
+			assert.deepEqual(
+				totals(await inibase.get<Row>("c_put")),
+				[700, 200, 900],
+			);
+		},
+	);
 
-		await inibase.put("c_put", { price: 100 });
-		assert.deepEqual(totals(await inibase.get<Row>("c_put")), [700, 200, 900]);
-	});
+	await t.test(
+		"helpers: empty array sums to 0; avg over none is an arithmetic error",
+		async () => {
+			// ids: name=1, items=2, n=3, total=4, avg=5, count=6 — helpers reference
+			// the child id (n=3), never the container (items=2)
+			await inibase.createTable("c_agg", [
+				{ key: "name", type: "string" },
+				{
+					key: "items",
+					type: "array",
+					children: [{ key: "n", type: "number" }],
+				},
+				{ key: "total", type: "number", computed: "sum(3)" },
+				{ key: "count", type: "number", computed: "count(3)" },
+			]);
+			const withItems = (await inibase.post(
+				"c_agg",
+				{ name: "x", items: [{ n: 4 }, { n: 6 }] },
+				undefined,
+				true,
+			)) as Row;
+			assert.equal(withItems.total, 10);
+			assert.equal(withItems.count, 2);
 
-	await t.test("helpers: empty array sums to 0; avg over none is an arithmetic error", async () => {
-		// ids: name=1, items=2, n=3, total=4, avg=5, count=6 — helpers reference
-		// the child id (n=3), never the container (items=2)
-		await inibase.createTable("c_agg", [
-			{ key: "name", type: "string" },
-			{ key: "items", type: "array", children: [{ key: "n", type: "number" }] },
-			{ key: "total", type: "number", computed: "sum(3)" },
-			{ key: "count", type: "number", computed: "count(3)" },
-		]);
-		const withItems = (await inibase.post(
-			"c_agg",
-			{ name: "x", items: [{ n: 4 }, { n: 6 }] },
-			undefined,
-			true,
-		)) as Row;
-		assert.equal(withItems.total, 10);
-		assert.equal(withItems.count, 2);
+			const empty = (await inibase.post(
+				"c_agg",
+				{ name: "y" },
+				undefined,
+				true,
+			)) as Row;
+			assert.equal(empty.total, 0, "sum over no values is 0");
+			assert.equal(empty.count, 0);
 
-		const empty = (await inibase.post("c_agg", { name: "y" }, undefined, true)) as Row;
-		assert.equal(empty.total, 0, "sum over no values is 0");
-		assert.equal(empty.count, 0);
+			// avg over no values is an arithmetic error
+			await inibase.createTable("c_agg2", [
+				{
+					key: "items",
+					type: "array",
+					children: [{ key: "n", type: "number" }],
+				},
+				{ key: "avg", type: "number", computed: "avg(2)" },
+			]);
+			await assert.rejects(
+				() => inibase.post("c_agg2", { items: [] }),
+				(error: unknown) =>
+					(error as Error).name === "COMPUTED_FIELD_ARITHMETIC",
+			);
+		},
+	);
 
-		// avg over no values is an arithmetic error
-		await inibase.createTable("c_agg2", [
-			{ key: "items", type: "array", children: [{ key: "n", type: "number" }] },
-			{ key: "avg", type: "number", computed: "avg(2)" },
-		]);
-		await assert.rejects(
-			() => inibase.post("c_agg2", { items: [] }),
-			(error: unknown) =>
-				(error as Error).name === "COMPUTED_FIELD_ARITHMETIC",
-		);
-	});
+	await t.test(
+		"links: missing link value stores empty, dangling link throws",
+		async () => {
+			await inibase.createTable("c_owner", [{ key: "name", type: "string" }]);
+			await inibase.createTable("c_ledger", [
+				{ key: "owner", type: "table", table: "c_owner" },
+				{ key: "ownerName", type: "string", computed: "1.1" },
+			]);
 
-	await t.test("links: missing link value stores empty, dangling link throws", async () => {
-		await inibase.createTable("c_owner", [{ key: "name", type: "string" }]);
-		await inibase.createTable("c_ledger", [
-			{ key: "owner", type: "table", table: "c_owner" },
-			{ key: "ownerName", type: "string", computed: "1.1" },
-		]);
+			// no owner: a single bare path may evaluate to null (stored empty)
+			const bare = (await inibase.post("c_ledger", {}, undefined, true)) as Row;
+			assert.ok(!("ownerName" in bare), "missing link value stays empty");
 
-		// no owner: a single bare path may evaluate to null (stored empty)
-		const bare = (await inibase.post("c_ledger", {}, undefined, true)) as Row;
-		assert.ok(!("ownerName" in bare), "missing link value stays empty");
+			// dangling link: owner points at a row that does not exist
+			await assert.rejects(
+				() => inibase.post("c_ledger", { owner: 99999 }),
+				(error: unknown) =>
+					(error as Error).name === "COMPUTED_FIELD_DANGLING_LINK",
+			);
 
-		// dangling link: owner points at a row that does not exist
-		await assert.rejects(
-			() => inibase.post("c_ledger", { owner: 99999 }),
-			(error: unknown) =>
-				(error as Error).name === "COMPUTED_FIELD_DANGLING_LINK",
-		);
-
-		// a live link resolves through the target table
-		const owner = (await inibase.post("c_owner", { name: "aca" }, undefined, true)) as Row;
-		const linked = (await inibase.post("c_ledger", { owner: { id: owner.id } }, undefined, true)) as Row;
-		assert.equal(linked.ownerName, "aca");
-	});
+			// a live link resolves through the target table
+			const owner = (await inibase.post(
+				"c_owner",
+				{ name: "aca" },
+				undefined,
+				true,
+			)) as Row;
+			const linked = (await inibase.post(
+				"c_ledger",
+				{ owner: { id: owner.id } },
+				undefined,
+				true,
+			)) as Row;
+			assert.equal(linked.ownerName, "aca");
+		},
+	);
 
 	await t.test("computed values cannot be set directly", async () => {
 		await inibase.createTable("c_set", [
@@ -1749,67 +2002,87 @@ await test("Computed fields (v1 id-only expression language)", async (t) => {
 		);
 	});
 
-	await t.test("DDL rejects syntax, conflicts, cycles and invalid targets", async () => {
-		// syntax
-		await assert.rejects(
-			() => inibase.createTable("c_e", [{ key: "x", type: "number", computed: "1 ++" }]),
-			(error: unknown) => (error as Error).name === "COMPUTED_FIELD_SYNTAX",
-		);
-		// conflicts with required / unique / regex
-		for (const extra of [{ required: true }, { unique: true }, { regex: "^1$" }])
+	await t.test(
+		"DDL rejects syntax, conflicts, cycles and invalid targets",
+		async () => {
+			// syntax
 			await assert.rejects(
 				() =>
-					inibase.createTable("c_e2", [
-						{ key: "x", type: "number", computed: "1", ...extra },
+					inibase.createTable("c_e", [
+						{ key: "x", type: "number", computed: "1 ++" },
 					]),
-				(error: unknown) => (error as Error).name === "COMPUTED_FIELD_CONFLICT",
+				(error: unknown) => (error as Error).name === "COMPUTED_FIELD_SYNTAX",
 			);
-		// cycles (mutual and self)
-		await assert.rejects(
-			() =>
-				inibase.createTable("c_cyc", [
-					{ key: "a", type: "number", computed: "2" },
-					{ key: "b", type: "number", computed: "1" },
-				]),
-			(error: unknown) => (error as Error).name === "COMPUTED_FIELD_CYCLE",
-		);
-		await assert.rejects(
-			() =>
-				inibase.createTable("c_cyc2", [
-					{ key: "a", type: "number", computed: "1" },
-				]),
-			(error: unknown) => (error as Error).name === "COMPUTED_FIELD_CYCLE",
-		);
-		// a bare path into array content is only legal inside a helper
-		await assert.rejects(
-			() =>
-				inibase.createTable("c_arr", [
-					{ key: "items", type: "array", children: [{ key: "n", type: "number" }] },
-					{ key: "first", type: "number", computed: "2" },
-				]),
-			(error: unknown) => (error as Error).name === "COMPUTED_FIELD_INVALID_TARGET",
-		);
-	});
+			// conflicts with required / unique / regex
+			for (const extra of [
+				{ required: true },
+				{ unique: true },
+				{ regex: "^1$" },
+			])
+				await assert.rejects(
+					() =>
+						inibase.createTable("c_e2", [
+							{ key: "x", type: "number", computed: "1", ...extra },
+						]),
+					(error: unknown) =>
+						(error as Error).name === "COMPUTED_FIELD_CONFLICT",
+				);
+			// cycles (mutual and self)
+			await assert.rejects(
+				() =>
+					inibase.createTable("c_cyc", [
+						{ key: "a", type: "number", computed: "2" },
+						{ key: "b", type: "number", computed: "1" },
+					]),
+				(error: unknown) => (error as Error).name === "COMPUTED_FIELD_CYCLE",
+			);
+			await assert.rejects(
+				() =>
+					inibase.createTable("c_cyc2", [
+						{ key: "a", type: "number", computed: "1" },
+					]),
+				(error: unknown) => (error as Error).name === "COMPUTED_FIELD_CYCLE",
+			);
+			// a bare path into array content is only legal inside a helper
+			await assert.rejects(
+				() =>
+					inibase.createTable("c_arr", [
+						{
+							key: "items",
+							type: "array",
+							children: [{ key: "n", type: "number" }],
+						},
+						{ key: "first", type: "number", computed: "2" },
+					]),
+				(error: unknown) =>
+					(error as Error).name === "COMPUTED_FIELD_INVALID_TARGET",
+			);
+		},
+	);
 
-	await t.test("integer-only: a decimal written as a path fails at compile time", async () => {
-		// `2.5` is a link hop (field 2, then field 5 of its target), never the
-		// decimal 2.5, so this schema cannot express fractional literals.
-		await assert.rejects(
-			() =>
-				inibase.createTable("c_dec", [
-					{ key: "a", type: "number" },
-					{ key: "b", type: "number" },
-					{ key: "ratio", type: "number", computed: "2.5" },
-				]),
-			(error: unknown) => (error as Error).name === "COMPUTED_FIELD_INVALID_LINK",
-		);
-		// fractional results are reachable by division instead
-		await inibase.createTable("c_div", [
-			{ key: "z", type: "number", computed: "314 / 100" },
-		]);
-		const row = (await inibase.post("c_div", {}, undefined, true)) as Row;
-		assert.equal(row.z, 3.14);
-	});
+	await t.test(
+		"integer-only: a decimal written as a path fails at compile time",
+		async () => {
+			// `2.5` is a link hop (field 2, then field 5 of its target), never the
+			// decimal 2.5, so this schema cannot express fractional literals.
+			await assert.rejects(
+				() =>
+					inibase.createTable("c_dec", [
+						{ key: "a", type: "number" },
+						{ key: "b", type: "number" },
+						{ key: "ratio", type: "number", computed: "2.5" },
+					]),
+				(error: unknown) =>
+					(error as Error).name === "COMPUTED_FIELD_INVALID_LINK",
+			);
+			// fractional results are reachable by division instead
+			await inibase.createTable("c_div", [
+				{ key: "z", type: "number", computed: "314 / 100" },
+			]);
+			const row = (await inibase.post("c_div", {}, undefined, true)) as Row;
+			assert.equal(row.z, 3.14);
+		},
+	);
 
 	await t.test("precedence, parens and modulo", async () => {
 		// ids: base=1, p1=2, p2=3, p3=4, x=5, y=6, w=7, d=8
@@ -1823,7 +2096,12 @@ await test("Computed fields (v1 id-only expression language)", async (t) => {
 			{ key: "w", type: "number", computed: "97 % 10" },
 			{ key: "d", type: "number", computed: "2 / 3" },
 		]);
-		const row = (await inibase.post("c_prec", { base: 1, p1: 2, p2: 3, p3: 4 }, undefined, true)) as Row;
+		const row = (await inibase.post(
+			"c_prec",
+			{ base: 1, p1: 2, p2: 3, p3: 4 },
+			undefined,
+			true,
+		)) as Row;
 		assert.equal(row.x, 10, "p1*p2 + p3");
 		assert.equal(row.y, 14, "p1*(p2+p3)");
 		assert.equal(row.w, 7);
@@ -1835,39 +2113,59 @@ await test("Computed fields (v1 id-only expression language)", async (t) => {
 		);
 	});
 
-	await t.test("updateTable backfills added and changed computed fields", async () => {
-		const tableName = "c_backfill";
-		await inibase.createTable(tableName, [
-			{ key: "qty", type: "number" },
-			{ key: "price", type: "number" },
-		]);
-		await seed(tableName, [
-			{ qty: 2, price: 3 },
-			{ qty: 5, price: 4 },
-		]);
+	await t.test(
+		"updateTable backfills added and changed computed fields",
+		async () => {
+			const tableName = "c_backfill";
+			await inibase.createTable(tableName, [
+				{ key: "qty", type: "number" },
+				{ key: "price", type: "number" },
+			]);
+			await seed(tableName, [
+				{ qty: 2, price: 3 },
+				{ qty: 5, price: 4 },
+			]);
 
-		// add a computed field: existing rows get backfilled values
-		await inibase.updateTable(tableName, [
-			...(await userSchema(tableName)),
-			{ key: "total", type: "number", computed: "1 * 2" },
-		]);
-		let rows = (await inibase.get<Row>(tableName)) as Row[];
-		assert.deepEqual(rows.map((r) => r.total), [6, 20], "backfilled totals");
-		assert.deepEqual(rows.map((r) => r.qty), [2, 5], "existing columns survive");
+			// add a computed field: existing rows get backfilled values
+			await inibase.updateTable(tableName, [
+				...(await userSchema(tableName)),
+				{ key: "total", type: "number", computed: "1 * 2" },
+			]);
+			let rows = (await inibase.get<Row>(tableName)) as Row[];
+			assert.deepEqual(
+				rows.map((r) => r.total),
+				[6, 20],
+				"backfilled totals",
+			);
+			assert.deepEqual(
+				rows.map((r) => r.qty),
+				[2, 5],
+				"existing columns survive",
+			);
 
-		// changing the expression re-backfills
-		await inibase.updateTable(tableName, [
-			...(await userSchema(tableName)).map((f) =>
-				f.key === "total" ? { ...f, computed: "1 * 2 * 2" } : f,
-			),
-		]);
-		rows = (await inibase.get<Row>(tableName)) as Row[];
-		assert.deepEqual(rows.map((r) => r.total), [18, 80], "re-backfilled totals");
+			// changing the expression re-backfills
+			await inibase.updateTable(tableName, [
+				...(await userSchema(tableName)).map((f) =>
+					f.key === "total" ? { ...f, computed: "1 * 2 * 2" } : f,
+				),
+			]);
+			rows = (await inibase.get<Row>(tableName)) as Row[];
+			assert.deepEqual(
+				rows.map((r) => r.total),
+				[18, 80],
+				"re-backfilled totals",
+			);
 
-		// posts after the migration keep computing
-		const posted = (await inibase.post(tableName, { qty: 10, price: 2 }, undefined, true)) as Row;
-		assert.equal(posted.total, 40);
-	});
+			// posts after the migration keep computing
+			const posted = (await inibase.post(
+				tableName,
+				{ qty: 10, price: 2 },
+				undefined,
+				true,
+			)) as Row;
+			assert.equal(posted.total, 40);
+		},
+	);
 
 	await t.test("a failed backfill leaves the schema untouched", async () => {
 		const tableName = "c_fail";

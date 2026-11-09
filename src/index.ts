@@ -3316,7 +3316,7 @@ export default class Inibase {
 				// this is the plain per-hop engine read.
 				const row = env.links
 					? env.collect
-						? (env.links.record(table, ref.key, value), null)
+						? (() => { env.links.record(table, ref.key, value); return null; })()
 						: await env.links.read(table, ref.key, value)
 					: await this.readLinkedRow(table, value, ref.key);
 				if (!env.collect && (row === undefined || row === null))
