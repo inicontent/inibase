@@ -104,12 +104,22 @@ await test("nested sum aggregates a computed child per product", async () => {
 	const { alpha, beta } = await fixtureOrders();
 
 	assert.equal(
-		await inibase.sum("orders", "items.lineTotal", { product: alpha.id }, { nested: true }),
+		await inibase.sum(
+			"orders",
+			"items.lineTotal",
+			{ product: alpha.id },
+			{ nested: true },
+		),
 		500,
 		"revenue per product (Alpha)",
 	);
 	assert.equal(
-		await inibase.sum("orders", "items.lineTotal", { product: beta.id }, { nested: true }),
+		await inibase.sum(
+			"orders",
+			"items.lineTotal",
+			{ product: beta.id },
+			{ nested: true },
+		),
 		250,
 		"revenue per product (Beta)",
 	);
@@ -119,7 +129,12 @@ await test("nested sum aggregates a computed child per product", async () => {
 		"revenue across all rows",
 	);
 	assert.equal(
-		await inibase.sum("orders", "items.quantity", { product: alpha.id }, { nested: true }),
+		await inibase.sum(
+			"orders",
+			"items.quantity",
+			{ product: alpha.id },
+			{ nested: true },
+		),
 		5,
 		"pieces sold per product (Alpha)",
 	);
@@ -133,10 +148,7 @@ await test("a missing operand in one element writes 0, never aborts or skips", a
 	const row = (await seed("orders", [
 		{
 			status: "shipped",
-			items: [
-				{ product: alpha.id, quantity: 2 },
-				{ product: alpha.id },
-			],
+			items: [{ product: alpha.id, quantity: 2 }, { product: alpha.id }],
 		},
 	])) as Row[];
 
@@ -178,12 +190,20 @@ await test("computed children are not user-settable", async () => {
 await test("put re-evaluates child computeds (by id and whole-table)", async () => {
 	initializeDatabase();
 	const { alpha, o1 } = await fixtureOrders();
-	const rows = (await inibase.get("orders", undefined, { perPage: -1 })) as Row[];
+	const rows = (await inibase.get("orders", undefined, {
+		perPage: -1,
+	})) as Row[];
 	const o2 = rows.find((r) => r.id !== o1.id) as Row;
 
 	// put by id: only that row is re-derived
-	await inibase.put("orders", { items: [{ product: alpha.id, quantity: 9 }] }, { id: o2.id });
-	const afterPut = (await inibase.get("orders", undefined, { perPage: -1 })) as Row[];
+	await inibase.put(
+		"orders",
+		{ items: [{ product: alpha.id, quantity: 9 }] },
+		{ id: o2.id },
+	);
+	const afterPut = (await inibase.get("orders", undefined, {
+		perPage: -1,
+	})) as Row[];
 	const updated = afterPut.find((r) => r.id === o2.id) as Row;
 	assert.deepEqual(
 		(updated.items as Row[]).map((i) => i.lineTotal),
@@ -196,7 +216,9 @@ await test("put re-evaluates child computeds (by id and whole-table)", async () 
 
 	// whole-table put: every row is re-derived, existing rows otherwise intact
 	await inibase.put("orders", { status: "re-shipped" });
-	const afterAll = (await inibase.get("orders", undefined, { perPage: -1 })) as Row[];
+	const afterAll = (await inibase.get("orders", undefined, {
+		perPage: -1,
+	})) as Row[];
 	assert.equal(afterAll.length, 2);
 	for (const r of afterAll) {
 		assert.equal(r.status, "re-shipped");
@@ -257,7 +279,9 @@ await test("updateTable backfills an added child computed into existing rows", a
 		),
 	);
 
-	const rows = (await inibase.get(tableName, undefined, { perPage: -1 })) as Row[];
+	const rows = (await inibase.get(tableName, undefined, {
+		perPage: -1,
+	})) as Row[];
 	const row1 = rows.find((r) => r.qty === 2) as Row;
 	const row2 = rows.find((r) => r.qty === 3) as Row;
 	assert.deepEqual(
@@ -318,7 +342,9 @@ await test("updateTable re-backfills a changed child computed", async () => {
 
 	// s = a + b
 	await changeTo("2 + 3");
-	let rows = (await inibase.get(tableName, undefined, { perPage: -1 })) as Row[];
+	let rows = (await inibase.get(tableName, undefined, {
+		perPage: -1,
+	})) as Row[];
 	assert.deepEqual(
 		rows.map((r) => (r.items as Row[])[0].s),
 		[5, 9],
@@ -335,7 +361,9 @@ await test("updateTable re-backfills a changed child computed", async () => {
 	);
 
 	// and posts after the migration keep evaluating
-	const posted = (await seed(tableName, [{ items: [{ a: 10, b: 2 }] }])) as Row[];
+	const posted = (await seed(tableName, [
+		{ items: [{ a: 10, b: 2 }] },
+	])) as Row[];
 	assert.equal((posted[0].items as Row[])[0].s, 20);
 });
 
@@ -349,7 +377,8 @@ await test("schema validation rejects malformed child computeds", async () => {
 		// attempt gets a unique name
 		return assert.rejects(
 			() => inibase.createTable(name, schema),
-			(error: unknown) => (error as Error).name === "COMPUTED_FIELD_INVALID_TARGET",
+			(error: unknown) =>
+				(error as Error).name === "COMPUTED_FIELD_INVALID_TARGET",
 		);
 	};
 
@@ -412,7 +441,8 @@ await test("schema validation rejects malformed child computeds", async () => {
 					],
 				},
 			]),
-		(error: unknown) => (error as Error).name === "COMPUTED_FIELD_UNKNOWN_FIELD",
+		(error: unknown) =>
+			(error as Error).name === "COMPUTED_FIELD_UNKNOWN_FIELD",
 	);
 });
 
@@ -440,7 +470,9 @@ await test("child computeds evaluate inside transactions", async () => {
 	await inibase.commit();
 
 	// staged writes evaluated the child on commit
-	let rows = (await inibase.get(tableName, undefined, { perPage: -1 })) as Row[];
+	let rows = (await inibase.get(tableName, undefined, {
+		perPage: -1,
+	})) as Row[];
 	assert.deepEqual(
 		rows.map((r) => (r.items as Row[])[0].sub),
 		[6, 12],

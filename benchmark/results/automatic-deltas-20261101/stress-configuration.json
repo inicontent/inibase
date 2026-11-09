@@ -1,0 +1,13 @@
+{
+  "label": "Forced automatic compaction; separate from the historical workload",
+  "scenario": "standard",
+  "rows": 10000,
+  "profiles": ["cms"],
+  "repeats": 3,
+  "samples": 80,
+  "writes": 80,
+  "mixedRounds": 8,
+  "flush": "write-through",
+  "environment": {"INIBASE_MAX_OVERLAY_RECORDS": "64"},
+  "note": "The lower deployment accumulation limit is not a table option. It applies to iniBase; SQLite and PostgreSQL execute equal application operations and retain their normal durable maintenance. No compaction cost is subtracted."
+}

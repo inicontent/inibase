@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { existsSync, rmSync } from "node:fs";
-import { readFile, readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -48,12 +48,19 @@ const paginationTotal = async (tablePath: string) => {
 	for (const name of await readdir(tablePath))
 		if (name.endsWith(".pagination")) matches.push(name);
 	if (!matches.length) return { lastId: 0, total: 0 };
-	const [lastId, total] = matches[0].replace(/\.pagination$/, "").split("-").map(Number);
+	const [lastId, total] = matches[0]
+		.replace(/\.pagination$/, "")
+		.split("-")
+		.map(Number);
 	return { lastId, total };
 };
 
 /** Every column file must hold exactly `total` lines (no drifted/torn tails). */
-const checkColumnsAligned = async (tablePath: string, total: number, label: string) => {
+const checkColumnsAligned = async (
+	tablePath: string,
+	total: number,
+	label: string,
+) => {
 	const files = (await readdir(tablePath)).filter(
 		(f) => f.endsWith(".txt") && !f.startsWith("."),
 	);
@@ -89,13 +96,22 @@ await test("hardening: concurrent posts / renames / deletes stay aligned (tortur
 	const postTasks: Promise<unknown>[] = [];
 	for (let i = 0; i < 120; i++)
 		postTasks.push(
-			inibase.post(tableName, { name: `p-${i}`, folder: "w1", size: i }, { perPage: -1 }, true),
+			inibase.post(
+				tableName,
+				{ name: `p-${i}`, folder: "w1", size: i },
+				{ perPage: -1 },
+				true,
+			),
 		);
 	for (let b = 0; b < 4; b++)
 		postTasks.push(
 			inibase.post(
 				tableName,
-				Array.from({ length: 8 }, (_, k) => ({ name: `b${b}-${k}`, folder: "w1", size: b })),
+				Array.from({ length: 8 }, (_, k) => ({
+					name: `b${b}-${k}`,
+					folder: "w1",
+					size: b,
+				})),
 				{ perPage: -1 },
 				true,
 			),
@@ -110,7 +126,11 @@ await test("hardening: concurrent posts / renames / deletes stay aligned (tortur
 
 	let { total } = await paginationTotal(tablePath);
 	const expectedW1 = 120 + 4 * 8;
-	assert.equal(total, expectedW1, `wave1 total ${total}, expected ${expectedW1}`);
+	assert.equal(
+		total,
+		expectedW1,
+		`wave1 total ${total}, expected ${expectedW1}`,
+	);
 	await checkColumnsAligned(tablePath, total, "wave1");
 
 	const ids1 = await idList(tablePath);
@@ -128,7 +148,12 @@ await test("hardening: concurrent posts / renames / deletes stay aligned (tortur
 		wave2.push(inibase.put(tableName, { name }, id, { perPage: -1 }, false));
 	for (let i = 0; i < 40; i++)
 		wave2.push(
-			inibase.post(tableName, { name: `w2-${i}`, folder: "w2", size: i }, { perPage: -1 }, false),
+			inibase.post(
+				tableName,
+				{ name: `w2-${i}`, folder: "w2", size: i },
+				{ perPage: -1 },
+				false,
+			),
 		);
 	const w2Res = await Promise.allSettled(wave2);
 	const w2Fails = w2Res.filter((r) => r.status === "rejected");
@@ -140,7 +165,11 @@ await test("hardening: concurrent posts / renames / deletes stay aligned (tortur
 
 	total = (await paginationTotal(tablePath)).total;
 	const expectedW2 = expectedW1 + 40;
-	assert.equal(total, expectedW2, `wave2 total ${total}, expected ${expectedW2}`);
+	assert.equal(
+		total,
+		expectedW2,
+		`wave2 total ${total}, expected ${expectedW2}`,
+	);
 	await checkColumnsAligned(tablePath, total, "wave2");
 
 	const ids2 = await idList(tablePath);
@@ -148,10 +177,9 @@ await test("hardening: concurrent posts / renames / deletes stay aligned (tortur
 
 	// every renamed id must store the requested name on the right row; map by
 	// POSITION in the current id column (rows/columns are line-aligned).
-	const dump = (await inibase.get(tableName, undefined, { perPage: -1 })) as Record<
-		string,
-		any
-	>[];
+	const dump = (await inibase.get(tableName, undefined, {
+		perPage: -1,
+	})) as Record<string, any>[];
 	const idsNow = await idList(tablePath);
 	const byId = new Map(idsNow.map((id, i) => [id, dump[i]]));
 	for (const [id, wanted] of renamePlan) {
@@ -166,10 +194,14 @@ await test("hardening: concurrent posts / renames / deletes stay aligned (tortur
 
 	// wave 3: parallel deletes by id (only ids that still exist)
 	const deletable = ids2.slice(0, 20);
-	const w3Res = await Promise.allSettled(deletable.map((id) => inibase.delete(tableName, id)));
+	const w3Res = await Promise.allSettled(
+		deletable.map((id) => inibase.delete(tableName, id)),
+	);
 	const w3Fails = w3Res.filter((r) => r.status === "rejected");
 	assert.equal(w3Fails.length, 0, `${w3Fails.length} wave3 deletes failed`);
-	const removed = w3Res.filter((r) => r.status === "fulfilled" && r.value).length;
+	const removed = w3Res.filter(
+		(r) => r.status === "fulfilled" && r.value,
+	).length;
 	total = (await paginationTotal(tablePath)).total;
 	assert.equal(
 		total,
@@ -216,11 +248,21 @@ await test("hardening: numeric where resolves by stored id, never by line number
 	const numId = Math.max(...rawIds);
 	assert.equal(numId, 4, "largest stored id");
 	const lineOf = rawIds.indexOf(numId) + 1;
-	assert.ok(lineOf <= total, "largest id is within the row count (prepend line 1..3)");
+	assert.ok(
+		lineOf <= total,
+		"largest id is within the row count (prepend line 1..3)",
+	);
 
-	const got = (await inibase.get(tableName, numId, { perPage: -1 })) as Record<string, any>;
+	const got = (await inibase.get(tableName, numId, { perPage: -1 })) as Record<
+		string,
+		any
+	>;
 	assert.ok(got, `get(${numId}) returned nothing`);
-	assert.equal(String(got.name), "r4", `get(${numId}) must return the id=4 row, got ${got.name}`);
+	assert.equal(
+		String(got.name),
+		"r4",
+		`get(${numId}) must return the id=4 row, got ${got.name}`,
+	);
 
 	// rename by NUMERIC id: right row, no padding, row count unchanged
 	const marker = `harden-${process.pid}-${Date.now()}`;
@@ -232,11 +274,14 @@ await test("hardening: numeric where resolves by stored id, never by line number
 		3,
 		"rename must not pad the column file",
 	);
-	const refreshed = (await inibase.get(tableName, numId, { perPage: -1 })) as Record<
-		string,
-		any
-	>;
-	assert.equal(String(refreshed.name), marker, "renamed id reads back on the right row");
+	const refreshed = (await inibase.get(tableName, numId, {
+		perPage: -1,
+	})) as Record<string, any>;
+	assert.equal(
+		String(refreshed.name),
+		marker,
+		"renamed id reads back on the right row",
+	);
 
 	// delete by NUMERIC id: rows drop by one and every column stays aligned
 	const didDel2 = await inibase.delete(tableName, numId);
@@ -254,8 +299,12 @@ await test("hardening: numeric where resolves by stored id, never by line number
 await test("hardening: transactions commit / rollback / in-txn put-by-numeric-id", async () => {
 	prepareDb();
 	const inibase = new Inibase("txn", dbPath);
-	await inibase.createTable("a", structuredClone(ASSET_LIKE_SCHEMA), { prepend: true });
-	await inibase.createTable("b", structuredClone(ASSET_LIKE_SCHEMA), { prepend: false });
+	await inibase.createTable("a", structuredClone(ASSET_LIKE_SCHEMA), {
+		prepend: true,
+	});
+	await inibase.createTable("b", structuredClone(ASSET_LIKE_SCHEMA), {
+		prepend: false,
+	});
 
 	await inibase.begin(["a", "b"]);
 	await inibase.post("a", { name: "t1-a" });
@@ -271,7 +320,10 @@ await test("hardening: transactions commit / rollback / in-txn put-by-numeric-id
 	await inibase.rollback();
 	a = await inibase.get("a", undefined, { perPage: -1 });
 	b = await inibase.get("b", undefined, { perPage: -1 });
-	assert.ok(a && a.length === 1 && b && b.length === 1, "rollback left 1/1 rows");
+	assert.ok(
+		a && a.length === 1 && b && b.length === 1,
+		"rollback left 1/1 rows",
+	);
 
 	// one staged op PER TABLE per txn by design: post to "a" + put by
 	// numeric id to "b" in one txn, commit, verify both.
@@ -293,7 +345,9 @@ await test("hardening: transactions commit / rollback / in-txn put-by-numeric-id
 await test("hardening: generic CRUD, criteria, sort, aggregates", async () => {
 	prepareDb();
 	const inibase = new Inibase("crud", dbPath);
-	await inibase.createTable("t", structuredClone(ASSET_LIKE_SCHEMA), { prepend: true });
+	await inibase.createTable("t", structuredClone(ASSET_LIKE_SCHEMA), {
+		prepend: true,
+	});
 	await inibase.post(
 		"t",
 		[
@@ -303,41 +357,61 @@ await test("hardening: generic CRUD, criteria, sort, aggregates", async () => {
 		],
 		{ perPage: -1 },
 	);
-	let all = (await inibase.get("t", undefined, { perPage: -1 })) as Record<string, any>[];
+	let all = (await inibase.get("t", undefined, { perPage: -1 })) as Record<
+		string,
+		any
+	>[];
 	assert.equal(all.length, 3, "seed rows");
 
-	const byFolder = (await inibase.get("t", { folder: "x" }, { perPage: -1 })) as Record<
-		string,
-		any
-	>[];
+	const byFolder = (await inibase.get(
+		"t",
+		{ folder: "x" },
+		{ perPage: -1 },
+	)) as Record<string, any>[];
 	assert.equal(byFolder.length, 2, "criteria x rows");
 
-	const sorted = (await inibase.get("t", undefined, { perPage: -1, sort: { size: "DESC" } })) as Record<
-		string,
-		any
-	>[];
+	const sorted = (await inibase.get("t", undefined, {
+		perPage: -1,
+		sort: { size: "DESC" },
+	})) as Record<string, any>[];
 	assert.equal(String(sorted[0].size), "10", "sort DESC first size");
 
 	assert.equal(Number(await inibase.sum("t", "size")), 13, "sum(size)");
 	assert.equal(Number(await inibase.avg("t", "size")), 13 / 3, "avg(size)");
 
 	await inibase.put("t", { folder: "z" });
-	all = (await inibase.get("t", undefined, { perPage: -1 })) as Record<string, any>[];
-	assert.ok(all.every((r) => r.folder === "z"), "where-less put rewrote every row");
-
-	await inibase.put("t", { name: "hunted" }, { folder: "z", size: 2 });
-	const hunted = (await inibase.get("t", { name: "hunted" }, { perPage: -1 })) as Record<
+	all = (await inibase.get("t", undefined, { perPage: -1 })) as Record<
 		string,
 		any
 	>[];
-	assert.ok(hunted.length === 1 && Number(hunted[0].size) === 2, "criteria put mismatch");
+	assert.ok(
+		all.every((r) => r.folder === "z"),
+		"where-less put rewrote every row",
+	);
+
+	await inibase.put("t", { name: "hunted" }, { folder: "z", size: 2 });
+	const hunted = (await inibase.get(
+		"t",
+		{ name: "hunted" },
+		{ perPage: -1 },
+	)) as Record<string, any>[];
+	assert.ok(
+		hunted.length === 1 && Number(hunted[0].size) === 2,
+		"criteria put mismatch",
+	);
 
 	// delete an ARRAY OF ENCODED ids
-	all = (await inibase.get("t", undefined, { perPage: -1 })) as Record<string, any>[];
+	all = (await inibase.get("t", undefined, { perPage: -1 })) as Record<
+		string,
+		any
+	>[];
 	assert.equal(all.length, 3, "pre-delete rows");
 	const hexIds = all.slice(0, 2).map((r) => r.id as string);
 	assert.equal(await inibase.delete("t", hexIds), true, "hex array delete");
-	let left = (await inibase.get("t", undefined, { perPage: -1 })) as Record<string, any>[];
+	let left = (await inibase.get("t", undefined, { perPage: -1 })) as Record<
+		string,
+		any
+	>[];
 	assert.equal(left.length, 1, "hex array delete left 1 row");
 
 	// delete the final row by ARRAY OF NUMERIC ids (numeric where = id)
@@ -346,8 +420,14 @@ await test("hardening: generic CRUD, criteria, sort, aggregates", async () => {
 		.filter(Boolean)
 		.map(Number);
 	assert.equal(await inibase.delete("t", rawIds), true, "numeric array delete");
-	left = (await inibase.get("t", undefined, { perPage: -1 })) as Record<string, any>[];
-	assert.ok(!left || left.length === 0, "numeric array delete emptied the table");
+	left = (await inibase.get("t", undefined, { perPage: -1 })) as Record<
+		string,
+		any
+	>[];
+	assert.ok(
+		!left || left.length === 0,
+		"numeric array delete emptied the table",
+	);
 });
 
 await test("Cleanup hardening database", () => {

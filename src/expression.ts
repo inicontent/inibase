@@ -420,7 +420,11 @@ async function resolvePathNode(
 			ctx.ownKey,
 			ids[0],
 		]);
-	else if (inHelper && hop0.arrayAncestor !== null && hop0.nestedInArrayOfArrays)
+	else if (
+		inHelper &&
+		hop0.arrayAncestor !== null &&
+		hop0.nestedInArrayOfArrays
+	)
 		throw createError(ctx.language, "COMPUTED_FIELD_INVALID_TARGET", [
 			ctx.ownKey,
 			ids[0],

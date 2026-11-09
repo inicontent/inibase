@@ -91,7 +91,9 @@ await test("nested sum basics", async (t) => {
 
 	await t.test("all elements when no where is given", async () => {
 		assert.equal(
-			await inibase.sum("orders", "items.quantity", undefined, { nested: true }),
+			await inibase.sum("orders", "items.quantity", undefined, {
+				nested: true,
+			}),
 			11,
 		);
 		assert.equal(
@@ -100,98 +102,170 @@ await test("nested sum basics", async (t) => {
 		);
 	});
 
-	await t.test("bare element predicate resolves under the array root", async () => {
-		assert.equal(
-			await inibase.sum("orders", "items.quantity", { product: alpha.id }, { nested: true }),
-			10,
-		);
-		assert.equal(
-			await inibase.sum("orders", "items.quantity", { product: beta.id }, { nested: true }),
-			1,
-		);
-	});
+	await t.test(
+		"bare element predicate resolves under the array root",
+		async () => {
+			assert.equal(
+				await inibase.sum(
+					"orders",
+					"items.quantity",
+					{ product: alpha.id },
+					{ nested: true },
+				),
+				10,
+			);
+			assert.equal(
+				await inibase.sum(
+					"orders",
+					"items.quantity",
+					{ product: beta.id },
+					{ nested: true },
+				),
+				1,
+			);
+		},
+	);
 
-	await t.test("mixed-product order is not over-counted (element-wise zip)", async () => {
-		// O1 holds both Alpha and Beta; Alpha may only count its own element.
-		assert.equal(
-			await inibase.sum("orders", "items.quantity", { product: alpha.id }, { nested: true }),
-			10, // 2 (O1) + 3 (O2) + 5 (O3) — never the whole O1 row
-		);
-	});
+	await t.test(
+		"mixed-product order is not over-counted (element-wise zip)",
+		async () => {
+			// O1 holds both Alpha and Beta; Alpha may only count its own element.
+			assert.equal(
+				await inibase.sum(
+					"orders",
+					"items.quantity",
+					{ product: alpha.id },
+					{ nested: true },
+				),
+				10, // 2 (O1) + 3 (O2) + 5 (O3) — never the whole O1 row
+			);
+		},
+	);
 
 	await t.test("dotted element predicate is equivalent", async () => {
 		assert.equal(
-			await inibase.sum("orders", "items.quantity", { "items.product": alpha.id }, { nested: true }),
+			await inibase.sum(
+				"orders",
+				"items.quantity",
+				{ "items.product": alpha.id },
+				{ nested: true },
+			),
 			10,
 		);
 	});
 
 	await t.test("no matching elements returns 0", async () => {
 		assert.equal(
-			await inibase.sum("orders", "items.quantity", { product: "ghost" }, { nested: true }),
+			await inibase.sum(
+				"orders",
+				"items.quantity",
+				{ product: "ghost" },
+				{ nested: true },
+			),
 			0,
 		);
 	});
 
 	await t.test("operator predicates are supported", async () => {
 		assert.equal(
-			await inibase.sum("orders", "items.quantity", { quantity: ">1" }, { nested: true }),
+			await inibase.sum(
+				"orders",
+				"items.quantity",
+				{ quantity: ">1" },
+				{ nested: true },
+			),
 			10, // 2 + 3 + 5
 		);
 		assert.equal(
-			await inibase.sum("orders", "items.quantity", { quantity: "<3" }, { nested: true }),
+			await inibase.sum(
+				"orders",
+				"items.quantity",
+				{ quantity: "<3" },
+				{ nested: true },
+			),
 			3, // 2 + 1
 		);
 	});
 
 	await t.test("multiple element predicates AND together", async () => {
 		assert.equal(
-			await inibase.sum("orders", "items.revenue", { product: alpha.id, quantity: ">2" }, { nested: true }),
+			await inibase.sum(
+				"orders",
+				"items.revenue",
+				{ product: alpha.id, quantity: ">2" },
+				{ nested: true },
+			),
 			800, // 300 + 500
 		);
 	});
 
 	await t.test("row-level key narrows contributing rows", async () => {
 		assert.equal(
-			await inibase.sum("orders", "items.quantity", { status: "shipped" }, { nested: true }),
+			await inibase.sum(
+				"orders",
+				"items.quantity",
+				{ status: "shipped" },
+				{ nested: true },
+			),
 			6, // 2 + 1 + 3
 		);
 	});
 
 	await t.test("row filter combines with element predicate", async () => {
 		assert.equal(
-			await inibase.sum("orders", "items.quantity", { product: alpha.id, status: "shipped" }, { nested: true }),
+			await inibase.sum(
+				"orders",
+				"items.quantity",
+				{ product: alpha.id, status: "shipped" },
+				{ nested: true },
+			),
 			5, // 2 + 3
 		);
 	});
 
 	await t.test("and/or groups pass through as row-level filters", async () => {
 		assert.equal(
-			await inibase.sum("orders", "items.quantity", { product: alpha.id, and: { status: "shipped" } }, { nested: true }),
+			await inibase.sum(
+				"orders",
+				"items.quantity",
+				{ product: alpha.id, and: { status: "shipped" } },
+				{ nested: true },
+			),
 			5,
 		);
 		assert.equal(
-			await inibase.sum("orders", "items.quantity", { or: { status: "shipped" } }, { nested: true }),
+			await inibase.sum(
+				"orders",
+				"items.quantity",
+				{ or: { status: "shipped" } },
+				{ nested: true },
+			),
 			6,
 		);
 	});
 
-	await t.test("multi-column sum shares one predicate and returns a record", async () => {
-		const got = (await inibase.sum(
-			"orders",
-			["items.quantity", "items.revenue"],
-			{ product: alpha.id },
-			{ nested: true },
-		)) as Record<string, number>;
-		assert.deepEqual(got, { "items.quantity": 10, "items.revenue": 1000 });
-	});
+	await t.test(
+		"multi-column sum shares one predicate and returns a record",
+		async () => {
+			const got = (await inibase.sum(
+				"orders",
+				["items.quantity", "items.revenue"],
+				{ product: alpha.id },
+				{ nested: true },
+			)) as Record<string, number>;
+			assert.deepEqual(got, { "items.quantity": 10, "items.revenue": 1000 });
+		},
+	);
 
-	await t.test("flat sum is unchanged and still rejects dotted columns", async () => {
-		assert.equal(await inibase.sum("products", "price"), 350);
-		await assert.rejects(inibase.sum("orders", "items.quantity"), {
-			name: "INVALID_NAME",
-		});
-	});
+	await t.test(
+		"flat sum is unchanged and still rejects dotted columns",
+		async () => {
+			assert.equal(await inibase.sum("products", "price"), 350);
+			await assert.rejects(inibase.sum("orders", "items.quantity"), {
+				name: "INVALID_NAME",
+			});
+		},
+	);
 });
 
 await test("nested sum validation errors", async (t) => {
@@ -209,7 +283,10 @@ await test("nested sum validation errors", async (t) => {
 		);
 
 	await t.test("column must be a dotted child path", async () => {
-		await bad(["orders", "quantity", undefined, { nested: true }], "single segment");
+		await bad(
+			["orders", "quantity", undefined, { nested: true }],
+			"single segment",
+		);
 	});
 
 	await t.test("only one nesting level is supported", async () => {
@@ -217,31 +294,67 @@ await test("nested sum validation errors", async (t) => {
 	});
 
 	await t.test("columns must share the same array root", async () => {
-		await bad(["orders", ["items.quantity", "zzz.quantity"], undefined, { nested: true }], "two roots");
-	});
-
-	await t.test("root must be an array-of-objects column", async () => {
-		await bad(["products", "name.x", undefined, { nested: true }], "scalar root");
-	});
-
-	await t.test("summing a non-numeric child yields 0 (consistent with flat sum)", async () => {
-		assert.equal(
-			await inibase.sum("orders", "items.product", undefined, { nested: true }),
-			0,
+		await bad(
+			[
+				"orders",
+				["items.quantity", "zzz.quantity"],
+				undefined,
+				{ nested: true },
+			],
+			"two roots",
 		);
 	});
 
-	await t.test("criteria key matching neither root nor a row column", async () => {
-		await bad(["orders", "items.quantity", { ghost: 1 }, { nested: true }], "unknown key");
+	await t.test("root must be an array-of-objects column", async () => {
+		await bad(
+			["products", "name.x", undefined, { nested: true }],
+			"scalar root",
+		);
 	});
+
+	await t.test(
+		"summing a non-numeric child yields 0 (consistent with flat sum)",
+		async () => {
+			assert.equal(
+				await inibase.sum("orders", "items.product", undefined, {
+					nested: true,
+				}),
+				0,
+			);
+		},
+	);
+
+	await t.test(
+		"criteria key matching neither root nor a row column",
+		async () => {
+			await bad(
+				["orders", "items.quantity", { ghost: 1 }, { nested: true }],
+				"unknown key",
+			);
+		},
+	);
 
 	await t.test("object-valued element predicates are rejected", async () => {
-		await bad(["orders", "items.quantity", { product: { name: "Alpha" } }, { nested: true }], "object value");
+		await bad(
+			[
+				"orders",
+				"items.quantity",
+				{ product: { name: "Alpha" } },
+				{ nested: true },
+			],
+			"object value",
+		);
 	});
 
-	await t.test("[] / ![] operators are rejected on element predicates", async () => {
-		await bad(["orders", "items.quantity", { quantity: "[]1,2" }, { nested: true }], "array op");
-	});
+	await t.test(
+		"[] / ![] operators are rejected on element predicates",
+		async () => {
+			await bad(
+				["orders", "items.quantity", { quantity: "[]1,2" }, { nested: true }],
+				"array op",
+			);
+		},
+	);
 });
 
 await test("nested sum TABLE_EMPTY guard", async (t) => {
@@ -249,9 +362,12 @@ await test("nested sum TABLE_EMPTY guard", async (t) => {
 	await inibase.createTable("empty", [
 		{ key: "items", type: "array", children: [{ key: "qty", type: "number" }] },
 	]);
-	await assert.rejects(inibase.sum("empty", "items.qty", undefined, { nested: true }), {
-		name: "TABLE_EMPTY",
-	});
+	await assert.rejects(
+		inibase.sum("empty", "items.qty", undefined, { nested: true }),
+		{
+			name: "TABLE_EMPTY",
+		},
+	);
 });
 
 await test("aggregates with where are not capped at the default page size", async (t) => {
@@ -274,8 +390,12 @@ await test("aggregates with where are not capped at the default page size", asyn
 
 	await t.test("avg / max / min count every matching row too", async () => {
 		assert.equal(await inibase.avg(tableName, "val", { grp: "a" }), 15.5);
-		assert.deepEqual(await inibase.max(tableName, "val", { grp: "a" }), { val: 30 });
-		assert.deepEqual(await inibase.min(tableName, "val", { grp: "a" }), { val: 1 });
+		assert.deepEqual(await inibase.max(tableName, "val", { grp: "a" }), {
+			val: 30,
+		});
+		assert.deepEqual(await inibase.min(tableName, "val", { grp: "a" }), {
+			val: 1,
+		});
 	});
 });
 
@@ -310,11 +430,21 @@ await test("nested sum works with decodeID referenced tables", async (t) => {
 
 	// decodeID products have numeric ids (1 and 2 here).
 	assert.equal(
-		await inibase.sum("orders2", "items.quantity", { product: 1 }, { nested: true }),
+		await inibase.sum(
+			"orders2",
+			"items.quantity",
+			{ product: 1 },
+			{ nested: true },
+		),
 		5,
 	);
 	assert.equal(
-		await inibase.sum("orders2", "items.quantity", { product: 2 }, { nested: true }),
+		await inibase.sum(
+			"orders2",
+			"items.quantity",
+			{ product: 2 },
+			{ nested: true },
+		),
 		2,
 	);
 });
@@ -324,7 +454,9 @@ await test("nested sum works on compressed and cache-enabled tables", async (t) 
 
 	const tableName = "ordersC";
 	await inibase.createTable("products", productsSchema);
-	const [alpha] = (await seed("products", [{ name: "Alpha", price: 100 }])) as Row[];
+	const [alpha] = (await seed("products", [
+		{ name: "Alpha", price: 100 },
+	])) as Row[];
 	await inibase.createTable(
 		tableName,
 		[
@@ -347,7 +479,12 @@ await test("nested sum works on compressed and cache-enabled tables", async (t) 
 
 	await t.test("compressed table reads", async () => {
 		assert.equal(
-			await inibase.sum(tableName, "items.quantity", { product: alpha.id }, { nested: true }),
+			await inibase.sum(
+				tableName,
+				"items.quantity",
+				{ product: alpha.id },
+				{ nested: true },
+			),
 			10,
 		);
 	});
@@ -356,7 +493,12 @@ await test("nested sum works on compressed and cache-enabled tables", async (t) 
 		await inibase.updateTable(tableName, undefined, { cache: true });
 		await seed(tableName, [{ items: [{ product: alpha.id, quantity: 1 }] }]);
 		assert.equal(
-			await inibase.sum(tableName, "items.quantity", { product: alpha.id }, { nested: true }),
+			await inibase.sum(
+				tableName,
+				"items.quantity",
+				{ product: alpha.id },
+				{ nested: true },
+			),
 			11,
 		);
 	});
@@ -394,11 +536,21 @@ await test("nested sum: element predicates ignore row-level column of the same n
 
 	// Bare `product` resolves to items.product (element predicate), not the row link.
 	assert.equal(
-		await inibase.sum("special", "items.quantity", { product: alpha.id }, { nested: true }),
+		await inibase.sum(
+			"special",
+			"items.quantity",
+			{ product: alpha.id },
+			{ nested: true },
+		),
 		2,
 	);
 	assert.equal(
-		await inibase.sum("special", "items.quantity", { product: beta.id }, { nested: true }),
+		await inibase.sum(
+			"special",
+			"items.quantity",
+			{ product: beta.id },
+			{ nested: true },
+		),
 		8,
 	);
 });

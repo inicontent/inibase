@@ -1,0 +1,38 @@
+benchmark/qualification/postgres/run.mjs:196:8 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    194 │ 						await writeFile(
+    195 │ 							join(directory, "cluster/postgresql.auto.conf"),
+  > 196 │ 							[
+        │ 							^
+  > 197 │ 								"listen_addresses = ''",
+         ...
+  > 213 │ 								"logging_collector = off",
+  > 214 │ 							].join("\n") + "\n",
+        │ 							^^^^^^^^^^^^^^^^^^^
+    215 │ 						);
+    216 │ 						const startServer = performance.now();
+  
+  i Unsafe fix: Use a template literal.
+  
+    194 194 │   						await writeFile(
+    195 195 │   							join(directory, "cluster/postgresql.auto.conf"),
+    196     │ - → → → → → → → [
+        196 │ + → → → → → → → `${[
+    197 197 │   								"listen_addresses = ''",
+    198 198 │   								`unix_socket_directories = '${socket}'`,
+    ······· │ 
+    212 212 │   								"track_io_timing = on",
+    213 213 │   								"logging_collector = off",
+    214     │ - → → → → → → → ].join("\n")·+·"\n",
+        214 │ + → → → → → → → ].join("\n")}\n`,
+    215 215 │   						);
+    216 216 │   						const startServer = performance.now();
+  
+
+Skipped 1 suggested fixes.
+If you wish to apply the suggested (unsafe) fixes, use the command biome check --write --unsafe
+
+Checked 1 file in 8ms. No fixes applied.
+Found 1 info.

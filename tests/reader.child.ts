@@ -4,9 +4,9 @@
 // rows length" plus row completeness and id uniqueness. Any violation is
 // reported to the parent and the child exits non-zero, so a torn/lost read
 // fails the suite. The parent stops the loop with a "stop" message.
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-
+import * as File from "../src/file.js";
 import Inibase from "../src/index.js";
 
 const dbPath = process.argv[2];
@@ -18,6 +18,7 @@ while (!(await db.getTable("jobs").catch(() => null)))
 
 let reportedError: string | null = null;
 let iterations = 0;
+let stopping = false;
 const startedAt = Date.now();
 
 const countLines = async (file: string): Promise<number> => {
@@ -27,12 +28,11 @@ const countLines = async (file: string): Promise<number> => {
 
 process.on("message", (message) => {
 	if (message === "stop") {
-		process.send?.({ iterations, error: reportedError });
-		process.exit(reportedError ? 1 : 0);
+		stopping = true;
 	}
 });
 
-while (Date.now() - startedAt < 30_000) {
+while (!stopping && Date.now() - startedAt < 30_000) {
 	iterations++;
 
 	let rows: any[] | null = null;
@@ -51,23 +51,42 @@ while (Date.now() - startedAt < 30_000) {
 		continue;
 	}
 
+	// The get() above MUST remain outside our snapshot lock: its row-completeness
+	// and uniqueness assertions below exercise the engine's own reader locking.
+	// Independent later readFile() calls cannot be compared to that snapshot:
+	// another valid commit can occur between any two awaits (observed on Linux
+	// as 97/97/97/98). Compare physical files/pagination in one coherent snapshot,
+	// not several different generations. No assertion is skipped or retried.
 	const tableDir = join(dbPath, "jobs");
-	const idLines = await countLines(join(tableDir, "id.txt"));
-	const nameLines = await countLines(join(tableDir, "name.txt"));
-	const workerLines = await countLines(join(tableDir, "workerId.txt"));
-
-	// Invariant: pagination total == every column line count == rows returned.
-	if (
-		!(
-			rows.length === idLines &&
-			idLines === nameLines &&
-			nameLines === workerLines
-		)
-	) {
-		reportedError ??=
-			`torn read: rows=${rows.length} idLines=${idLines} ` +
-			`nameLines=${nameLines} workerLines=${workerLines}`;
-	}
+	await File.runWithLockStore(async () => {
+		const tmp = join(tableDir, ".tmp");
+		await File.lock(tmp);
+		try {
+			const snapshot = await db.get("jobs", undefined, {
+				page: 1,
+				perPage: -1,
+			});
+			const [idLines, nameLines, workerLines, names] = await Promise.all([
+				countLines(join(tableDir, "id.txt")),
+				countLines(join(tableDir, "name.txt")),
+				countLines(join(tableDir, "workerId.txt")),
+				readdir(tableDir),
+			]);
+			const pagination = names.find((name) => name.endsWith(".pagination"));
+			const total = Number(pagination?.match(/^\d+-(\d+)\.pagination$/)?.[1]);
+			if (
+				!(
+					snapshot?.length === idLines &&
+					idLines === nameLines &&
+					nameLines === workerLines &&
+					total === idLines
+				)
+			)
+				reportedError ??= `torn snapshot: rows=${snapshot?.length} idLines=${idLines} nameLines=${nameLines} workerLines=${workerLines} total=${total}`;
+		} finally {
+			await File.unlock(tmp);
+		}
+	});
 
 	// Invariant: every returned row is complete (no torn column cell).
 	if (
@@ -95,5 +114,6 @@ while (Date.now() - startedAt < 30_000) {
 }
 
 // Parent never stopped us (e.g. it crashed): report and exit.
-process.send?.({ iterations, error: reportedError ?? "reader timed out" });
+reportedError ??= stopping ? null : "reader timed out";
+process.send?.({ iterations, error: reportedError });
 process.exit(reportedError ? 1 : 0);

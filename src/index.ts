@@ -1,7 +1,9 @@
 import "dotenv/config";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomBytes, randomUUID, scryptSync } from "node:crypto";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import {
+	copyFile,
 	glob,
 	mkdir,
 	readdir,
@@ -15,6 +17,7 @@ import {
 import { basename, join, parse, resolve } from "node:path";
 import { inspect } from "node:util";
 import Inison from "inison";
+import { observeEqualityScan } from "./automatic.js";
 import {
 	type BinaryOp,
 	buildFieldIndex,
@@ -31,7 +34,6 @@ import {
 } from "./expression.js";
 import * as File from "./file.js";
 import {
-	CURRENT_FORMAT_VERSION,
 	FORMAT_FILE,
 	readFormat,
 	serializeFormat,
@@ -40,7 +42,14 @@ import {
 	writeFormat,
 } from "./format.js";
 import { DatabaseJournal, Journal, type JournalFileOp } from "./journal.js";
+import { lookupLines, prepareKeyIndex } from "./key-index.js";
 import { TableOverlay } from "./overlay.js";
+import {
+	type DatabaseResources,
+	registerDatabase,
+	releaseDatabase,
+} from "./resources.js";
+import { DEFAULT_BLOCK_BYTES, prepareSeekable } from "./seek.js";
 import {
 	buildFrames,
 	DEFAULT_MAX_FRAME_BYTES,
@@ -128,6 +137,10 @@ export interface TableConfig {
 	cache?: boolean;
 	prepend?: boolean;
 	decodeID?: boolean;
+}
+
+/** Persisted compatibility state; not application table options. */
+interface StoredTableConfig extends TableConfig {
 	/**
 	 * Opt a table into the incremental update log (format 2): `put` appends a
 	 * small frame instead of rewriting whole columns, and reads merge the log
@@ -136,11 +149,30 @@ export interface TableConfig {
 	 * (those need compaction, shipped in 3.9).
 	 */
 	log?: boolean;
+	/** Opt-in format-3 durable deletes; requires log and append layout. */
+	tombstones?: boolean;
+	/** Opt-in independently seekable, legacy-readable column blocks. */
+	seekable?: boolean;
+	/** Application-key equality indexes. Internal IDs are indexed automatically. */
+	indexes?: string[];
+	/** Uncompressed block bytes: 65536, 131072 (default), or 262144. */
+	blockBytes?: number;
+}
+
+interface SeekConfig {
+	v: 1;
+	blockBytes: number;
+	indexes: string[];
 }
 
 export interface TableObject {
 	schema?: Schema;
 	config: TableConfig;
+}
+
+interface StoredTableObject {
+	schema?: Schema;
+	config: StoredTableConfig;
 }
 
 /**
@@ -245,7 +277,7 @@ if (
 
 export const globalConfig: {
 	[database: string]: {
-		tables?: Map<string, TableObject & { timestamp?: Date }>;
+		tables?: Map<string, StoredTableObject & { timestamp?: Date }>;
 	};
 } & { salt?: string | Buffer } = {};
 
@@ -338,7 +370,10 @@ class LinkedRowReader {
 	record(table: string, column: string, id: string | number): void {
 		const key = `${table}\u0000${column}`;
 		let ids = this.pending.get(key);
-		if (!ids) this.pending.set(key, (ids = new Set()));
+		if (!ids) {
+			ids = new Set();
+			this.pending.set(key, ids);
+		}
 		ids.add(id);
 	}
 
@@ -447,10 +482,18 @@ export default class Inibase {
 	 *  marker on every access. */
 	private readonly formatStamps = new Map<string, string>();
 	private databasePath: string;
-	private uniqueMap: Map<
+	private resources: DatabaseResources;
+	private closed = false;
+	private readonly fallbackUniqueMap = new Map<
 		string | number,
 		{ exclude: Set<number>; columnsValues: Map<number, Set<string | number>> }
-	>;
+	>();
+	private readonly uniqueContext = new AsyncLocalStorage<
+		typeof this.fallbackUniqueMap
+	>();
+	private get uniqueMap() {
+		return this.uniqueContext.getStore() ?? this.fallbackUniqueMap;
+	}
 	private schemaFileExtension = process.env.INIBASE_SCHEMA_EXTENSION ?? "json";
 
 	/**
@@ -476,8 +519,6 @@ export default class Inibase {
 
 		this.totalItems = new Map();
 
-		this.uniqueMap = new Map();
-
 		if (!globalConfig[this.databasePath])
 			globalConfig[this.databasePath] = { tables: new Map() };
 
@@ -493,6 +534,7 @@ export default class Inibase {
 				`\nINIBASE_SECRET=${globalConfig.salt.toString("hex")}\n`,
 			);
 		} else globalConfig.salt = Buffer.from(process.env.INIBASE_SECRET, "hex");
+		this.resources = registerDatabase(this.databasePath);
 	}
 
 	public createError(
@@ -500,6 +542,23 @@ export default class Inibase {
 		variable?: string | number | (string | number)[],
 	): Error {
 		return Utils.createError(this.language, name, variable);
+	}
+
+	/** Engine-owned cache accounting; caller materialized results and V8 are separate. */
+	public memoryUsage() {
+		return this.resources.stats();
+	}
+
+	/** Release private overlay scratch files and idle reusable descriptors. */
+	public async close(): Promise<void> {
+		if (this.closed) return;
+		if (this.activeTransaction) await this.rollback();
+		this.closed = true;
+		await this.resources.drainMaintenance();
+		for (const overlay of this.overlays.values()) await overlay.dispose();
+		this.overlays.clear();
+		await releaseDatabase(this.databasePath);
+		this.closed = true;
 	}
 
 	private validateName(name: string): void {
@@ -571,7 +630,7 @@ export default class Inibase {
 	 *
 	 * @param {string} tableName
 	 * @param {Schema} [schema]
-	 * @param {TableConfig} [config]
+	 * @param {StoredTableConfig} [config]
 	 */
 	public async createTable(
 		tableName: string,
@@ -586,7 +645,7 @@ export default class Inibase {
 	private async _createTable(
 		tableName: string,
 		schema?: Schema,
-		config?: TableConfig,
+		config?: StoredTableConfig,
 	) {
 		this.validateName(tableName);
 
@@ -615,6 +674,21 @@ export default class Inibase {
 			};
 
 		if (config) {
+			if (config.tombstones && !config.log)
+				throw this.createError("INVALID_PARAMETERS", "tombstones requires log");
+			if (config.seekable || config.indexes?.length) {
+				const seek = this.seekConfig(config);
+				for (const key of seek.indexes) {
+					this.validateColumns([key]);
+					if (
+						!schema?.some(
+							(field) => field.key === key && this.isSimpleField(field.type),
+						)
+					)
+						throw this.createError("INVALID_PARAMETERS", `index ${key}`);
+				}
+				await File.write(join(tablePath, ".seek.config"), JSON.stringify(seek));
+			}
 			if (config.compression)
 				await File.write(join(tablePath, ".compression.config"), "");
 			if (config.cache) await File.write(join(tablePath, ".cache.config"), "");
@@ -632,15 +706,17 @@ export default class Inibase {
 				// Publish the marker before the log: a missing log reads as an
 				// empty log, whereas a log without a marker would be legacy.
 				await writeFormat(tablePath, {
-					format: CURRENT_FORMAT_VERSION,
+					format: config.tombstones ? 3 : 2,
 					log: true,
 					baseGen: 0,
+					...(config.tombstones ? { tombstones: true } : {}),
 				});
 				await File.write(join(tablePath, UPDATES_LOG_NAME), "");
 				this.tableFormats.set(tableName, {
-					format: CURRENT_FORMAT_VERSION,
+					format: config.tombstones ? 3 : 2,
 					log: true,
 					baseGen: 0,
+					...(config.tombstones ? { tombstones: true } : {}),
 				});
 			}
 		}
@@ -695,7 +771,7 @@ export default class Inibase {
 	 *
 	 * @param {string} tableName
 	 * @param {Schema} [schema]
-	 * @param {(TableConfig&{name?: string})} [config]
+	 * @param {(StoredTableConfig&{name?: string})} [config]
 	 */
 	public async updateTable(
 		tableName: string,
@@ -710,7 +786,7 @@ export default class Inibase {
 	private async _updateTable(
 		tableName: string,
 		schema?: Schema,
-		config?: TableConfig & { name?: string },
+		config?: StoredTableConfig & { name?: string },
 	) {
 		this.validateName(tableName);
 
@@ -721,7 +797,7 @@ export default class Inibase {
 
 		if (config?.name) this.validateName(config.name);
 
-		const table = await this.getTable(tableName);
+		const table = await this.loadTable(tableName);
 		if (!table) return;
 		const tablePath = join(this.databasePath, tableName);
 
@@ -744,11 +820,12 @@ export default class Inibase {
 
 	private async updateTableLocked(
 		tableName: string,
-		table: TableObject,
+		table: StoredTableObject,
 		tablePath: string,
 		schema?: Schema,
-		config?: TableConfig & { name?: string },
+		config?: StoredTableConfig & { name?: string },
 	) {
+		await this.leaveAutomaticDeltas(tableName);
 		// A log table cannot be reshaped in place yet: its log frames reference
 		// column names and its overlay would have to be materialised into the
 		// base columns first (compaction, 3.9). Rename/other config are fine.
@@ -782,9 +859,10 @@ export default class Inibase {
 			// marker is safe.
 			try {
 				await writeFormat(tablePath, {
-					format: CURRENT_FORMAT_VERSION,
+					format: config.tombstones ? 3 : 2,
 					log: true,
 					baseGen: 0,
+					...(config.tombstones ? { tombstones: true } : {}),
 				});
 				await File.write(join(tablePath, UPDATES_LOG_NAME), "");
 				await File.syncDir(tablePath);
@@ -794,16 +872,24 @@ export default class Inibase {
 				// visible, keep treating it as log-format rather than writing
 				// through the legacy path over a log-format table.
 				const landed = await readFormat(tablePath);
-				if (!landed.log) {
-					this.tableFormats.delete(tableName);
-					throw error;
-				}
+				if (!landed.log) this.tableFormats.delete(tableName);
+				else this.tableFormats.set(tableName, landed);
+				throw error;
 			}
 			this.tableFormats.set(tableName, {
-				format: CURRENT_FORMAT_VERSION,
+				format: config.tombstones ? 3 : 2,
 				log: true,
 				baseGen: 0,
+				...(config.tombstones ? { tombstones: true } : {}),
 			});
+		}
+		if (table.config.tombstones && config?.tombstones === false)
+			throw this.createError("MAINTENANCE_REQUIRED", "disabling tombstones");
+		if (config?.tombstones && !table.config.tombstones) {
+			const format = await this.currentFormat(tableName);
+			if (!format?.log)
+				throw this.createError("INVALID_PARAMETERS", "tombstones requires log");
+			await writeFormat(tablePath, { ...format, format: 3, tombstones: true });
 		}
 
 		if (schema) {
@@ -1094,6 +1180,7 @@ export default class Inibase {
 		for (const name of config?.name ? [tableName, config.name] : [tableName]) {
 			this.tableFormats.delete(name);
 			this.formatStamps.delete(name);
+			await this.overlays.get(this.overlayKey(name))?.dispose();
 			this.overlays.delete(this.overlayKey(name));
 		}
 	}
@@ -1102,9 +1189,25 @@ export default class Inibase {
 	 * Get table schema and config
 	 *
 	 * @param {string} tableName
-	 * @return {*}  {Promise<TableObject | undefined>}
+	 * @return {*}  {Promise<StoredTableObject | undefined>}
 	 */
 	public async getTable(tableName: string): Promise<TableObject | undefined> {
+		const table = await this.loadTable(tableName);
+		if (!table) return undefined;
+		return {
+			...table,
+			config: {
+				decodeID: table.config.decodeID === true,
+				prepend: table.config.prepend === true,
+				compression: table.config.compression === true,
+				cache: table.config.cache === true,
+			},
+		};
+	}
+
+	private async loadTable(
+		tableName: string,
+	): Promise<StoredTableObject | undefined> {
 		this.validateName(tableName);
 
 		const tablePath = join(this.databasePath, tableName);
@@ -1122,7 +1225,7 @@ export default class Inibase {
 			const format = await this.readValidatedFormat(tableName, tablePath);
 			this.tableFormats.set(tableName, format);
 			await this.stampFormat(tableName);
-			const config: TableConfig = {
+			const config: StoredTableConfig = {
 				compression: await File.isExists(
 					join(tablePath, ".compression.config"),
 				),
@@ -1133,6 +1236,14 @@ export default class Inibase {
 			// Only surface `log` when enabled, so the public config shape of a
 			// legacy table is byte-for-byte what it was before 3.8.
 			if (format.log) config.log = true;
+			if (format.tombstones) config.tombstones = true;
+			const seek = await this.readSeekConfig(tablePath);
+			if (seek)
+				Object.assign(config, {
+					seekable: true,
+					indexes: seek.indexes,
+					blockBytes: seek.blockBytes,
+				});
 			globalConfig[this.databasePath].tables?.set(tableName, {
 				schema: await this.getTableSchema(tableName),
 				config,
@@ -1140,11 +1251,252 @@ export default class Inibase {
 					join(tablePath, `schema.${this.schemaFileExtension}`),
 				),
 			});
+			this.computedPlanCache.delete(tableName);
 		}
-		// A reload means the on-disk schema changed (create/update/external
-		// edit): the cached computed plan is derived from it.
-		this.computedPlanCache.delete(tableName);
+		// A format migration need not change the schema timestamp.
+		const format = await this.currentFormat(tableName);
+		const config =
+			globalConfig[this.databasePath].tables?.get(tableName)?.config;
+		if (config && format?.log) config.log = true;
+		if (config && format?.tombstones) config.tombstones = true;
 		return globalConfig[this.databasePath].tables?.get(tableName);
+	}
+
+	/** Explicit format-2 -> 3 migration; base columns and old frames are unchanged. */
+	public async enableTombstones(tableName: string): Promise<void> {
+		return File.runWithLockStore(async () => {
+			this.validateName(tableName);
+			if (this.activeTransaction) throw this.createError("INVALID_PARAMETERS");
+			await this.loadTable(tableName);
+			if (!this.isLogTable(tableName))
+				await this._updateTable(tableName, undefined, { log: true });
+			const tablePath = join(this.databasePath, tableName);
+			await File.lock(join(tablePath, ".tmp"));
+			try {
+				const format = await this.currentFormat(tableName);
+				if (!format) throw this.createError("UNSUPPORTED_FORMAT", tableName);
+				await writeFormat(tablePath, {
+					...format,
+					format: 3,
+					tombstones: true,
+				});
+				await this.overlays.get(this.overlayKey(tableName))?.dispose();
+				this.overlays.delete(this.overlayKey(tableName));
+				this.tableFormats.delete(tableName);
+				globalConfig[this.databasePath].tables?.delete(tableName);
+			} finally {
+				await File.unlock(join(tablePath, ".tmp"));
+			}
+		});
+	}
+
+	private seekConfig(
+		config: Pick<StoredTableConfig, "indexes" | "blockBytes">,
+	): SeekConfig {
+		const blockBytes = config.blockBytes ?? DEFAULT_BLOCK_BYTES;
+		if (![65536, 131072, 262144].includes(blockBytes))
+			throw this.createError("INVALID_PARAMETERS", "blockBytes");
+		return {
+			v: 1,
+			blockBytes,
+			indexes: Array.from(new Set(config.indexes ?? [])),
+		};
+	}
+
+	private async readSeekConfig(tablePath: string): Promise<SeekConfig | null> {
+		let raw: string;
+		try {
+			raw = await readFile(join(tablePath, ".seek.config"), "utf8");
+		} catch (error: any) {
+			if (error?.code === "ENOENT") return null;
+			throw error;
+		}
+		const config = JSON.parse(raw);
+		if (config.v !== 1 || !Array.isArray(config.indexes))
+			throw this.createError("UNSUPPORTED_FORMAT", "seek directory config");
+		return this.seekConfig(config);
+	}
+
+	/** Explicit, journaled accelerator migration. Existing gzip readers remain compatible. */
+	public async optimize(
+		tableName: string,
+		options: Pick<StoredTableConfig, "indexes" | "blockBytes"> = {},
+	): Promise<void> {
+		return File.runWithLockStore(async () => {
+			this.validateName(tableName);
+			if (this.activeTransaction) throw this.createError("INVALID_PARAMETERS");
+			await this.ensureDatabaseRecovered();
+			const tablePath = join(this.databasePath, tableName);
+			await File.lock(join(tablePath, ".tmp"));
+			try {
+				await this.optimizeLocked(tableName, tablePath, options);
+			} finally {
+				await File.unlock(join(tablePath, ".tmp"));
+			}
+		});
+	}
+
+	private async optimizeLocked(
+		tableName: string,
+		tablePath: string,
+		options: Pick<StoredTableConfig, "indexes" | "blockBytes">,
+		budget?: { remainingBytes: number },
+	): Promise<void> {
+		const pairs: (string | null)[][] = [];
+		try {
+			const table = await this.loadTable(tableName);
+			const config = this.seekConfig(options);
+			for (const key of config.indexes) {
+				this.validateColumns([key]);
+				if (
+					!table?.schema?.some(
+						(field) => field.key === key && this.isSimpleField(field.type),
+					)
+				)
+					throw this.createError("INVALID_PARAMETERS", `index ${key}`);
+			}
+			const extension = this.getFileExtension(tableName);
+			for (const name of await readdir(tablePath)) {
+				if (!name.endsWith(extension)) continue;
+				const live = join(tablePath, name);
+				const tmp = join(tablePath, ".tmp", `${name}.optimize-${randomUUID()}`);
+				await copyFile(live, tmp);
+				pairs.push([tmp, live]);
+			}
+			await this.prepareAccelerators(tablePath, pairs, config, budget);
+			const tmp = join(tablePath, ".tmp", `seek.config-${randomUUID()}`);
+			await File.write(tmp, JSON.stringify(config));
+			pairs.push([tmp, join(tablePath, ".seek.config")]);
+			await this.commitFiles(tablePath, pairs, null);
+			globalConfig[this.databasePath].tables?.delete(tableName);
+		} finally {
+			for (const [tmp] of pairs) if (tmp) await unlink(tmp).catch(() => {});
+		}
+	}
+
+	/** Conservative automatic accelerator build; authoritative formats never change. */
+	private async buildAutomaticIndex(
+		tableName: string,
+		key: string,
+	): Promise<void> {
+		return File.runWithIndependentLockStore(async () => {
+			if (this.closed || this.activeTransaction) return;
+			const tablePath = join(this.databasePath, tableName);
+			const databaseJournal = join(this.databasePath, ".tmp", "journal.jsonl");
+			if (await File.isExists(databaseJournal)) return;
+			if (!(await File.tryLock(join(tablePath, ".tmp")))) return;
+			try {
+				if (await File.isExists(databaseJournal)) return;
+				const table = await this.loadTable(tableName);
+				const field = table?.schema?.find((field) => field.key === key);
+				if (!field || field.computed || !this.isSimpleField(field.type)) return;
+				const previous = await this.readSeekConfig(tablePath);
+				if (
+					previous?.indexes.includes(key) ||
+					(previous?.indexes.length ?? 0) >= 8
+				)
+					return;
+				const extension = this.getFileExtension(tableName);
+				let primaryBytes = 0,
+					indexBytes = 0,
+					rows = 0;
+				for (const name of await readdir(tablePath)) {
+					if (name.endsWith(extension))
+						primaryBytes += (await stat(join(tablePath, name))).size;
+					if (name.endsWith(".lookup"))
+						indexBytes += (await stat(join(tablePath, name))).size;
+					if (name.endsWith(".pagination"))
+						rows = Number(parse(name).name.split("-")[1]);
+				}
+				// Until segment publication exists, bound this whole-column operation.
+				if (
+					rows < 128 ||
+					rows > 100000 ||
+					indexBytes + rows * 68 >
+						Math.min(
+							64 * 1024 * 1024,
+							Math.max(1024 * 1024, primaryBytes * 2),
+						) ||
+					primaryBytes > 8 * 1024 * 1024 ||
+					this.resources.limit < 4 * 1024 * 1024
+				)
+					return;
+				await this.resources.withWorking(2 * 1024 * 1024, () =>
+					this.optimizeLocked(
+						tableName,
+						tablePath,
+						{
+							indexes: [...(previous?.indexes ?? []), key],
+							blockBytes: previous?.blockBytes,
+						},
+						{ remainingBytes: 16 * 1024 * 1024 },
+					),
+				);
+			} finally {
+				await File.unlock(join(tablePath, ".tmp"));
+			}
+		});
+	}
+
+	private async prepareAccelerators(
+		tablePath: string,
+		pairs: (string | null)[][],
+		explicit?: SeekConfig,
+		budget?: { remainingBytes: number },
+	): Promise<void> {
+		const config = explicit ?? (await this.readSeekConfig(tablePath));
+		if (!config) return;
+		const tableName = basename(tablePath);
+		const extension = this.getFileExtension(tableName);
+		const idLive = join(tablePath, `id${extension}`);
+		const idPair = pairs.find(([, live]) => live === idLive);
+		const idTmp = idPair ? idPair[0] : idLive;
+		const columns = pairs.filter(([, live]) => live?.endsWith(extension));
+		for (const pair of columns) {
+			const [tmp, live] = pair;
+			if (!live) continue;
+			if (!tmp) {
+				for (const suffix of [".seek", ".lookup"])
+					if (await File.isExists(live + suffix))
+						pairs.push([null, live + suffix]);
+				continue;
+			}
+			if (pairs.some(([, path]) => path === `${live}.seek`)) continue;
+			pairs.push(
+				await prepareSeekable(
+					tmp,
+					live,
+					config.blockBytes,
+					File.appendPrefixOf(pair),
+					budget
+						? (bytes) => {
+								budget.remainingBytes -= bytes;
+								if (budget.remainingBytes < 0)
+									throw new Error("AUTOMATIC_BUILD_BUDGET");
+							}
+						: undefined,
+				),
+			);
+		}
+		// Every new primary inode must be final before capturing the ID stamp.
+		for (const [tmp, live] of columns) {
+			if (!tmp || !live || pairs.some(([, path]) => path === `${live}.lookup`))
+				continue;
+			if (
+				idTmp &&
+				(live === idLive ||
+					config.indexes.includes(basename(live).slice(0, -extension.length)))
+			)
+				pairs.push(
+					await prepareKeyIndex(
+						tmp,
+						live,
+						idTmp,
+						idLive,
+						budget ? 65536 : Infinity,
+					),
+				);
+		}
 	}
 
 	/* -----------------------------------------------------------------------
@@ -1163,6 +1515,117 @@ export default class Inibase {
 			globalConfig[this.databasePath].tables?.get(tableName)?.config.log ===
 			true
 		);
+	}
+
+	/** Bound automatic point batches before constructing frames/ID selections. */
+	private deltaPayloadFits(data: unknown, copies = 1): boolean {
+		const rows = Array.isArray(data) ? data : [data];
+		if (!rows.length || rows.length > 256) return false;
+		let bytes = 256;
+		for (const row of rows) {
+			if (!row || typeof row !== "object") return false;
+			// Preserve the existing metadata/ID mutation semantics via the base path.
+			if (Object.hasOwn(row, "id") || Object.hasOwn(row, "createdAt"))
+				return false;
+			for (const [key, value] of Object.entries(row)) {
+				if (value !== null && typeof value === "object") return false;
+				bytes +=
+					6 * (Buffer.byteLength(key) + Buffer.byteLength(String(value))) + 128;
+				if (bytes * copies > Math.min(65536, this.resources.limit / 16))
+					return false;
+			}
+		}
+		return true;
+	}
+
+	/** The caller holds the writer lock throughout transition and mutation. */
+	private async leaveAutomaticDeltas(tableName: string): Promise<void> {
+		const format = await this.currentFormat(tableName);
+		if (!format?.automatic || !format.log) return;
+		await this.compactLogTable(tableName);
+		const tablePath = join(this.databasePath, tableName);
+		const legacy = { format: 1, log: false, baseGen: 0 };
+		await writeFormat(tablePath, legacy);
+		await this.overlays.get(this.overlayKey(tableName))?.dispose();
+		this.overlays.delete(this.overlayKey(tableName));
+		this.tableFormats.set(tableName, legacy);
+		await this.stampFormat(tableName);
+		// Compaction can rename pagination; a transaction must resolve it anew.
+		const entry = this.activeTransaction?.tables.get(tableName);
+		if (entry && !entry.staged.length) {
+			entry.paginationFrom = "";
+			entry.lastId = 0;
+			entry.total = 0;
+		}
+	}
+
+	private async automaticDeltaWrite<T>(
+		tableName: string,
+		eligible: boolean,
+		write: () => Promise<T>,
+	): Promise<T> {
+		this.validateName(tableName);
+		if (this.activeTransaction) {
+			await this.ensureTxnLock(tableName);
+			return write();
+		}
+		await this.ensureDatabaseRecovered();
+		await this.loadTable(tableName);
+		const tablePath = join(this.databasePath, tableName);
+		await File.lock(
+			join(tablePath, ".tmp"),
+			undefined,
+			undefined,
+			this.resources,
+		);
+		try {
+			const table = await this.loadTable(tableName);
+			const compatible =
+				eligible &&
+				!table?.config.prepend &&
+				Boolean(
+					table?.schema?.every(
+						(field) =>
+							typeof field.computed === "undefined" &&
+							this.isSimpleField(field.type),
+					),
+				);
+			let format = await this.currentFormat(tableName);
+			if (format?.automatic && !compatible) {
+				await this.leaveAutomaticDeltas(tableName);
+				format = await this.currentFormat(tableName);
+			}
+			if (
+				compatible &&
+				!format?.log &&
+				(await this.resolvePagination(tableName)).total >= 128
+			) {
+				// Persist an empty log name before publishing the marker. A crash
+				// before the marker leaves an unused file; after it, an empty log.
+				const logPath = join(tablePath, UPDATES_LOG_NAME);
+				await File.write(logPath, "");
+				await File.syncFile(logPath);
+				const next = {
+					format: 3,
+					log: true,
+					baseGen: 0,
+					tombstones: true,
+					automatic: true,
+				};
+				await writeFormat(tablePath, next);
+				this.tableFormats.set(tableName, next);
+				format = next;
+				await this.stampFormat(tableName);
+			}
+			return await (format?.automatic && compatible
+				? this.resources.withWorking(
+						Math.min(this.resources.limit, 512 * 1024),
+						write,
+					)
+				: write());
+		} finally {
+			await File.unlock(join(tablePath, ".tmp"));
+		}
 	}
 
 	/**
@@ -1193,7 +1656,6 @@ export default class Inibase {
 
 	private async currentFormat(tableName: string): Promise<TableFormat | null> {
 		const cached = this.tableFormats.get(tableName);
-		if (cached && !cached.log) return cached;
 
 		const tablePath = join(this.databasePath, tableName);
 		let stamp = "none";
@@ -1212,8 +1674,14 @@ export default class Inibase {
 		// (possibly now empty) log at the new generation.
 		const key = this.overlayKey(tableName);
 		const overlay = this.overlays.get(key);
-		if (overlay && overlay.baseGen !== format.baseGen)
+		if (
+			overlay &&
+			(overlay.baseGen !== format.baseGen ||
+				overlay.tombstones !== Boolean(format.tombstones))
+		) {
+			await overlay.dispose();
 			this.overlays.delete(key);
+		}
 		return format;
 	}
 
@@ -1232,10 +1700,16 @@ export default class Inibase {
 
 		const key = this.overlayKey(tableName);
 		let overlay = this.overlays.get(key);
-		if (!overlay || overlay.baseGen !== format.baseGen) {
+		if (
+			!overlay ||
+			overlay.baseGen !== format.baseGen ||
+			overlay.tombstones !== Boolean(format.tombstones)
+		) {
+			await overlay?.dispose();
 			overlay = new TableOverlay(
 				join(this.databasePath, tableName),
 				format.baseGen,
+				Boolean(format.tombstones),
 			);
 			this.overlays.set(key, overlay);
 		}
@@ -1311,31 +1785,6 @@ export default class Inibase {
 		return map;
 	}
 
-	/** Internal id -> current line number(s), built from the id column. */
-	private async overlayIdToLines(
-		tableName: string,
-	): Promise<Map<number, number[]>> {
-		const filePath = join(
-			this.databasePath,
-			tableName,
-			`id${this.getFileExtension(tableName)}`,
-		);
-		const values = await File.get(filePath, undefined, {
-			...this.idFieldOf(tableName),
-			key: "id",
-			type: "number",
-		});
-		const map = new Map<number, number[]>();
-		for (const [line, value] of Object.entries(values)) {
-			if (typeof value === "undefined" || value === null) continue;
-			const id = Number(value);
-			const bucket = map.get(id);
-			if (bucket) bucket.push(Number(line));
-			else map.set(id, [Number(line)]);
-		}
-		return map;
-	}
-
 	/**
 	 * Per-line raw-cell overrides for one column, from the overlay. Used by
 	 * `File.search` so criteria, uniqueness and aggregate scans see the merged
@@ -1345,25 +1794,77 @@ export default class Inibase {
 	private async overlayColumnOverrides(
 		tableName: string,
 		columnKey: string,
-	): Promise<Map<number, string | number | boolean | null> | undefined> {
+	): Promise<File.ColumnOverrides | undefined> {
 		const overlay = await this.getOverlay(tableName);
 		if (!overlay || overlay.size === 0) return undefined;
-
-		const entries: [number, unknown][] = [];
-		for (const [id, entry] of overlay.byId)
-			if (Object.hasOwn(entry.cols, columnKey))
-				entries.push([Number(id), entry.cols[columnKey]]);
-		if (!entries.length) return undefined;
-
-		const idToLines = await this.overlayIdToLines(tableName);
-		const overrides = new Map<number, string | number | boolean | null>();
-		for (const [id, encoded] of entries) {
-			const lines = idToLines.get(id);
-			if (!lines) continue;
-			for (const line of lines)
-				overrides.set(line, encoded as string | number | boolean | null);
-		}
-		return overrides.size ? overrides : undefined;
+		if (!overlay.deletedCount && !overlay.columns.has(columnKey))
+			return undefined;
+		const ids = File.lines(
+			join(
+				this.databasePath,
+				tableName,
+				`id${this.getFileExtension(tableName)}`,
+			),
+		);
+		const idPath = join(
+			this.databasePath,
+			tableName,
+			`id${this.getFileExtension(tableName)}`,
+		);
+		let current: IteratorResult<[number, string]> | undefined;
+		return {
+			size: overlay.size,
+			value: async (line, base) => {
+				while (!current || (!current.done && current.value[0] < line))
+					current = await ids.next();
+				if (current.done || current.value[0] !== line) return base;
+				const entry = await overlay.get(Number(current.value[1]));
+				if (entry?.deleted) return File.DELETED_ROW;
+				return entry && Object.hasOwn(entry.cols, columnKey)
+					? (entry.cols[columnKey] as string | number | boolean | null)
+					: base;
+			},
+			at: async (line, base) => {
+				const values = await File.getLines(idPath, [line], {
+					key: "id",
+					type: "number",
+				});
+				const entry = await overlay.get(Number(values[line]));
+				if (entry?.deleted) return File.DELETED_ROW;
+				return entry && Object.hasOwn(entry.cols, columnKey)
+					? (entry.cols[columnKey] as string | number | boolean | null)
+					: base;
+			},
+			candidates: async (matches) => {
+				const result: number[] = [];
+				if (!overlay.columns.has(columnKey)) return result;
+				for await (const [id, entry] of overlay.byId.entries()) {
+					if (entry.deleted) continue;
+					if (
+						!Object.hasOwn(entry.cols, columnKey) ||
+						!matches(entry.cols[columnKey])
+					)
+						continue;
+					const found = await lookupLines(idPath, [id]);
+					if (found) result.push(...found);
+					else {
+						const [, , lines] = await File.search(
+							idPath,
+							"=",
+							Number(id),
+							undefined,
+							undefined,
+							{ key: "id", type: "number" },
+						);
+						if (lines) result.push(...lines);
+					}
+				}
+				return result;
+			},
+			close: async () => {
+				await ids.return(undefined);
+			},
+		};
 	}
 
 	/**
@@ -1412,35 +1913,43 @@ export default class Inibase {
 		const tablePath = join(this.databasePath, tableName);
 		const overlay = await this.getOverlay(tableName, true);
 		if (!overlay || overlay.size === 0) return null; // already compact
+		// Cached, previously checked prefixes are immutable between generations.
+		// Scrub all authoritative frames before retiring a generation, so older
+		// prefix corruption cannot be silently erased by compaction.
+		await overlay.log.scan(overlay.baseGen + 1);
 
-		const schema = (await this.getTable(tableName))?.schema ?? [];
+		const schema = (await this.loadTable(tableName))?.schema ?? [];
 		const schemaKeys = new Set(schema.map((field) => field.key));
+		const format = await this.currentFormat(tableName);
 
 		// Only columns that some frame actually overlaid need rewriting; the
 		// untouched base columns are left exactly as they are.
 		const overlaidKeys = new Set<string>();
-		for (const entry of overlay.byId.values())
+		if (overlay.deletedCount)
+			for (const field of schema) overlaidKeys.add(field.key);
+		for await (const [, entry] of overlay.byId.entries())
 			for (const key of Object.keys(entry.cols))
 				if (schemaKeys.has(key)) overlaidKeys.add(key);
 		if (!overlaidKeys.size) return null;
 
-		const idToLines = await this.overlayIdToLines(tableName);
 		const extension = this.getFileExtension(tableName);
 		const renameList: (string | null)[][] = [];
 
 		for (const key of overlaidKeys) {
-			const record: Record<number, string | number | boolean | null> = {};
-			for (const [id, entry] of overlay.byId) {
-				if (!Object.hasOwn(entry.cols, key)) continue;
-				const lines = idToLines.get(Number(id));
-				if (!lines) continue;
-				const encoded = entry.cols[key] as string | number | boolean | null;
-				for (const line of lines) record[line] = encoded;
+			if (!(await File.isExists(join(tablePath, `${key}${extension}`))))
+				continue;
+			const overrides = await this.overlayColumnOverrides(tableName, key);
+			if (!overrides || overrides instanceof Map) continue;
+			try {
+				renameList.push(
+					await File.rewriteCells(
+						join(tablePath, `${key}${extension}`),
+						(line, raw) => overrides.value(line, raw),
+					),
+				);
+			} finally {
+				await overrides.close();
 			}
-			if (!Object.keys(record).length) continue;
-			renameList.push(
-				await File.replace(join(tablePath, `${key}${extension}`), record),
-			);
 		}
 		if (!renameList.length) return null;
 
@@ -1462,24 +1971,42 @@ export default class Inibase {
 		await File.write(
 			fmtTmp,
 			serializeFormat({
-				format: CURRENT_FORMAT_VERSION,
+				format: format?.format ?? 2,
 				log: true,
 				baseGen: newGen,
+				...(format?.tombstones ? { tombstones: true } : {}),
+				...(format?.automatic ? { automatic: true } : {}),
 			}),
 		);
 		renameList.push([fmtTmp, join(tablePath, FORMAT_FILE)]);
 
-		await this.commitFiles(tablePath, renameList, null);
+		const pagination = await this.resolvePagination(tableName);
+		const newTotal = pagination.total - overlay.deletedCount;
+		await this.commitFiles(
+			tablePath,
+			renameList,
+			overlay.deletedCount
+				? {
+						from: pagination.filePath,
+						to: join(tablePath, `${pagination.lastId}-${newTotal}.pagination`),
+					}
+				: null,
+		);
 
 		// In-memory: the base now carries every update; drop the overlay so the
 		// next access rebuilds an empty one at the new generation.
 		this.tableFormats.set(tableName, {
-			format: CURRENT_FORMAT_VERSION,
+			format: format?.format ?? 2,
 			log: true,
 			baseGen: newGen,
+			...(format?.tombstones ? { tombstones: true } : {}),
+			...(format?.automatic ? { automatic: true } : {}),
 		});
 		await this.stampFormat(tableName);
+		await overlay.dispose();
 		this.overlays.delete(this.overlayKey(tableName));
+		if (globalConfig[this.databasePath].tables?.get(tableName)?.config.cache)
+			await this.clearCache(tableName);
 		return newGen;
 	}
 
@@ -1564,7 +2091,7 @@ export default class Inibase {
 	}
 
 	private async throwErrorIfTableEmpty(tableName: string): Promise<void> {
-		const table = await this.getTable(tableName);
+		const table = await this.loadTable(tableName);
 
 		if (!table?.schema) throw this.createError("NO_SCHEMA", tableName);
 
@@ -1662,6 +2189,15 @@ export default class Inibase {
 								?.columnsValues.set(fieldId, new Set());
 
 						if (data.id) this.uniqueMap.get(uniqueKey)?.exclude.add(-data.id);
+						if (
+							this.uniqueContext.getStore() &&
+							field.unique === true &&
+							this.uniqueMap
+								.get(uniqueKey)
+								?.columnsValues.get(fieldId)
+								?.has(data[field.key])
+						)
+							throw this.createError("FIELD_UNIQUE", field.key);
 
 						this.uniqueMap
 							.get(uniqueKey)
@@ -1676,19 +2212,27 @@ export default class Inibase {
 		tableName: string,
 		data: Data | Data[],
 		skipRequiredField = false,
+		excludeLines: number[] = [],
+		allowInputExclusions = true,
 	): Promise<void> {
-		// `data` is always a private clone owned by the caller (post/put already
-		// cloned it once), so validate in place instead of re-cloning — otherwise
-		// every bulk write holds several full copies of the payload in memory.
-		// Skip ID and (created|updated)At
-		this.validateData(
-			data,
-			globalConfig[this.databasePath].tables
-				?.get(tableName)
-				?.schema?.slice(1, -2) ?? [],
-			skipRequiredField,
-		);
-		await this.checkUnique(tableName);
+		return this.uniqueContext.run(new Map(), async () => {
+			// `data` is always a private clone owned by the caller (post/put already
+			// cloned it once), so validate in place instead of re-cloning — otherwise
+			// every bulk write holds several full copies of the payload in memory.
+			// Skip ID and (created|updated)At
+			this.validateData(
+				data,
+				globalConfig[this.databasePath].tables
+					?.get(tableName)
+					?.schema?.slice(1, -2) ?? [],
+				skipRequiredField,
+			);
+			for (const state of this.uniqueMap.values()) {
+				if (!allowInputExclusions) state.exclude.clear();
+				for (const line of excludeLines) state.exclude.add(-line);
+			}
+			await this.checkUnique(tableName);
+		});
 	}
 
 	private cleanObject<T extends Record<string, any>>(obj: T): T | null {
@@ -1839,7 +2383,7 @@ export default class Inibase {
 						(valueObject.columnsValues.size === index &&
 							!!(lineNumbers && hasDuplicates(lineNumbers, mergedLineNumbers)))
 					) {
-						this.uniqueMap = new Map();
+						this.uniqueMap.clear();
 
 						if (valueObject.columnsValues.size > 1)
 							throw this.createError("GROUP_UNIQUE", [
@@ -1860,7 +2404,7 @@ export default class Inibase {
 			}
 			if (shouldContinueParent) continue;
 		}
-		this.uniqueMap = new Map();
+		this.uniqueMap.clear();
 	}
 
 	private formatData<TData extends Record<string, any> & Partial<Data>>(
@@ -2225,8 +2769,12 @@ export default class Inibase {
 		for (const line of lines) {
 			const id = lineIds.get(line);
 			if (id === undefined) continue;
-			const entry = overlay.get(id);
+			const entry = await overlay.get(id);
 			if (!entry) continue;
+			if (entry.deleted) {
+				delete RETURN[line];
+				continue;
+			}
 			const row = RETURN[line];
 			if (!row) continue;
 			for (const [key, encoded] of Object.entries(entry.cols)) {
@@ -2240,6 +2788,34 @@ export default class Inibase {
 			if (hasUpdatedAt && entry.updatedAt !== undefined)
 				row.updatedAt = entry.updatedAt;
 		}
+	}
+
+	private async livePageLines(
+		tableName: string,
+		page: number,
+		perPage: number,
+	): Promise<number[]> {
+		const overlay = await this.getOverlay(tableName);
+		if (!overlay?.deletedCount)
+			return Array.from(
+				{ length: perPage },
+				(_, i) => (page - 1) * perPage + i + 1,
+			);
+		const result: number[] = [];
+		let live = 0;
+		for await (const [line, raw] of File.lines(
+			join(
+				this.databasePath,
+				tableName,
+				`id${this.getFileExtension(tableName)}`,
+			),
+		)) {
+			if ((await overlay.get(Number(raw)))?.deleted) continue;
+			live++;
+			if (live > (page - 1) * perPage) result.push(line);
+			if (result.length >= perPage) break;
+		}
+		return result;
 	}
 
 	/**
@@ -2740,7 +3316,7 @@ export default class Inibase {
 				// this is the plain per-hop engine read.
 				const row = env.links
 					? env.collect
-						? (env.links.record(table, ref.key, value), null)
+						? (() => { env.links.record(table, ref.key, value); return null; })()
 						: await env.links.read(table, ref.key, value)
 					: await this.readLinkedRow(table, value, ref.key);
 				if (!env.collect && (row === undefined || row === null))
@@ -3246,7 +3822,7 @@ export default class Inibase {
 			);
 			if (await File.isExists(fieldPath)) {
 				// add table to globalConfig
-				await this.getTable(field.table);
+				await this.loadTable(field.table);
 
 				const itemsIDs = (await File.get(fieldPath, linesNumber, {
 					...field,
@@ -3425,6 +4001,7 @@ export default class Inibase {
 					searchComparedAtValue = value;
 				}
 
+				const searchStarted = performance.now();
 				const [searchResult, totalLines, linesNumbers] = await File.search(
 					join(tablePath, `${key}${this.getFileExtension(tableName)}`),
 					searchOperator ?? "=",
@@ -3445,6 +4022,42 @@ export default class Inibase {
 					undefined,
 					await this.overlayColumnOverrides(tableName, key),
 				);
+				if (
+					!this.closed &&
+					!this.activeTransaction &&
+					!searchIn &&
+					!key.includes(".") &&
+					!field.table &&
+					!field.computed &&
+					searchOperator === "=" &&
+					!searchLogicalOperator &&
+					[
+						"string",
+						"text",
+						"textarea",
+						"html",
+						"url",
+						"email",
+						"number",
+						"date",
+						"timestamp",
+						"time",
+						"id",
+					].includes(String(field.type)) &&
+					(typeof searchComparedAtValue === "number" ||
+						(typeof searchComparedAtValue === "string" &&
+							searchComparedAtValue !== "" &&
+							!Utils.isNumber(searchComparedAtValue) &&
+							!/^[{[]/.test(searchComparedAtValue)))
+				) {
+					observeEqualityScan(
+						this.resources,
+						tablePath,
+						key,
+						performance.now() - searchStarted,
+						() => this.buildAutomaticIndex(tableName, key),
+					);
+				}
 				if (!searchResult) {
 					if (allTrue) return null;
 					continue;
@@ -3577,8 +4190,12 @@ export default class Inibase {
 		this.validateName(tableName);
 
 		const cacheFolderPath = join(this.databasePath, tableName, ".cache");
-		await rm(cacheFolderPath, { recursive: true, force: true });
-		await mkdir(cacheFolderPath);
+		await mkdir(cacheFolderPath, { recursive: true });
+		// Query-cache invalidation must not unlink another reader's private
+		// overlay storage. It is independently invalidated by log generations.
+		for (const name of await readdir(cacheFolderPath))
+			if (!name.startsWith("overlay-"))
+				await rm(join(cacheFolderPath, name), { recursive: true, force: true });
 	}
 
 	/**
@@ -3601,6 +4218,7 @@ export default class Inibase {
 		renameList: (string | null)[][],
 		pagination: { from: string; to: string } | null,
 	): Promise<void> {
+		await this.prepareAccelerators(tablePath, renameList);
 		const txn = randomUUID();
 		const ops: JournalFileOp[] = [];
 		// Backups are parked in a per-transaction subdirectory
@@ -3608,6 +4226,7 @@ export default class Inibase {
 		// the leftovers of an earlier crashed one.
 		const backupDir = join(tablePath, ".tmp", "backup", txn);
 		await mkdir(backupDir, { recursive: true });
+		await File.syncDir(join(tablePath, ".tmp", "backup"));
 		for (const [tmp, live] of renameList) {
 			if (!live) continue;
 			ops.push({
@@ -3619,15 +4238,21 @@ export default class Inibase {
 		}
 
 		const journal = new Journal(tablePath, txn);
+		let commitAttempted = false;
+		let cleanupSafe = false;
 		try {
 			// Make every replacement durable before it can be published.
-			await Promise.allSettled(
-				ops
-					.filter((op) => op.tmp)
-					.map(async (op) => File.syncFile(op.tmp as string)),
+			await settleWrites(
+				await Promise.allSettled(
+					ops
+						.filter((op) => op.tmp)
+						.map(async (op) => File.syncFile(op.tmp as string)),
+				),
 			);
+			await File.syncDir(join(tablePath, ".tmp"));
 
 			await journal.begin(ops, pagination);
+			await File.syncDir(join(tablePath, ".tmp"));
 
 			// Publish: the pagination rename is the atomic publication point
 			// (row count flips in one rename) and MUST come first — readers
@@ -3638,21 +4263,34 @@ export default class Inibase {
 				if (op.existed) await rename(op.live, op.backup);
 				if (op.tmp) await rename(op.tmp, op.live);
 			}
-
-			await journal.commit();
-		} catch (error) {
-			await journal.rollback().catch(() => {});
-			throw error;
-		} finally {
-			await Promise.allSettled(
-				ops.map((op) => unlink(op.backup).catch(() => {})),
-			);
-			await rm(backupDir, { recursive: true, force: true }).catch(() => {});
-			await journal.dispose();
-			await unlink(journal.path).catch(() => {});
-			// Make the renames durable before acknowledging the commit.
+			await File.syncDir(backupDir);
 			await File.syncDir(join(tablePath, ".tmp"));
 			await File.syncDir(tablePath);
+
+			commitAttempted = true;
+			await journal.commit();
+			cleanupSafe = true;
+		} catch (error) {
+			if (!commitAttempted) {
+				await journal.rollback();
+				cleanupSafe = true;
+			}
+			// A commit-fsync error has an unknown outcome: retain recovery state.
+			throw error;
+		} finally {
+			await journal.dispose();
+			if (cleanupSafe) {
+				await Promise.allSettled(
+					ops.map((op) => unlink(op.backup).catch(() => {})),
+				);
+				await rm(backupDir, { recursive: true, force: true });
+				await File.syncDir(join(tablePath, ".tmp", "backup"));
+				await unlink(journal.path).catch((error: any) => {
+					if (error?.code !== "ENOENT") throw error;
+				});
+				await File.syncDir(join(tablePath, ".tmp"));
+				await File.syncDir(tablePath);
+			}
 		}
 	}
 
@@ -3717,9 +4355,12 @@ export default class Inibase {
 	/** Lock a table for the open transaction (idempotent per transaction). */
 	private async ensureTxnLock(tableName: string): Promise<void> {
 		const entry = this.txnTableEntry(tableName);
-		if (!entry || entry.locked) return;
-		await File.lock(join(this.databasePath, tableName, ".tmp"));
-		entry.locked = true;
+		if (!entry) return;
+		if (!entry.locked) {
+			await File.lock(join(this.databasePath, tableName, ".tmp"));
+			entry.locked = true;
+		}
+		await this.leaveAutomaticDeltas(tableName);
 	}
 
 	/**
@@ -3769,6 +4410,10 @@ export default class Inibase {
 		renameList: (string | null)[][],
 		pagination: { from: string; to: string } | null,
 	): Promise<void> {
+		await this.prepareAccelerators(
+			join(this.databasePath, tableName),
+			renameList,
+		);
 		const txn = this.activeTransaction;
 		const entry = this.txnTableEntry(tableName);
 		if (!txn || !entry) throw this.createError("INVALID_PARAMETERS");
@@ -3792,11 +4437,16 @@ export default class Inibase {
 			});
 		}
 		// Make every replacement durable before the journal records intent.
-		await Promise.allSettled(
-			ops
-				.filter((op) => op.tmp)
-				.map(async (op) => File.syncFile(op.tmp as string)),
+		await settleWrites(
+			await Promise.allSettled(
+				ops
+					.filter((op) => op.tmp)
+					.map(async (op) => File.syncFile(op.tmp as string)),
+			),
 		);
+		await File.syncDir(join(this.databasePath, tableName, ".tmp"));
+		await File.syncDir(backupDir);
+		await File.syncDir(join(this.databasePath, ".tmp", "backup"));
 		await txn.journal.op(ops, pagination);
 		entry.staged.push({ ops, pagination });
 		if (pagination) entry.paginationFrom = pagination.to;
@@ -3829,7 +4479,7 @@ export default class Inibase {
 			// Validate every listed table before locking anything.
 			for (const name of uniqueTables) {
 				this.validateName(name);
-				await this.getTable(name); // throws TABLE_NOT_EXISTS
+				await this.loadTable(name); // throws TABLE_NOT_EXISTS
 			}
 
 			const id = randomUUID();
@@ -3876,6 +4526,10 @@ export default class Inibase {
 	public async commit(): Promise<void> {
 		const txn = this.activeTransaction;
 		if (!txn) throw this.createError("INVALID_PARAMETERS");
+		let commitAttempted = false;
+		const hasWrites = Array.from(txn.tables.values()).some(
+			(table) => table.staged.length > 0,
+		);
 		try {
 			for (const tableName of [...txn.tables.keys()].sort()) {
 				const entry = txn.tables.get(tableName);
@@ -3889,15 +4543,28 @@ export default class Inibase {
 				}
 			}
 
+			// Persist every publication and backup name before the commit marker.
+			for (const tableName of txn.tables.keys()) {
+				await File.syncDir(join(this.databasePath, tableName));
+				await File.syncDir(join(this.databasePath, tableName, ".tmp"));
+			}
+			if (hasWrites)
+				await File.syncDir(join(this.databasePath, ".tmp", "backup", txn.id));
+			await File.syncDir(join(this.databasePath, ".tmp"));
+			commitAttempted = true;
 			await txn.journal.commit();
 
 			// Clean the fast-path leftovers; recovery owns any crash leftovers.
 			await txn.journal.dispose();
-			await unlink(txn.journal.path).catch(() => {});
 			await rm(join(this.databasePath, ".tmp", "backup", txn.id), {
 				recursive: true,
 				force: true,
 			}).catch(() => {});
+			if (hasWrites)
+				await File.syncDir(join(this.databasePath, ".tmp", "backup"));
+			await unlink(txn.journal.path).catch((error: any) => {
+				if (error?.code !== "ENOENT") throw error;
+			});
 			await File.syncDir(join(this.databasePath, ".tmp"));
 			await File.syncDir(this.databasePath);
 			for (const tableName of txn.tables.keys()) {
@@ -3926,7 +4593,8 @@ export default class Inibase {
 					await this.clearCache(tableName);
 			}
 		} catch (error) {
-			await txn.journal.rollback().catch(() => {});
+			if (!commitAttempted) await txn.journal.rollback();
+			else await txn.journal.dispose();
 			throw error;
 		} finally {
 			for (const tableName of [...txn.tables.keys()].sort().reverse())
@@ -3944,7 +4612,7 @@ export default class Inibase {
 		const txn = this.activeTransaction;
 		if (!txn) throw this.createError("INVALID_PARAMETERS");
 		try {
-			await txn.journal.rollback().catch(() => {});
+			await txn.journal.rollback();
 		} finally {
 			for (const tableName of [...txn.tables.keys()].sort().reverse())
 				await File.unlock(join(this.databasePath, tableName, ".tmp"));
@@ -4013,15 +4681,37 @@ export default class Inibase {
 		const tablePath = join(this.databasePath, tableName);
 		const extension = this.getFileExtension(tableName);
 		const snapshot = new Map<string, string>();
+		const directory = await stat(tablePath, { bigint: true });
+		snapshot.set(
+			tablePath,
+			`dir:${directory.dev}:${directory.ino}:${directory.mtimeNs}:${directory.ctimeNs}`,
+		);
+		// A read may start after ensureTableRecovered() checked but while a
+		// writer is paused between live->backup and tmp->live. File identities
+		// can then stay unchanged for the entire torn read. Bracket the read
+		// with journal absence as well; the existing writer-lock fallback waits
+		// for publication or runs recovery instead of accepting that snapshot.
+		const journalPath = join(tablePath, ".tmp", "journal.jsonl");
+		snapshot.set(
+			journalPath,
+			(await File.isExists(journalPath))
+				? "publication-busy"
+				: "publication-clear",
+		);
 		for (const fileName of await readdir(tablePath).catch(() => [])) {
-			if (!fileName.endsWith(extension) && !fileName.endsWith(".pagination"))
+			if (
+				!fileName.endsWith(extension) &&
+				!fileName.endsWith(".pagination") &&
+				fileName !== FORMAT_FILE &&
+				fileName !== UPDATES_LOG_NAME
+			)
 				continue;
 			const filePath = join(tablePath, fileName);
-			const fileStat = await stat(filePath).catch(() => null);
+			const fileStat = await stat(filePath, { bigint: true }).catch(() => null);
 			if (fileStat)
 				snapshot.set(
 					filePath,
-					`${fileStat.dev}:${fileStat.ino}:${fileStat.mtimeMs}:${fileStat.size}`,
+					`${fileStat.dev}:${fileStat.ino}:${fileStat.mtimeNs}:${fileStat.size}`,
 				);
 		}
 		return snapshot;
@@ -4032,13 +4722,18 @@ export default class Inibase {
 		snapshot: Map<string, string>,
 	): Promise<boolean> {
 		for (const [filePath, identity] of snapshot) {
-			const fileStat = await stat(filePath).catch(() => null);
-			if (
-				!fileStat ||
-				`${fileStat.dev}:${fileStat.ino}:${fileStat.mtimeMs}:${fileStat.size}` !==
-					identity
-			)
-				return false;
+			if (identity === "publication-busy") return false;
+			if (identity === "publication-clear") {
+				if (await File.isExists(filePath)) return false;
+				continue;
+			}
+			const fileStat = await stat(filePath, { bigint: true }).catch(() => null);
+			const observed = !fileStat
+				? "missing"
+				: identity.startsWith("dir:")
+					? `dir:${fileStat.dev}:${fileStat.ino}:${fileStat.mtimeNs}:${fileStat.ctimeNs}`
+					: `${fileStat.dev}:${fileStat.ino}:${fileStat.mtimeNs}:${fileStat.size}`;
+			if (!fileStat || observed !== identity) return false;
 		}
 		return true;
 	}
@@ -4126,9 +4821,58 @@ export default class Inibase {
 		onlyOne?: boolean,
 		onlyLinesNumbers?: boolean,
 		_whereIsLinesNumbers?: boolean,
+		materializedSort = false,
 	): Promise<(Data & TData) | number | ((Data & TData) | number)[] | null> {
 		this.validateName(tableName);
 		await this.ensureTableRecovered(tableName);
+
+		// Automatic deltas must not turn a bounded native/disk sort into the
+		// explicit log backend's whole-table JavaScript materialization.
+		if (options.sort && !materializedSort) {
+			await this.loadTable(tableName);
+			if ((await this.currentFormat(tableName))?.automatic) {
+				const tmp = join(this.databasePath, tableName, ".tmp");
+				await File.lock(tmp, undefined, undefined, this.resources);
+				try {
+					const overlay = await this.getOverlay(tableName, true);
+					let stableWhere = where;
+					if (overlay?.size) {
+						if (_whereIsLinesNumbers && where !== undefined) {
+							const ids = await this.overlayLineIds(
+								tableName,
+								(Array.isArray(where) ? where : [where]) as number[],
+							);
+							stableWhere = Array.isArray(where)
+								? [...ids.values()]
+								: [...ids.values()][0];
+						}
+						await this.compactLogTable(tableName);
+						if (
+							globalConfig[this.databasePath].tables?.get(tableName)?.config
+								.cache
+						)
+							await this.clearCache(tableName);
+					}
+					return await this.resources.withWorking(
+						Math.min(this.resources.limit, 2 * 1024 * 1024),
+						() =>
+							this._get<TData>(
+								tableName,
+								stableWhere,
+								options,
+								onlyOne,
+								onlyLinesNumbers,
+								_whereIsLinesNumbers && overlay?.size
+									? false
+									: _whereIsLinesNumbers,
+								true,
+							),
+					);
+				} finally {
+					await File.unlock(tmp);
+				}
+			}
+		}
 
 		// Lock-free reads with optimistic retry: snapshot the identity of every
 		// column + pagination file, run the read, then verify nothing changed
@@ -4136,16 +4880,43 @@ export default class Inibase {
 		// read is detected and re-run instead of being returned.
 		for (let attempt = 0; ; attempt++) {
 			const snapshot = await this.snapshotTableFiles(tableName);
-			const result = await this.getOnce<TData>(
-				tableName,
-				where,
-				options,
-				onlyOne,
-				onlyLinesNumbers,
-				_whereIsLinesNumbers,
-			);
-			if (attempt === 2 || (await this.verifyTableFiles(snapshot)))
+			let failure: unknown;
+			let result: (Data & TData) | number | ((Data & TData) | number)[] | null =
+				null;
+			try {
+				result = await this.getOnce<TData>(
+					tableName,
+					where,
+					options,
+					onlyOne,
+					onlyLinesNumbers,
+					_whereIsLinesNumbers,
+				);
+			} catch (error) {
+				failure = error;
+			}
+			if (await this.verifyTableFiles(snapshot)) {
+				if (failure) throw failure;
 				return result;
+			}
+			if (attempt >= 2) {
+				// Never return a knowingly inconsistent third attempt. Under
+				// sustained churn, serialize once with the existing writer lock.
+				const tmp = join(this.databasePath, tableName, ".tmp");
+				await File.lock(tmp);
+				try {
+					return await this.getOnce<TData>(
+						tableName,
+						where,
+						options,
+						onlyOne,
+						onlyLinesNumbers,
+						_whereIsLinesNumbers,
+					);
+				} finally {
+					await File.unlock(tmp);
+				}
+			}
 		}
 	}
 
@@ -4182,7 +4953,7 @@ export default class Inibase {
 		let total: number | undefined;
 		let RETURN!: (Data & TData) | (Data & TData)[] | null;
 
-		let schema = structuredClone((await this.getTable(tableName))?.schema);
+		let schema = structuredClone((await this.loadTable(tableName))?.schema);
 
 		if (!schema) throw this.createError("NO_SCHEMA", tableName);
 
@@ -4196,6 +4967,11 @@ export default class Inibase {
 			];
 
 		if (!pagination[1]) return null;
+		const readOverlay = this.isLogTable(tableName)
+			? await this.getOverlay(tableName)
+			: null;
+		const liveTotal = pagination[1] - (readOverlay?.deletedCount ?? 0);
+		if (liveTotal <= 0) return null;
 
 		if (options.columns?.length)
 			schema = this._filterSchemaByColumns(schema, options.columns as string[]);
@@ -4238,12 +5014,17 @@ export default class Inibase {
 					.map((column) => [column, true]);
 
 			let cacheKey = "";
+			const cacheGeneration = this.isLogTable(tableName)
+				? [(await this.currentFormat(tableName))?.baseGen ?? 0]
+				: [];
 			// Criteria. The sort cache is versioned by the pagination row count
 			// (see the criteria-cache note) so stale sorted line numbers from
 			// before a post/delete are never replayed.
 			if (globalConfig[this.databasePath].tables?.get(tableName)?.config.cache)
 				cacheKey = UtilsServer.hashString(
-					inspect([sortArray, pagination[1]], { sorted: true }),
+					inspect([sortArray, pagination[1], ...cacheGeneration], {
+						sorted: true,
+					}),
 				);
 
 			if (where) {
@@ -4293,7 +5074,7 @@ export default class Inibase {
 				if (!(await File.isExists(path))) return null;
 
 			// Construct the paste command to merge files and filter lines by IDs
-			const pasteCommand = `paste '${filesPathes.join("' '")}'`;
+			let pasteCommand = `paste '${filesPathes.join("' '")}'`;
 
 			const _idPrepended = !sortArray.find(([key]) => key === "id");
 			const sortColumns = sortArray
@@ -4307,17 +5088,45 @@ export default class Inibase {
 				})
 				.join(" ");
 
-			const sortCommand = `sort ${sortColumns} -T='${join(tablePath, ".tmp")}'`;
+			const sortCommand = `sort -S ${Math.min(1048576, Math.floor(this.resources.limit / 4))} ${sortColumns} -T='${join(tablePath, ".tmp")}'`;
 
+			const sortTemps: string[] = [];
+			let sortLocked = false,
+				cacheLocked = false;
 			try {
-				if (cacheKey) await File.lock(join(tablePath, ".tmp"), cacheKey);
+				// Protect plain spools from writer cleanup; acquire table before cache.
+				if (filesPathes.some((path) => path.endsWith(".gz"))) {
+					await File.lock(
+						join(tablePath, ".tmp"),
+						undefined,
+						undefined,
+						this.resources,
+					);
+					sortLocked = true;
+				}
+				if (cacheKey) {
+					await File.lock(join(tablePath, ".tmp"), cacheKey);
+					cacheLocked = true;
+				}
+				const cachedSort =
+					Boolean(cacheKey) &&
+					(await File.isExists(
+						join(tablePath, ".cache", `${cacheKey}${this.fileExtension}`),
+					));
+				if (!cachedSort) {
+					const plain: string[] = [];
+					for (const path of filesPathes) {
+						const ready = await File.prepareSortColumn(path);
+						plain.push(ready);
+						if (ready !== path) sortTemps.push(ready);
+					}
+					pasteCommand = `paste '${plain.join("' '")}'`;
+				}
 				// Combine && Execute the commands synchronously
 				let lines = (
 					await UtilsServer.exec(
 						globalConfig[this.databasePath].tables?.get(tableName)?.config.cache
-							? (await File.isExists(
-									join(tablePath, ".cache", `${cacheKey}${this.fileExtension}`),
-								))
+							? cachedSort
 								? `${awkCommand} '${join(
 										tablePath,
 										".cache",
@@ -4357,7 +5166,13 @@ export default class Inibase {
 
 					// Extract values for each file, including `id${this.getFileExtension(tableName)}`
 					filesPathes.forEach((fileName, index) => {
-						const field = Utils.getField(parse(fileName).name, schema);
+						const field = Utils.getField(
+							basename(fileName).slice(
+								0,
+								-this.getFileExtension(tableName).length,
+							),
+							schema,
+						);
 						if (field) {
 							if (
 								field.key === "id" &&
@@ -4384,7 +5199,7 @@ export default class Inibase {
 					(({ sort, ...rest }) => rest)(options),
 				);
 
-				return restOfColumns
+				const sortedRows = restOfColumns
 					? outputArray.map((item) => ({
 							...item,
 							...restOfColumns.find(
@@ -4393,8 +5208,13 @@ export default class Inibase {
 							),
 						}))
 					: outputArray;
+				return onlyOne ? sortedRows[0] : sortedRows;
 			} finally {
-				if (cacheKey) await File.unlock(join(tablePath, ".tmp"), cacheKey);
+				await Promise.all(
+					sortTemps.map((path) => unlink(path).catch(() => {})),
+				);
+				if (cacheLocked) await File.unlock(join(tablePath, ".tmp"), cacheKey);
+				if (sortLocked) await File.unlock(join(tablePath, ".tmp"));
 			}
 		}
 
@@ -4406,18 +5226,16 @@ export default class Inibase {
 					schema,
 					options.perPage < 0
 						? undefined
-						: Array.from(
-								{ length: options.perPage },
-								(_, index) =>
-									((options.page as number) - 1) * (options.perPage as number) +
-									index +
-									1,
+						: await this.livePageLines(
+								tableName,
+								options.page as number,
+								options.perPage,
 							),
 					options,
 				),
 			);
 
-			this.totalItems.set(`${tableName}-id`, pagination[1]);
+			this.totalItems.set(`${tableName}-id`, liveTotal);
 		} else if (
 			((Array.isArray(where) && where.every(Utils.isNumber)) ||
 				Utils.isNumber(where)) &&
@@ -4527,6 +5345,14 @@ export default class Inibase {
 				);
 			}
 			if (!lineNumbers) return null;
+			if (readOverlay?.deletedCount) {
+				for (const [line, id] of Object.entries(lineNumbers))
+					if ((await readOverlay.get(Number(id)))?.deleted) {
+						delete lineNumbers[Number(line)];
+						countItems--;
+					}
+				if (!Object.keys(lineNumbers).length) return null;
+			}
 
 			this.totalItems.set(`${tableName}-id`, countItems);
 
@@ -4571,12 +5397,15 @@ export default class Inibase {
 				// stale cache written before a post/delete (in this process or
 				// another) is detectable: the candidate filename simply stops
 				// matching and the cache is rebuilt.
+				const generationSuffix = this.isLogTable(tableName)
+					? `-${(await this.currentFormat(tableName))?.baseGen ?? 0}`
+					: "";
 				cachedFilePath = join(
 					tablePath,
 					".cache",
 					`${UtilsServer.hashString(inspect(where, { sorted: true }))}-${
 						pagination[1]
-					}${this.fileExtension}`,
+					}${generationSuffix}${this.fileExtension}`,
 				);
 
 				if (await File.isExists(cachedFilePath)) {
@@ -4853,7 +5682,7 @@ export default class Inibase {
 
 		const tablePath = join(this.databasePath, tableName);
 		if (!this.activeTransaction) await this.ensureDatabaseRecovered();
-		await this.getTable(tableName);
+		await this.loadTable(tableName);
 
 		if (!globalConfig[this.databasePath].tables?.get(tableName)?.schema)
 			throw this.createError("NO_SCHEMA", tableName);
@@ -4862,8 +5691,6 @@ export default class Inibase {
 
 		let clonedData = structuredClone(data);
 
-		await this.validateTableData(tableName, clonedData);
-
 		const renameList: (string | null)[][] = [];
 		let txnStaged = false;
 		try {
@@ -4871,6 +5698,8 @@ export default class Inibase {
 			// held until commit/rollback); otherwise the usual writer lock.
 			if (this.activeTransaction) await this.ensureTxnLock(tableName);
 			else await File.lock(join(tablePath, ".tmp"));
+			// Check uniqueness only after acquiring the cross-process writer lock.
+			await this.validateTableData(tableName, clonedData, false, [], false);
 
 			const {
 				filePath: paginationFilePath,
@@ -4966,7 +5795,8 @@ export default class Inibase {
 				// Crash-atomic commit: journal + backup swap + pagination rename.
 				await this.commitFiles(tablePath, renameList, pagination);
 
-				this.totalItems.set(`${tableName}-*`, newTotal);
+				const deleted = (await this.getOverlay(tableName))?.deletedCount ?? 0;
+				this.totalItems.set(`${tableName}-*`, newTotal - deleted);
 
 				if (
 					globalConfig[this.databasePath].tables?.get(tableName)?.config.cache
@@ -4986,13 +5816,8 @@ export default class Inibase {
 							? clonedData.map((_, index) => index + 1).toReversed()
 							: 1
 						: Array.isArray(clonedData)
-							? clonedData
-									.map(
-										(_, index) =>
-											(this.totalItems.get(`${tableName}-*`) ?? 0) - index,
-									)
-									.toReversed()
-							: this.totalItems.get(`${tableName}-*`),
+							? clonedData.map((_, index) => newTotal - index).toReversed()
+							: newTotal,
 					options,
 					!Utils.isArrayOfObjects(clonedData), // return only one item if data is not array of objects
 					undefined,
@@ -5092,13 +5917,20 @@ export default class Inibase {
 		_whereIsLinesNumbers?: boolean,
 	): Promise<(Data & TData) | (Data & TData)[] | null | undefined | undefined> {
 		return File.runWithLockStore(() =>
-			this._put<TData>(
+			this.automaticDeltaWrite(
 				tableName,
-				data,
-				where,
-				options,
-				returnUpdatedData,
-				_whereIsLinesNumbers,
+				Boolean(where) &&
+					(!Array.isArray(where) || where.length <= 256) &&
+					this.deltaPayloadFits(data),
+				() =>
+					this._put<TData>(
+						tableName,
+						data,
+						where,
+						options,
+						returnUpdatedData,
+						_whereIsLinesNumbers,
+					),
 			),
 		);
 	}
@@ -5126,7 +5958,11 @@ export default class Inibase {
 		const payloads: (Data & TData)[] = Array.isArray(data) ? data : [data];
 		const isWhereLess = !where;
 		const isLines = _whereIsLinesNumbers === true;
-		const scalarWhere = !isWhereLess && !isLines && !Array.isArray(where);
+		const scalarWhere =
+			!isWhereLess &&
+			!isLines &&
+			!Array.isArray(where) &&
+			!Utils.isObject(where);
 
 		await this.throwErrorIfTableEmpty(tableName);
 
@@ -5149,8 +5985,14 @@ export default class Inibase {
 			// failure surfaces as MAINTENANCE_REQUIRED without losing any
 			// committed update.
 			if (
-				overlay.size >= maxOverlayRecords() ||
-				(await overlay.log.bytes()) >= maxLogBytes()
+				overlay.size >=
+					((await this.currentFormat(tableName))?.automatic
+						? Math.min(2048, maxOverlayRecords())
+						: maxOverlayRecords()) ||
+				(await overlay.log.bytes()) >=
+					((await this.currentFormat(tableName))?.automatic
+						? Math.min(8 * 1024 * 1024, maxLogBytes())
+						: maxLogBytes())
 			) {
 				try {
 					await this.compactLogTable(tableName);
@@ -5189,6 +6031,25 @@ export default class Inibase {
 					: [lines as number];
 			}
 			if (!resolvedLines.length) return undefined;
+			if (
+				(resolvedLines.length > 256 ||
+					!this.deltaPayloadFits(
+						data,
+						Math.ceil(resolvedLines.length / payloads.length),
+					)) &&
+				(await this.currentFormat(tableName))?.automatic
+			) {
+				const ids = await this.overlayLineIds(tableName, resolvedLines);
+				await this.leaveAutomaticDeltas(tableName);
+				return await this._put(
+					tableName,
+					data,
+					[...ids.values()],
+					options,
+					returnUpdatedData,
+					false,
+				);
+			}
 
 			const lineIds = await this.overlayLineIds(tableName, resolvedLines);
 
@@ -5199,13 +6060,20 @@ export default class Inibase {
 				tableName,
 				structuredClone(payloads) as (Data & TData)[],
 				true,
+				resolvedLines,
 			);
+			if (payloads.length === 1 && resolvedLines.length > 1)
+				for (const field of schema)
+					if (field.unique === true && Object.hasOwn(payloads[0], field.key))
+						throw this.createError("FIELD_UNIQUE", field.key);
 
 			const now = Date.now();
 			const records: UpdateRecord[] = [];
 			for (let index = 0; index < resolvedLines.length; index++) {
 				const id = lineIds.get(resolvedLines[index]);
 				if (id === undefined) continue;
+				const previous = await overlay.get(id);
+				if (previous?.deleted) continue;
 				const payload =
 					payloads.length === 1
 						? payloads[0]
@@ -5224,6 +6092,24 @@ export default class Inibase {
 					cols[key] = File.encode(value);
 				}
 				cols.updatedAt = now;
+				if (
+					(await this.currentFormat(tableName))?.automatic &&
+					!this.deltaPayloadFits({ ...previous?.cols, ...cols })
+				) {
+					// Several individually small updates must not accumulate an
+					// oversized merged row. Fold first and retry by stable IDs;
+					// stay inside this operation's existing working reservation.
+					const ids = [...lineIds.values()];
+					await this.compactLogTable(tableName);
+					return await this.putViaLog(
+						tableName,
+						data,
+						scalarWhere ? ids[0] : ids,
+						options,
+						returnUpdatedData,
+						false,
+					);
+				}
 				records.push({ id, cols, updatedAt: now });
 			}
 
@@ -5234,7 +6120,13 @@ export default class Inibase {
 					DEFAULT_MAX_FRAME_BYTES,
 					overlay.log.path,
 				);
-				for (const frame of frames) await overlay.log.append(frame);
+				if (frames.length === 1) await overlay.log.append(frames[0]);
+				else {
+					// Several self-committing frames must not expose a partially
+					// applied public put after a process crash between frames.
+					const staged = await overlay.log.stage(frames, tablePath);
+					await this.commitFiles(tablePath, [staged], null);
+				}
 				await overlay.applyLocal(frames);
 			}
 		} finally {
@@ -5666,22 +6558,34 @@ export default class Inibase {
 				if (inlineLock) await File.unlock(join(tablePath, ".tmp"));
 			}
 		} else if (Utils.isObject(where)) {
-			const lineNumbers = await this.get(
-				tableName,
-				where,
-				undefined,
-				undefined,
-				true,
-			);
-			if (lineNumbers)
-				return this.put<TData>(
+			// Criteria resolve to physical lines too. Keep the writer lock from
+			// selection through the awaited recursive write, exactly as for IDs.
+			let inlineLock = false;
+			try {
+				if (this.activeTransaction) await this.ensureTxnLock(tableName);
+				else {
+					await File.lock(join(tablePath, ".tmp"));
+					inlineLock = true;
+				}
+				const lineNumbers = await this.get(
 					tableName,
-					clonedData,
-					lineNumbers,
-					options,
-					returnUpdatedData as boolean,
+					where,
+					undefined,
+					undefined,
 					true,
 				);
+				if (lineNumbers)
+					return await this.put<TData>(
+						tableName,
+						clonedData,
+						lineNumbers,
+						options,
+						returnUpdatedData as boolean,
+						true,
+					);
+			} finally {
+				if (inlineLock) await File.unlock(join(tablePath, ".tmp"));
+			}
 		} else throw this.createError("INVALID_PARAMETERS");
 	}
 
@@ -5699,8 +6603,90 @@ export default class Inibase {
 		_cascadeGuard?: Set<string>,
 	): Promise<boolean | null> {
 		return File.runWithLockStore(() =>
-			this._delete(tableName, where, _whereIsLinesNumbers, _cascadeGuard),
+			this.automaticDeltaWrite(
+				tableName,
+				Boolean(where) && (!Array.isArray(where) || where.length <= 256),
+				() =>
+					this._delete(tableName, where, _whereIsLinesNumbers, _cascadeGuard),
+			),
 		);
+	}
+
+	private async deleteViaLog(
+		tableName: string,
+		where: number | string | (number | string)[] | Criteria,
+		isLines: boolean,
+		guard: Set<string>,
+	): Promise<boolean> {
+		const tablePath = join(this.databasePath, tableName);
+		const ids: number[] = [];
+		await File.lock(join(tablePath, ".tmp"));
+		try {
+			let overlay = await this.getOverlay(tableName, true);
+			if (!overlay) throw this.createError("UNSUPPORTED_FORMAT", tableName);
+			if (
+				overlay.size >=
+					((await this.currentFormat(tableName))?.automatic
+						? Math.min(2048, maxOverlayRecords())
+						: maxOverlayRecords()) ||
+				(await overlay.log.bytes()) >=
+					((await this.currentFormat(tableName))?.automatic
+						? Math.min(8 * 1024 * 1024, maxLogBytes())
+						: maxLogBytes())
+			) {
+				await this.compactLogTable(tableName);
+				overlay = await this.getOverlay(tableName, true);
+			}
+			if (!overlay) throw this.createError("UNSUPPORTED_FORMAT", tableName);
+			const found = isLines
+				? Array.isArray(where)
+					? (where as number[])
+					: [Number(where)]
+				: await this.get(tableName, where, { perPage: -1 }, undefined, true);
+			if (!found) return false;
+			const lines = Array.isArray(found)
+				? (found as number[])
+				: [Number(found)];
+			if (
+				lines.length > 256 &&
+				(await this.currentFormat(tableName))?.automatic
+			) {
+				const ids = await this.overlayLineIds(tableName, lines);
+				await this.leaveAutomaticDeltas(tableName);
+				return (
+					(await this._delete(tableName, [...ids.values()], false, guard)) ??
+					false
+				);
+			}
+			const lineIds = await this.overlayLineIds(tableName, lines);
+			const records: UpdateRecord[] = [];
+			const now = Date.now();
+			for (const id of new Set(lineIds.values())) {
+				if ((await overlay.get(id))?.deleted) continue;
+				ids.push(id);
+				records.push({ id, cols: {}, updatedAt: now, deleted: true });
+			}
+			if (!records.length) return false;
+			const frames = buildFrames(records, overlay.committedGen + 1);
+			if (frames.length === 1) await overlay.log.append(frames[0]);
+			else
+				await this.commitFiles(
+					tablePath,
+					[await overlay.log.stage(frames, tablePath)],
+					null,
+				);
+			await overlay.applyLocal(frames);
+			this.idDensity.set(tableName, false);
+			const pagination = await this.resolvePagination(tableName);
+			this.totalItems.set(
+				`${tableName}-*`,
+				pagination.total - overlay.deletedCount,
+			);
+		} finally {
+			await File.unlock(join(tablePath, ".tmp"));
+		}
+		await this.cascadeDelete(tableName, ids, guard);
+		return true;
 	}
 
 	private async _delete(
@@ -5719,6 +6705,13 @@ export default class Inibase {
 			throw this.createError(
 				"MAINTENANCE_REQUIRED",
 				`${tableName} (delete inside a transaction on update-log table)`,
+			);
+		if (where && (await this.currentFormat(tableName))?.tombstones)
+			return this.deleteViaLog(
+				tableName,
+				where,
+				_whereIsLinesNumbers === true,
+				_cascadeGuard ?? new Set(),
 			);
 
 		// Fold any pending puts into the base before a tombstone rewrite, so the
@@ -5953,20 +6946,30 @@ export default class Inibase {
 			}
 		}
 		if (Utils.isObject(where)) {
-			const lineNumbers = await this.get(
-				tableName,
-				where,
-				undefined,
-				undefined,
-				true,
-			);
-			if (lineNumbers)
-				return this.delete(
+			let inlineLock = false;
+			try {
+				if (this.activeTransaction) await this.ensureTxnLock(tableName);
+				else {
+					await File.lock(join(tablePath, ".tmp"));
+					inlineLock = true;
+				}
+				const lineNumbers = await this.get(
 					tableName,
-					lineNumbers,
+					where,
+					undefined,
+					undefined,
 					true,
-					_cascadeGuard ?? new Set(),
 				);
+				if (lineNumbers)
+					return await this.delete(
+						tableName,
+						lineNumbers,
+						true,
+						_cascadeGuard ?? new Set(),
+					);
+			} finally {
+				if (inlineLock) await File.unlock(join(tablePath, ".tmp"));
+			}
 		} else throw this.createError("INVALID_PARAMETERS");
 		return false;
 	}

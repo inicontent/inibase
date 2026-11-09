@@ -1,0 +1,54 @@
+src/index.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+    3201 3201 │   				const row = env.links
+    3202 3202 │   					? env.collect
+    3203      │ - → → → → → → ?·(()·=>·{·env.links.record(table,·ref.key,·value);·return·null;·})()
+         3203 │ + → → → → → → ?·(()·=>·{
+         3204 │ + → → → → → → → → env.links.record(table,·ref.key,·value);
+         3205 │ + → → → → → → → → return·null;
+         3206 │ + → → → → → → → })()
+    3204 3207 │   						: await env.links.read(table, ref.key, value)
+    3205 3208 │   					: await this.readLinkedRow(table, value, ref.key);
+    ········· │ 
+    4576 4579 │   		snapshot.set(
+    4577 4580 │   			journalPath,
+    4578      │ - → → → (await·File.isExists(journalPath))·?·"publication-busy"·:·"publication-clear",
+         4581 │ + → → → (await·File.isExists(journalPath))
+         4582 │ + → → → → ?·"publication-busy"
+         4583 │ + → → → → :·"publication-clear",
+    4579 4584 │   		);
+    4580 4585 │   		for (const fileName of await readdir(tablePath).catch(() => [])) {
+    ········· │ 
+    6305 6310 │   				if (lineNumbers)
+    6306 6311 │   					return await this.put<TData>(
+    6307      │ - → → → → → → tableName,·clonedData,·lineNumbers,·options,
+    6308      │ - → → → → → → returnUpdatedData·as·boolean,·true,
+         6312 │ + → → → → → → tableName,
+         6313 │ + → → → → → → clonedData,
+         6314 │ + → → → → → → lineNumbers,
+         6315 │ + → → → → → → options,
+         6316 │ + → → → → → → returnUpdatedData·as·boolean,
+         6317 │ + → → → → → → true,
+    6309 6318 │   					);
+    6310 6319 │   			} finally {
+    ········· │ 
+    6665 6674 │   				if (lineNumbers)
+    6666 6675 │   					return await this.delete(
+    6667      │ - → → → → → → tableName,·lineNumbers,·true,·_cascadeGuard·??·new·Set(),
+         6676 │ + → → → → → → tableName,
+         6677 │ + → → → → → → lineNumbers,
+         6678 │ + → → → → → → true,
+         6679 │ + → → → → → → _cascadeGuard·??·new·Set(),
+    6668 6680 │   					);
+    6669 6681 │   			} finally {
+  
+
+Checked 1 file in 47ms. No fixes applied.
+Found 1 error.
+check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.
+  
+

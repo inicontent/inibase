@@ -1,0 +1,57 @@
+benchmark/qualification/postgres/run.mjs:196:8 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    194 │ 						await writeFile(
+    195 │ 							join(directory, "cluster/postgresql.auto.conf"),
+  > 196 │ 							[
+        │ 							^
+  > 197 │ 								"listen_addresses = ''",
+         ...
+  > 213 │ 								"logging_collector = off",
+  > 214 │ 							].join("\n") + "\n",
+        │ 							^^^^^^^^^^^^^^^^^^^
+    215 │ 						);
+    216 │ 						const startServer = performance.now();
+  
+  i Unsafe fix: Use a template literal.
+  
+    194 194 │   						await writeFile(
+    195 195 │   							join(directory, "cluster/postgresql.auto.conf"),
+    196     │ - → → → → → → → [
+        196 │ + → → → → → → → `${[
+    197 197 │   								"listen_addresses = ''",
+    198 198 │   								`unix_socket_directories = '${socket}'`,
+    ······· │ 
+    212 212 │   								"track_io_timing = on",
+    213 213 │   								"logging_collector = off",
+    214     │ - → → → → → → → ].join("\n")·+·"\n",
+        214 │ + → → → → → → → ].join("\n")}\n`,
+    215 215 │   						);
+    216 216 │   						const startServer = performance.now();
+  
+
+benchmark/qualification/postgres/worker.mjs:4:19 lint/correctness/noUnusedImports  FIXABLE  ━━━━━━━━━━
+
+  ! Several of these imports are unused.
+  
+    2 │ import { createHash } from "node:crypto";
+    3 │ import { mkdir, writeFile } from "node:fs/promises";
+  > 4 │ import { adapter, fields, values } from "./adapter.mjs";
+      │                   ^^^^^^
+    5 │ 
+    6 │ const options = JSON.parse(process.argv[2]);
+  
+  i Unused imports might be the result of an incomplete refactoring.
+  
+  i Unsafe fix: Remove the unused imports.
+  
+    4 │ import·{·adapter,·fields,·values·}·from·"./adapter.mjs";
+      │                   --------                              
+
+Skipped 2 suggested fixes.
+If you wish to apply the suggested (unsafe) fixes, use the command biome check --write --unsafe
+
+Checked 7 files in 7ms. Fixed 1 file.
+Found 1 warning.
+Found 1 info.

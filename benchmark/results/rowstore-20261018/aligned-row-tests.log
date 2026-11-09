@@ -1,0 +1,25 @@
+✔ mutable rows preserve sparse IDs, atomic batches, tombstones and old snapshots (71.908667ms)
+✔ versioned commit boundaries preserve the entire published block prefix (59.45275ms)
+✔ seeded random histories match an independent model after reopen (419.170625ms)
+✔ uncompressed records and every radix depth preserve values and counts (74.818833ms)
+✔ large high-entropy values stream under a shared 256 KiB reservation (177.423291ms)
+✔ failed streamed batches remain invisible and their tails are repaired (71.430292ms)
+✔ process death at appended preserves an atomic published batch (213.370875ms)
+✔ process death at data-synced preserves an atomic published batch (185.250916ms)
+✔ process death at manifest-synced preserves an atomic published batch (184.981166ms)
+✔ process death at published preserves an atomic published batch (185.278167ms)
+✔ independent writers serialize without losing batches or changing retained snapshots (232.445291ms)
+✔ readers stay on the published snapshot while a writer pauses before publication (164.791584ms)
+✔ failure at every publication barrier rejects instead of acknowledging (113.960709ms)
+✔ actual synchronization errors release locks and never return success (170.243209ms)
+✔ many tables share working memory and fresh/pooled descriptor limits (773.800083ms)
+✔ committed truncation and replacement fail closed (38.381375ms)
+✔ compressed data corruption and invalid IDs do not produce successful reads (55.125958ms)
+ℹ tests 17
+ℹ suites 0
+ℹ pass 17
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3394.030666

@@ -1,0 +1,196 @@
+tests/automatic.test.ts:95:4 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    93 │ 		assert.equal(resources.stats().maintenanceErrors, 1);
+    94 │ 		assert.match(
+  > 95 │ 			resources.stats().maintenanceLastError!,
+       │ 			^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    96 │ 			/AUTOMATIC_BUILD_BUDGET/,
+    97 │ 		);
+  
+
+tests/automatic.test.ts:128:16 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    126 │ 		);
+    127 │ 		assert.deepEqual(
+  > 128 │ 			Object.keys((await db.getTable("records"))!.config).sort(),
+        │ 			            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    129 │ 			["cache", "compression", "decodeID", "prepend"],
+    130 │ 		);
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+    126 126 │   		);
+    127 127 │   		assert.deepEqual(
+    128     │ - → → → Object.keys((await·db.getTable("records"))!.config).sort(),
+        128 │ + → → → Object.keys((await·db.getTable("records"))?.config).sort(),
+    129 129 │   			["cache", "compression", "decodeID", "prepend"],
+    130 130 │   		);
+  
+
+tests/automatic.test.ts:161:16 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    159 │ 		);
+    160 │ 		assert.deepEqual(
+  > 161 │ 			Object.keys((await db.getTable("records"))!.config).sort(),
+        │ 			            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    162 │ 			["cache", "compression", "decodeID", "prepend"],
+    163 │ 		);
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+    159 159 │   		);
+    160 160 │   		assert.deepEqual(
+    161     │ - → → → Object.keys((await·db.getTable("records"))!.config).sort(),
+        161 │ + → → → Object.keys((await·db.getTable("records"))?.config).sort(),
+    162 162 │   			["cache", "compression", "decodeID", "prepend"],
+    163 163 │   		);
+  
+
+tests/rowpack.test.ts:170:5 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    168 │ 			const path = join(
+    169 │ 				directory,
+  > 170 │ 				(await readdir(directory)).find((name) => name.endsWith(`.${suffix}`))!,
+        │ 				^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    171 │ 			);
+    172 │ 			const bytes = await readFile(path);
+  
+
+src/rowpack.ts:6:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × The imports and exports are not sorted.
+  
+    4 │  * hash index. No resident row/ID map. Publication never removes an old generation.
+    5 │  */
+  > 6 │ import { randomUUID } from "node:crypto";
+      │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    7 │ import { type FileHandle, mkdir, open, rename, unlink } from "node:fs/promises";
+    8 │ import { join } from "node:path";
+  
+  i Safe fix: Organize Imports (Biome)
+  
+      7   7 │   import { type FileHandle, mkdir, open, rename, unlink } from "node:fs/promises";
+      8   8 │   import { join } from "node:path";
+      9     │ - import·{·gzipSync,·gunzipSync·}·from·"node:zlib";
+          9 │ + import·{·gunzipSync,·gzipSync·}·from·"node:zlib";
+     10  10 │   import * as File from "./file.js";
+     11  11 │   import type { DatabaseResources } from "./resources.js";
+     12     │ - import·{·encodeHeader,·decodeHeader,·readExact,·writeExact·}·from·"./seek.js";
+         12 │ + import·{·decodeHeader,·encodeHeader,·readExact,·writeExact·}·from·"./seek.js";
+     13  13 │   import { checksum } from "./updatelog.js";
+         14 │ + 
+     14  15 │   const HEADER = 256,
+     15  16 │   	PAGE = 32768,
+  
+
+tests/automatic.process.child.ts:1:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━
+
+  × The imports and exports are not sorted.
+  
+  > 1 │ import assert from "node:assert/strict";
+      │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2 │ import Inibase from "../src/index.js";
+    3 │ const [root, mode] = process.argv.slice(2);
+  
+  i Safe fix: Organize Imports (Biome)
+  
+     1  1 │   import assert from "node:assert/strict";
+     2  2 │   import Inibase from "../src/index.js";
+        3 │ + 
+     3  4 │   const [root, mode] = process.argv.slice(2);
+     4  5 │   const db = new Inibase("db", root);
+  
+
+tests/automatic.test.ts:1:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × The imports and exports are not sorted.
+  
+  > 1 │ import assert from "node:assert/strict";
+      │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2 │ import { spawn } from "node:child_process";
+    3 │ import { createHash } from "node:crypto";
+  
+  i Safe fix: Organize Imports (Biome)
+  
+      6   6 │   import { join } from "node:path";
+      7   7 │   import { test } from "node:test";
+      8     │ - import·Inibase·from·"../src/index.js";
+      9     │ - import·{·observeEqualityScan·}·from·"../src/automatic.js";
+          8 │ + import·{·observeEqualityScan·}·from·"../src/automatic.js";
+          9 │ + import·Inibase·from·"../src/index.js";
+     10  10 │   import { DatabaseResources, resourcesFor } from "../src/resources.js";
+     11  11 │   
+  
+
+tests/automatic.test.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+     98  98 │   		assert.deepEqual(await readFile(join(path, "slug.txt.gz")), original);
+     99  99 │   		assert.ok(!(await readdir(path)).includes(".seek.config"));
+    100     │ - → → assert.deepEqual((await·readdir(join(path,·".tmp"))).sort(),·originalTemporaryNames);
+        100 │ + → → assert.deepEqual(
+        101 │ + → → → (await·readdir(join(path,·".tmp"))).sort(),
+        102 │ + → → → originalTemporaryNames,
+        103 │ + → → );
+    101 104 │   		assert.equal((await db.get("records", 1))?.slug, rows[0].slug);
+    102 105 │   	} finally {
+  
+
+tests/rowpack.crash.child.ts:1:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × The imports and exports are not sorted.
+  
+  > 1 │ import { buildRowPack } from "../src/rowpack.js";
+      │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2 │ import { DatabaseResources } from "../src/resources.js";
+    3 │ const [directory, phase] = process.argv.slice(2);
+  
+  i Safe fix: Organize Imports (Biome)
+  
+     1    │ - import·{·buildRowPack·}·from·"../src/rowpack.js";
+     2    │ - import·{·DatabaseResources·}·from·"../src/resources.js";
+        1 │ + import·{·DatabaseResources·}·from·"../src/resources.js";
+        2 │ + import·{·buildRowPack·}·from·"../src/rowpack.js";
+        3 │ + 
+     3  4 │   const [directory, phase] = process.argv.slice(2);
+     4  5 │   async function* rows() {
+  
+
+tests/rowpack.test.ts:1:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × The imports and exports are not sorted.
+  
+  > 1 │ import assert from "node:assert/strict";
+      │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2 │ import { spawn } from "node:child_process";
+    3 │ import { randomBytes } from "node:crypto";
+  
+  i Safe fix: Organize Imports (Biome)
+  
+      6   6 │   import { join } from "node:path";
+      7   7 │   import { test } from "node:test";
+      8     │ - import·{·buildRowPack,·RowPack,·type·PackedRow·}·from·"../src/rowpack.js";
+      9     │ - import·{·DatabaseResources·}·from·"../src/resources.js";
+          8 │ + import·{·DatabaseResources·}·from·"../src/resources.js";
+          9 │ + import·{·buildRowPack,·type·PackedRow,·RowPack·}·from·"../src/rowpack.js";
+     10  10 │   
+     11  11 │   for (const phase of ["files-synced", "manifest-synced", "published"])
+  
+
+Checked 9 files in 18ms. No fixes applied.
+Found 6 errors.
+Found 4 warnings.
+check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.
+  
+

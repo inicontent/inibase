@@ -26,6 +26,9 @@ export interface TableFormat {
 	baseGen: number;
 	/** Oldest engine that may open the table, as written into the marker. */
 	minReader?: string;
+	tombstones?: boolean;
+	/** Engine policy only; the data/log encoding remains format 3. */
+	automatic?: boolean;
 }
 
 export const LEGACY_FORMAT: TableFormat = {
@@ -34,10 +37,10 @@ export const LEGACY_FORMAT: TableFormat = {
 	baseGen: 0,
 };
 
-export const CURRENT_FORMAT_VERSION = 2;
+export const CURRENT_FORMAT_VERSION = 3;
 export const ENGINE_NAME = "inibase";
 /** This build's engine version, compared against a marker's `minReader`. */
-export const ENGINE_VERSION = "3.8.0";
+export const ENGINE_VERSION = "3.9.0";
 /** Oldest reader that understands format 2. */
 export const MIN_READER = "3.8.0";
 /** Release expected to detect (and refuse) format 2 rather than mis-read it. */
@@ -88,12 +91,16 @@ export const readFormat = async (tablePath: string): Promise<TableFormat> => {
 			log: raw?.log === true,
 			baseGen: Number(raw?.baseGen) || 0,
 			minReader: typeof raw?.minReader === "string" ? raw.minReader : undefined,
+			...(raw?.tombstones === true ? { tombstones: true } : {}),
+			...(raw?.automatic === true ? { automatic: true } : {}),
 		};
-	} catch {
-		// A corrupt marker means we cannot trust "no log": refusing to write
-		// over it is safer, but reading must still work, so treat as legacy and
-		// let the write path surface UNSUPPORTED_FORMAT.
-		return { ...LEGACY_FORMAT };
+	} catch (cause) {
+		throw Object.assign(
+			new Error(`UNSUPPORTED_FORMAT: invalid marker ${formatPath(tablePath)}`, {
+				cause,
+			}),
+			{ name: "UNSUPPORTED_FORMAT" },
+		);
 	}
 };
 
@@ -102,11 +109,13 @@ export const serializeFormat = (format: TableFormat): string =>
 	`${JSON.stringify({
 		engine: ENGINE_NAME,
 		format: format.format,
-		minReader: MIN_READER,
+		minReader: format.format >= 3 ? "3.9.0" : MIN_READER,
 		detector: DETECTOR,
 		layout: "append",
 		log: format.log,
 		baseGen: format.baseGen,
+		...(format.tombstones ? { tombstones: true } : {}),
+		...(format.automatic ? { automatic: true } : {}),
 	})}\n`;
 
 /**

@@ -22,6 +22,11 @@ In the **100,000-record CMS benchmark**, published **Inibase 3.8.0 with gzip and
 
 ## Features
 
+> **Local development build:** experimental seekable columns, disk indexes and
+> logged deletes are documented in [storage acceleration](docs/storage-acceleration.md).
+> The hard total-working-memory and bounded-I/O compaction requirements are not yet
+> complete. Published 3.8.0 results below remain historical, not claims about this build.
+
 - **Lightweight** 🪶
 - **Minimalist** :white_circle: (but powerful)
 - **100% TypeScript** :large_blue_diamond:
@@ -29,7 +34,7 @@ In the **100,000-record CMS benchmark**, published **Inibase 3.8.0 with gzip and
 - **ATOMIC** :lock: Per-table writer locks, write-ahead journal + crash recovery, fsync-backed durability, and multi-table transactions (`begin`/`commit`/`rollback`) for atomic cascades (exact scope below)
 - **Built-in** form validation (+unique values :new: ) :sunglasses:
 - **Suitable for large data** :page_with_curl: (tested with 4M records)
-- **Incremental updates** :recycle: Opt-in update log (`log: true`) appends small frames instead of rewriting whole columns
+- **Incremental updates** :recycle: The compatibility update-log backend appends small frames instead of rewriting whole columns
 - **Support Compression** :eight_spoked_asterisk: (using built-in nodejs zlib)
 - **Support Table Joins** :link:
 - **Memory-conscious design** :chart_with_downwards_trend: File-based storage and streaming reads
@@ -184,14 +189,14 @@ the `full` vs `none` throughput comparison.
 
 ## Incremental update log
 
-Opt a table into the append-only **update log** (on-disk format 2) to make `put`
-cheap when a table is large but each update touches few rows:
+The supported application table options are `decodeID`, `prepend`, `compression`
+and `cache`. The development engine learns eligible equality indexes automatically;
+see [automatic storage optimization](docs/storage-acceleration.md). It preserves
+existing transaction support and does not silently migrate tables to the log format.
 
-```js
-await db.createTable("user", userTableSchema, { log: true });
-// or migrate an existing table in place:
-await db.updateTable("user", undefined, { log: true });
-```
+The append-only **update log** (on-disk format 2) remains supported for existing
+databases and historical runtime configurations. The description below documents
+that compatibility backend; it is not an additional application option to choose.
 
 - **Writes.** `put` appends one length-prefixed, `crc32`-checked frame
   (`{ id, cols, updatedAt }`) to `updates.log` instead of rewriting column

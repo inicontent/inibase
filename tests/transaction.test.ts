@@ -4,18 +4,12 @@
 import { strict as assert } from "node:assert";
 import { fork } from "node:child_process";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
-import {
-	mkdir,
-	readdir,
-	rename,
-	writeFile,
-} from "node:fs/promises";
+import { mkdir, readdir, rename, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-
-import Inibase from "../src/index.js";
 import * as File from "../src/file.js";
+import Inibase from "../src/index.js";
 
 const dbPath = "test-db-transaction";
 
@@ -80,7 +74,10 @@ async function craftUncommittedDbJournal() {
 			tmp,
 			existed: true,
 		});
-		await rename(live as string, join(backupDir, `0-ta-${basename(live as string)}`));
+		await rename(
+			live as string,
+			join(backupDir, `0-ta-${basename(live as string)}`),
+		);
 		await rename(tmp as string, live as string);
 	}
 
@@ -193,8 +190,16 @@ await test("begin + commit makes multi-table writes atomic", async () => {
 		await db.post("post_t", { title: "hello", author: { id: 1 } });
 
 		// No read-your-writes yet: reads inside the txn observe committed state.
-		assert.equal((await readAll("user_t")).length, 0, "staged write not visible");
-		assert.equal((await readAll("post_t")).length, 0, "staged write not visible");
+		assert.equal(
+			(await readAll("user_t")).length,
+			0,
+			"staged write not visible",
+		);
+		assert.equal(
+			(await readAll("post_t")).length,
+			0,
+			"staged write not visible",
+		);
 	} finally {
 		await db.commit();
 	}
@@ -297,11 +302,7 @@ await test("rollback keeps rows a cascade would have deleted", async () => {
 	}
 
 	assert.equal((await readAll("user_t")).length, 2, "ada still present");
-	assert.equal(
-		(await readAll("post_t")).length,
-		1,
-		"her post is untouched",
-	);
+	assert.equal((await readAll("post_t")).length, 1, "her post is untouched");
 });
 
 await test("crash mid multi-table commit rolls every table back", async () => {
@@ -433,7 +434,12 @@ await test("computed link-hops reject transaction-staged dependency tables", asy
 	const ownerId = await db.post("user_t", { name: "wallet-owner" });
 
 	// outside a transaction the link resolves
-	const outside = (await db.post("wallet_t", { owner: { id: ownerId } }, undefined, true)) as any;
+	const outside = (await db.post(
+		"wallet_t",
+		{ owner: { id: ownerId } },
+		undefined,
+		true,
+	)) as any;
 	assert.equal(outside.ownerName, "wallet-owner");
 
 	// a transaction touching only wallet_t may still link-read user_t
@@ -457,7 +463,11 @@ await test("computed link-hops reject transaction-staged dependency tables", asy
 	} finally {
 		await db.rollback();
 	}
-	assert.equal((await readAll("wallet_t")).length, 2, "rejected write staged nothing");
+	assert.equal(
+		(await readAll("wallet_t")).length,
+		2,
+		"rejected write staged nothing",
+	);
 });
 
 await test("transaction() commits on resolve and returns the callback value", async () => {
@@ -470,7 +480,11 @@ await test("transaction() commits on resolve and returns the callback value", as
 		return "committed-value";
 	});
 
-	assert.equal(returned, "committed-value", "callback return value is forwarded");
+	assert.equal(
+		returned,
+		"committed-value",
+		"callback return value is forwarded",
+	);
 	const users = await readAll("user_t");
 	const posts = await readAll("post_t");
 	assert.equal(users.length, usersBefore + 1, "both staged writes published");
@@ -511,14 +525,22 @@ await test("transaction() rolls back on throw and releases the database lock", a
 		before,
 		"no partial writes survived the rollback",
 	);
-	assert.deepEqual(await dbTmpLeftovers(), [], "journal removed by the rollback");
+	assert.deepEqual(
+		await dbTmpLeftovers(),
+		[],
+		"journal removed by the rollback",
+	);
 
 	// The whole point: the database lock must be free again. A leaked lock
 	// would make this write block for the full INIBASE_LOCK_WAIT_TIMEOUT_MS.
 	await db.transaction(async (tx) => {
 		await tx.post("user_t", { name: "after-failure" });
 	});
-	assert.equal((await readAll("user_t")).length, before + 1, "lock was released");
+	assert.equal(
+		(await readAll("user_t")).length,
+		before + 1,
+		"lock was released",
+	);
 });
 
 await test("transaction() rolls back when a staged write itself fails", async () => {
@@ -547,7 +569,8 @@ await test("transaction() rolls back when a staged write itself fails", async ()
 await test("transaction() rejects misuse", async () => {
 	// no callback at all
 	await assert.rejects(
-		() => (db as never as { transaction: () => Promise<unknown> }).transaction(),
+		() =>
+			(db as never as { transaction: () => Promise<unknown> }).transaction(),
 		(error: any) => error?.name === "INVALID_PARAMETERS",
 	);
 	// nested transaction — begin() refuses a second open transaction
@@ -597,7 +620,11 @@ await test("commit() refreshes row counts and drops derived caches", async () =>
 	await db.transaction(async (tx) => {
 		await tx.post("cached_t", { name: "second" });
 	});
-	assert.equal(db.totalItems.get("cached_t-*"), 2, "row count refreshed on commit");
+	assert.equal(
+		db.totalItems.get("cached_t-*"),
+		2,
+		"row count refreshed on commit",
+	);
 
 	await db.delete("cached_t");
 });

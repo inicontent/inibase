@@ -94,8 +94,8 @@ const syncDir = async (path: string): Promise<void> => {
 	try {
 		handle = await open(path, "r");
 		await maybeSync(handle);
-	} catch {
-		// Directory fsync is not supported on every platform/filesystem.
+	} catch (error: any) {
+		if (!["EINVAL", "ENOTSUP", "ENOSYS"].includes(error?.code)) throw error;
 	} finally {
 		await handle?.close();
 	}
@@ -106,17 +106,21 @@ const readEntries = async (journalPath: string): Promise<JournalEntry[]> => {
 	let content: string;
 	try {
 		content = await readFile(journalPath, "utf8");
-	} catch {
-		return [];
+	} catch (error: any) {
+		if (error?.code === "ENOENT") return [];
+		throw error;
 	}
 	const entries: JournalEntry[] = [];
-	for (const line of content.split("\n")) {
+	const lines = content.split("\n");
+	for (let index = 0; index < lines.length; index++) {
+		const line = lines[index];
 		if (!line) continue;
 		try {
 			entries.push(JSON.parse(line) as JournalEntry);
 		} catch {
-			// Partial trailing line: the append that wrote it was never
-			// fsynced, so the transaction never reached its `commit` marker.
+			if (index !== lines.length - 1 || content.endsWith("\n"))
+				throw new Error(`JOURNAL_CORRUPT: ${journalPath} line ${index + 1}`);
+			// Only an incomplete final line can be ignored after a crash.
 		}
 	}
 	return entries;
@@ -142,6 +146,29 @@ const collectOps = (
 		if (entry.pagination) paginations.push(entry.pagination);
 	}
 	return { ops, paginations };
+};
+
+const syncChanges = async (
+	ops: JournalFileOp[],
+	paginations: { from: string; to: string }[],
+) => {
+	const directories = new Set<string>();
+	for (const op of ops) {
+		for (const path of [op.live, op.backup, op.tmp].filter((p): p is string =>
+			Boolean(p),
+		)) {
+			directories.add(dirname(path));
+			directories.add(dirname(dirname(path)));
+		}
+	}
+	for (const op of paginations) directories.add(dirname(op.from));
+	for (const directory of directories) {
+		try {
+			await syncDir(directory);
+		} catch (error: any) {
+			if (error?.code !== "ENOENT") throw error;
+		}
+	}
 };
 
 /**
@@ -238,10 +265,14 @@ export class Journal {
 			if (!begin) return;
 			const { ops, paginations } = collectOps([begin]);
 			await applyRollback(ops, paginations);
+			await syncChanges(ops, paginations);
 		} finally {
 			await this.dispose();
-			await unlink(this.path).catch(() => {});
 		}
+		await unlink(this.path).catch((error: any) => {
+			if (error?.code !== "ENOENT") throw error;
+		});
+		await syncDir(dirname(this.path));
 	}
 
 	async dispose(): Promise<void> {
@@ -280,6 +311,7 @@ export class DatabaseJournal {
 
 	async begin(tables: string[]): Promise<void> {
 		await this.append({ txn: this.txn, type: "begin", tables });
+		await syncDir(dirname(this.path));
 	}
 
 	async op(
@@ -303,10 +335,14 @@ export class DatabaseJournal {
 		try {
 			const { ops, paginations } = collectOps(await readEntries(this.path));
 			await applyRollback(ops, paginations);
+			await syncChanges(ops, paginations);
 		} finally {
 			await this.dispose();
-			await unlink(this.path).catch(() => {});
 		}
+		await unlink(this.path).catch((error: any) => {
+			if (error?.code !== "ENOENT") throw error;
+		});
+		await syncDir(dirname(this.path));
 	}
 
 	async dispose(): Promise<void> {
@@ -349,6 +385,7 @@ export async function recover(tmpDirPath: string): Promise<void> {
 		// the transaction created and discard every leftover.
 		await applyRollback(ops, paginations);
 	}
+	await syncChanges(ops, paginations);
 
 	await unlink(journalPath).catch(() => {});
 	await syncDir(tmpDirPath);

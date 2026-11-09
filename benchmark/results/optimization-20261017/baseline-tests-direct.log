@@ -1,0 +1,593 @@
+✔ Initialize Inibase (0.489583ms)
+▶ Basic Table Operations
+  ✔ Create Table (14.703125ms)
+  ✔ Insert Data (51.615875ms)
+  ✔ Retrieve Data (1.687667ms)
+  ✔ Update Data (48.982292ms)
+  ✔ Delete Data (40.349875ms)
+✔ Basic Table Operations (157.966333ms)
+▶ Complex Schema with Flexible Children Definitions
+  ✔ Create Table with Flexible Children (11.137958ms)
+  ✔ Insert Valid Data (60.991417ms)
+  ✔ Reject Invalid Data (4.883709ms)
+  ✔ Validate Array with Single Type Children (0.048833ms)
+  ✔ Validate Array with Mixed Type Children (0.037291ms)
+  ✔ Validate Array with Schema-Based Children (0.033167ms)
+  ✔ Delete All Records (32.115458ms)
+✔ Complex Schema with Flexible Children Definitions (110.593083ms)
+▶ Single Unique Field
+  ✔ Create Table with Unique Field (11.282959ms)
+  ✔ Insert Unique Values (87.184458ms)
+  ✔ Reject Duplicate Value (6.120333ms)
+✔ Single Unique Field (105.798959ms)
+▶ Group of Unique Fields
+  ✔ Create Table with Group Unique Fields (13.636625ms)
+  ✔ Insert Unique Group Values (146.694708ms)
+  ✔ Reject Duplicate Group (6.157ms)
+  ✔ Reject Duplicate Values (5.362167ms)
+✔ Group of Unique Fields (174.47825ms)
+▶ Regex Validation
+  ✔ Create Table with Regex Validation (14.175459ms)
+  ✔ Insert Valid Data (90.233917ms)
+  ✔ Reject Invalid Data (15.682708ms)
+✔ Regex Validation (122.518458ms)
+▶ Compression Configuration
+  ✔ Create Table with Compression Enabled (15.618375ms)
+  ✔ Insert Data into Compressed Table (84.870375ms)
+  ✔ Retrieve Data from Compressed Table (2.954958ms)
+  ✔ Update Data in Compressed Table (55.801833ms)
+  ✔ Delete Data from Compressed Table (65.168125ms)
+  ✔ Enable Compression for Existing Table (97.526208ms)
+✔ Compression Configuration (324.482ms)
+✔ Compressed columns: multiple large batches survive a reopen (158.830125ms)
+✔ Sparse point lookups read the requested rows (plain and compressed) (251.0235ms)
+▶ Prepend Configuration
+  ✔ Create Table with Prepend Enabled (13.294917ms)
+  ✔ Insert Data into Prepend Table (117.920958ms)
+  ✔ Validate Data Order in Prepend Table (2.287542ms)
+  ✔ Update Data in Prepend Table (52.038416ms)
+  ✔ Delete Data from Prepend Table (66.823958ms)
+✔ Prepend Configuration (254.985ms)
+▶ Multiple Optional Recursive Arrays with Prepend Config
+  ✔ Create Table with Prepend Enabled (16.04575ms)
+  ✔ Insert Data with All Fields Present (44.923292ms)
+  ✔ Insert Data with Some Fields Missing (37.955333ms)
+  ✔ Validate Data Order with Prepend Enabled (3.393542ms)
+  ✔ Switch Prepend Off and Insert More Data (113.207583ms)
+  ✔ Update Data Using Put Function (49.363666ms)
+✔ Multiple Optional Recursive Arrays with Prepend Config (266.953208ms)
+▶ Data Validation and Schema Enforcement
+  ✔ Create Table for Validation (11.895917ms)
+  ✔ Reject Data with Missing Required Field (4.945416ms)
+  ✔ Reject Data with Incorrect Data Type (3.860625ms)
+  ✔ Reject Data with Missing Required Field in Nested Object (3.935292ms)
+  ✔ Reject Data with Incorrect Data Type in Nested Object (2.81625ms)
+  ✔ Reject Data with Incorrect Array Child Type (4.132084ms)
+  ✔ Accept Valid Data (53.071625ms)
+  ✔ Accept Valid Data with Optional Fields Missing (53.305708ms)
+✔ Data Validation and Schema Enforcement (139.867125ms)
+▶ Table Relationships
+  ✔ Create Tables with Relationship (26.237083ms)
+  ✔ Insert Related Data (107.975209ms)
+  ✔ Check Post with Non-Existent User results in null user field (60.347125ms)
+  ✔ Cascade Delete Related Data (106.180875ms)
+✔ Table Relationships (303.065416ms)
+▶ Name Validation (Security)
+  ✔ Reject Malicious Database Names (0.719708ms)
+  ✔ Accept Valid Database Names (0.471875ms)
+  ✔ Reject Malicious Table Names (0.249375ms)
+  ✔ Reject Malicious Column Names in Schema (0.773958ms)
+  ✔ Reject Malicious Column Names via columns option (13.951541ms)
+  ✔ Accept '*' wildcard column returns all columns (58.238791ms)
+  ✔ Accept nested Arabic route column paths (63.380042ms)
+  ✔ Reject Malicious Column Names via sum/avg/max/min (0.855875ms)
+  ✔ Accept Valid Names End to End (61.5135ms)
+  ✔ Arabic and Space Names Work End to End (73.193708ms)
+  ✔ Mixed Arabic and Space Column Names in Criteria (188.996ms)
+  ✔ Invalid Name Errors Are Translated (0.166666ms)
+✔ Name Validation (Security) (465.560125ms)
+✔ Cleanup Database (0.777625ms)
+ℹ tests 78
+ℹ suites 0
+ℹ pass 78
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2840.380292
+✔ Date fields normalize ISO calendar dates to timestamps (62.205666ms)
+▶ Advanced Criteria Queries (comparison operators)
+  ✔ greater than (>) (2.603375ms)
+  ✔ less than (<) (2.002125ms)
+  ✔ greater or equal (>=) (2.24325ms)
+  ✔ less or equal (<=) (1.456875ms)
+  ✔ not equal (!=) (1.564667ms)
+  ✔ equality on native numbers and booleans (15.031709ms)
+  ✔ array contains ([]) (1.637917ms)
+  ✔ array contains any of multiple values ([]a,b) (1.690542ms)
+  ✔ array does not contain (![]) (55.927042ms)
+  ✔ wildcard match (*) (5.086583ms)
+  ✔ no match returns null (11.736ms)
+  ✔ empty criteria object/array returns the full page (4.7525ms)
+✔ Advanced Criteria Queries (comparison operators) (172.60525ms)
+▶ Advanced Criteria Queries (and / or logic)
+  ✔ implicit AND between multiple fields (2.252917ms)
+  ✔ explicit and {} block (1.811958ms)
+  ✔ explicit or {} block (14.7065ms)
+  ✔ nested and[] array-rule on one field (1.621041ms)
+  ✔ nested or[] array-rule on one field (1.369541ms)
+  ✔ combined and/or with multiple criteria (11.119916ms)
+✔ Advanced Criteria Queries (and / or logic) (94.415292ms)
+▶ Pagination, pageInfo and onlyOne
+  ✔ pages return the expected slices (4.582542ms)
+  ✔ shared pageInfo reflects the last query (0.970125ms)
+  ✔ page beyond the last one returns null (0.944625ms)
+  ✔ perPage -1 returns every record (1.236041ms)
+  ✔ onlyOne returns a single object (not an array) (11.002875ms)
+  ✔ onlyOne with no match returns null (9.476416ms)
+  ✔ criteria queries are paginated too (58.527125ms)
+✔ Pagination, pageInfo and onlyOne (143.474417ms)
+▶ Sorting (string, array and object forms)
+  ✔ sort by a numeric column ascending (string form) (12.240125ms)
+  ✔ sort descending via object form (8.484333ms)
+  ✔ multi-column sort via array form (7.417209ms)
+  ✔ mixed object form (number and string directives) (11.554334ms)
+  ✔ sort by a string column (7.097458ms)
+  ✔ sort combined with criteria (6.988916ms)
+  ✔ sort by explicit id keeps insertion order (6.491459ms)
+✔ Sorting (string, array and object forms) (119.804333ms)
+▶ Columns projection (include, exclude, dotted paths)
+  ✔ include a single column keeps only it + id (1.212083ms)
+  ✔ columns accepts a plain string too (1.011792ms)
+  ✔ exclude a column with '!' (1.638917ms)
+  ✔ dotted column path deep-filters nested objects (1.2275ms)
+  ✔ requesting the parent object returns all children (1.131834ms)
+  ✔ array column projection (0.940291ms)
+✔ Columns projection (include, exclude, dotted paths) (73.796458ms)
+▶ decodeID config (numeric IDs end to end)
+  ✔ ids are returned as numbers (2.237667ms)
+  ✔ fetch by numeric id (1.476083ms)
+  ✔ update by numeric id (41.079167ms)
+  ✔ update returns updated data (43.731458ms)
+  ✔ delete by numeric id (43.23575ms)
+  ✔ delete of non-existent ids is a no-op (does not wipe table) (12.14175ms)
+  ✔ relation lookups embed the referenced numeric id (124.009375ms)
+  ✔ post returns a plain numeric id (not an encoded one) (60.676334ms)
+  ✔ bulk post returns plain numeric ids (68.95325ms)
+  ✔ post id matches the returnPostedData id (76.731333ms)
+  ✔ non-decodeID tables still return an encoded id (57.602125ms)
+✔ decodeID config (numeric IDs end to end) (597.592625ms)
+▶ Cache config keeps criteria results fresh after writes
+  ✔ criteria queries create cache files (57.633959ms)
+  ✔ post clears the cache and keeps reads fresh (42.107417ms)
+  ✔ put clears the cache and returns fresh data (64.261958ms)
+  ✔ delete clears the cache too (61.526125ms)
+✔ Cache config keeps criteria results fresh after writes (251.057334ms)
+▶ updateTable schema migration preserves data
+  ✔ adding a field keeps existing rows intact (56.579292ms)
+  ✔ removing a field drops its column (13.396625ms)
+  ✔ metadata APIs reflect the migrated schema (0.462334ms)
+✔ updateTable schema migration preserves data (135.138292ms)
+▶ updateTable config toggles
+  ✔ decodeID can be enabled after creation (10.730625ms)
+  ✔ decodeID can be disabled again (11.034166ms)
+  ✔ cache can be toggled on (26.382791ms)
+✔ updateTable config toggles (114.621417ms)
+▶ Field types: password, json, date, format types
+  ✔ password values are hashed and comparable (119.308667ms)
+  ✔ json values round-trip (104.374459ms)
+  ✔ email/url/ip/html fields accept valid input (67.053292ms)
+  ✔ email/url/ip/html fields reject invalid input (35.406125ms)
+  ✔ default values are applied for missing optional fields (73.258458ms)
+✔ Field types: password, json, date, format types (401.148958ms)
+▶ Advanced relationships (criteria, joins, cascade)
+  ✔ query posts through a related-table criterion (22.75125ms)
+  ✔ or/and logic with relation criteria (29.755833ms)
+  ✔ related records are denormalized into the result (15.247625ms)
+  ✔ cascade delete removes related rows (115.835ms)
+  ✔ cascade delete reaches nested related tables (433.724792ms)
+  ✔ cascade delete follows criteria matching multiple rows (331.179792ms)
+  ✔ delete all rows cascades to related rows (205.347667ms)
+✔ Advanced relationships (criteria, joins, cascade) (1323.197792ms)
+▶ Deeply nested array/object trees
+  ✔ whole tree round-trips (2.075917ms)
+  ✔ dot-path criteria reaches array children (20.342083ms)
+  ✔ update merges into nested tree data (58.66575ms)
+✔ Deeply nested array/object trees (158.525792ms)
+▶ sum / avg / max / min with criteria and multiple columns
+  ✔ sum of a single column is a number (0.857583ms)
+  ✔ sum of multiple columns is a record (0.75225ms)
+  ✔ sum respects criteria (24.54825ms)
+  ✔ avg returns numbers and respects criteria (13.994792ms)
+  ✔ max/min return records even for one column (1.107959ms)
+  ✔ max/min with criteria (21.644333ms)
+✔ sum / avg / max / min with criteria and multiple columns (117.489875ms)
+▶ Public validateData API
+  ✔ accepts valid data (single and array) (0.106417ms)
+  ✔ rejects missing required fields (0.092209ms)
+  ✔ rejects wrong types at any nesting depth (0.050208ms)
+  ✔ skipRequiredField bypasses required checks (0.021042ms)
+✔ Public validateData API (1.132292ms)
+▶ Error handling coverage
+  ✔ TABLE_EXISTS is thrown for duplicate tables (11.568083ms)
+  ✔ TABLE_NOT_EXISTS for getTable on a missing table (0.108542ms)
+  ✔ NO_SCHEMA for a table created without a schema (8.398583ms)
+  ✔ TABLE_EMPTY for put/delete/sum/avg/max/min (12.78ms)
+  ✔ INVALID_ID when bulk put data lacks valid ids (55.382042ms)
+✔ Error handling coverage (88.721791ms)
+▶ Bulk operations (post/put/delete with arrays)
+  ✔ bulk post returns one id per record (0.114541ms)
+  ✔ bulk put by id array with data array (43.651417ms)
+  ✔ bulk delete by id array (51.0445ms)
+  ✔ put with no where updates every record (43.981875ms)
+  ✔ put with a criteria that matches nothing is a no-op (15.695084ms)
+  ✔ row metadata timestamps are maintained (85.91525ms)
+✔ Bulk operations (post/put/delete with arrays) (299.1535ms)
+▶ Decode resilience for `{`/`[`-leading string values
+  ✔ whole-table listing does not throw and returns every row (2.373416ms)
+  ✔ unparseable brace/bracket values read back verbatim (14.736958ms)
+  ✔ criteria lookups for unaffected rows still work (12.770916ms)
+  ✔ reading the row by id decodes safely (13.298ms)
+  ✔ update round-trips the literal binding (44.441208ms)
+  ✔ delete of the row with a bracket-bearing slug works (49.223292ms)
+  ✔ number/boolean/json/array columns decode normally with a bad string (65.4705ms)
+  ✔ a parseable `[`-leading string decodes as an array (55.960458ms)
+✔ Decode resilience for `{`/`[`-leading string values (322.599417ms)
+▶ Computed fields (v1 id-only expression language)
+  ✔ order totals: quantity x unit price and linked product price (192.8075ms)
+  ✔ batched link hops: bulk posts share one read per distinct linked row (199.895834ms)
+  ✔ rename-proof: renaming a linked key does not retarget expressions (17.778583ms)
+  ✔ bulk post computes every row; put recomputes by id, criteria and no-where (201.989667ms)
+  ✔ helpers: empty array sums to 0; avg over none is an arithmetic error (116.446125ms)
+  ✔ links: missing link value stores empty, dangling link throws (178.875708ms)
+  ✔ computed values cannot be set directly (67.147292ms)
+  ✔ DDL rejects syntax, conflicts, cycles and invalid targets (2.268084ms)
+  ✔ integer-only: a decimal written as a path fails at compile time (60.787417ms)
+  ✔ precedence, parens and modulo (99.915ms)
+  ✔ updateTable backfills added and changed computed fields (154.50125ms)
+  ✔ a failed backfill leaves the schema untouched (68.044959ms)
+✔ Computed fields (v1 id-only expression language) (1366.743708ms)
+✔ Cleanup Advanced Database (16.559ms)
+ℹ tests 135
+ℹ suites 0
+ℹ pass 135
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5863.584084
+✔ Initialize transaction database (34.013792ms)
+✔ begin + commit makes multi-table writes atomic (93.874333ms)
+✔ rollback discards staged writes and releases everything (92.217166ms)
+✔ transaction API misuse is rejected (28.633459ms)
+✔ atomic cascade delete inside a transaction (171.552375ms)
+✔ rollback keeps rows a cascade would have deleted (64.517292ms)
+✔ crash mid multi-table commit rolls every table back (161.52925ms)
+✔ crash after the commit marker rolls every table forward (32.105333ms)
+✔ a writer in another process blocks on a live transaction (1626.198125ms)
+✔ INIBASE_DURABILITY=none is functionally identical (157.658292ms)
+✔ computed link-hops reject transaction-staged dependency tables (164.922458ms)
+✔ transaction() commits on resolve and returns the callback value (64.737833ms)
+✔ transaction() accepts a pre-lock table list (47.187208ms)
+✔ transaction() rolls back on throw and releases the database lock (82.911125ms)
+✔ transaction() rolls back when a staged write itself fails (69.492167ms)
+✔ transaction() rejects misuse (50.837083ms)
+✔ commit() refreshes row counts and drops derived caches (220.925583ms)
+✔ Cleanup transaction database (5.116625ms)
+ℹ tests 18
+ℹ suites 0
+ℹ pass 18
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 16622.7385
+✔ Initialize durability database (1.537542ms)
+✔ Crash without commit marker rolls the write back (224.088166ms)
+✔ Crash with commit marker rolls the write forward (215.2215ms)
+✔ Stale lock from a dead process is stolen (144.426ms)
+✔ Lock held by a live same-host process is never stolen (3282.792083ms)
+✔ No temp/journal/backup leftovers after a DML cycle (862.020875ms)
+✔ Table rename moves the lock with the directory and releases it there (265.384333ms)
+✔ Multi-process concurrent writers stay consistent (4628.241458ms)
+✔ Concurrent readers never observe torn rows while writers write (1391.003791ms)
+✔ A failed column write aborts the post and leaves data intact (68.11025ms)
+✔ Cleanup durability database (7.181292ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 11110.242042
+✔ parseExpression: precedence and associativity (0.583208ms)
+✔ parseExpression: paths and helpers (0.151667ms)
+✔ parseExpression: integer-only (no decimal literals) (0.0425ms)
+✔ parseExpression: syntax errors (0.208167ms)
+✔ parseExpression: caps input length and nesting depth (0.079333ms)
+✔ buildFieldIndex: flat, nested and virtual ids (0.172083ms)
+✔ resolveExpression: locative ids and literal fallback (0.239292ms)
+✔ resolveExpression: helpers resolve the array ancestor (0.108833ms)
+✔ resolveExpression: links resolve into the target table (0.297667ms)
+✔ resolveExpression: rejected shapes (0.174375ms)
+✔ topoSortComputedFields: orders dependencies first (0.103333ms)
+✔ topoSortComputedFields: cycles are rejected (0.077125ms)
+✔ collectFieldDeps reads path roots from a compiled AST (0.068709ms)
+✔ flattenRecord: nested objects and arrays of objects (0.084166ms)
+✔ resolveFramePath: walks structured frames in place (0.059292ms)
+ℹ tests 15
+ℹ suites 0
+ℹ pass 15
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 6.168292
+▶ Utilities: isString
+  ✔ should return true for a normal string (0.227708ms)
+  ✔ should return false for non-string values (0.051458ms)
+✔ Utilities: isString (0.756333ms)
+▶ Utilities: isNumber
+  ✔ should return true for numbers (0.04825ms)
+  ✔ should return false for non-number values (0.038542ms)
+✔ Utilities: isNumber (0.185083ms)
+▶ Utilities: isHTML
+  ✔ should return true for strings containing HTML tags (0.127084ms)
+  ✔ should return false for plain text (0.05225ms)
+  ✔ edge cases (0.03225ms)
+✔ Utilities: isHTML (0.372209ms)
+▶ Utilities: isEmail
+  ✔ should return true for typical emails (0.159083ms)
+  ✔ should return false for invalid emails (0.052542ms)
+✔ Utilities: isEmail (0.306792ms)
+▶ Utilities: isIP
+  ✔ should return true for valid IPv4 addresses (0.330708ms)
+  ✔ should return false for invalid IPv4 addresses (0.025959ms)
+✔ Utilities: isIP (0.421084ms)
+▶ Utilities: isDate
+  ✔ should return true for Date objects (0.443375ms)
+  ✔ should return false for non-Date values (0.037708ms)
+  ✔ should accept strict ISO calendar dates (0.026625ms)
+✔ Utilities: isDate (0.577959ms)
+▶ Utilities: isObject
+  ✔ should return true for plain objects (0.0255ms)
+  ✔ should return false for arrays, null, etc. (0.0225ms)
+✔ Utilities: isObject (0.092791ms)
+▶ Utilities: isArrayOfArrays
+  ✔ should return true for arrays of arrays (0.030209ms)
+  ✔ should return false for anything else (0.022958ms)
+✔ Utilities: isArrayOfArrays (0.091125ms)
+▶ Utilities: isArrayOfNulls
+  ✔ should return true for arrays full of null (0.029625ms)
+  ✔ should return false otherwise (0.015834ms)
+✔ Utilities: isArrayOfNulls (0.083459ms)
+▶ Utilities: isArrayOfObjects
+  ✔ should return true for arrays of objects (0.025583ms)
+  ✔ should return false if any element is not an object (0.016625ms)
+  ✔ should return false for non-arrays (0.017709ms)
+✔ Utilities: isArrayOfObjects (0.109792ms)
+▶ Utilities: isURL
+  ✔ should return true for typical URLs (0.196083ms)
+  ✔ should return false for invalid URLs (0.027791ms)
+✔ Utilities: isURL (0.268417ms)
+▶ Utilities: createError
+  ✔ returns a translated message for a known error code (0.043708ms)
+  ✔ falls back to a generic error for an unknown code (0.01575ms)
+✔ Utilities: createError (0.101458ms)
+ℹ tests 39
+ℹ suites 0
+ℹ pass 39
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 6.662792
+▶ nested sum basics
+  ✔ all elements when no where is given (1.530167ms)
+  ✔ bare element predicate resolves under the array root (1.533458ms)
+  ✔ mixed-product order is not over-counted (element-wise zip) (0.739083ms)
+  ✔ dotted element predicate is equivalent (0.655ms)
+  ✔ no matching elements returns 0 (0.620583ms)
+  ✔ operator predicates are supported (1.644208ms)
+  ✔ multiple element predicates AND together (0.704917ms)
+  ✔ row-level key narrows contributing rows (13.663291ms)
+  ✔ row filter combines with element predicate (10.415541ms)
+  ✔ and/or groups pass through as row-level filters (19.885125ms)
+  ✔ multi-column sum shares one predicate and returns a record (1.116041ms)
+  ✔ flat sum is unchanged and still rejects dotted columns (1.038209ms)
+✔ nested sum basics (188.88325ms)
+▶ nested sum validation errors
+  ✔ column must be a dotted child path (0.450584ms)
+  ✔ only one nesting level is supported (0.383417ms)
+  ✔ columns must share the same array root (0.381042ms)
+  ✔ root must be an array-of-objects column (0.345333ms)
+  ✔ summing a non-numeric child yields 0 (consistent with flat sum) (0.583167ms)
+  ✔ criteria key matching neither root nor a row column (1.866ms)
+  ✔ object-valued element predicates are rejected (0.364125ms)
+  ✔ [] / ![] operators are rejected on element predicates (0.353083ms)
+✔ nested sum validation errors (122.652875ms)
+✔ nested sum TABLE_EMPTY guard (13.259ms)
+▶ aggregates with where are not capped at the default page size
+  ✔ sum counts every matching row (14.821667ms)
+  ✔ avg / max / min count every matching row too (31.87025ms)
+✔ aggregates with where are not capped at the default page size (101.900459ms)
+✔ nested sum works with decodeID referenced tables (122.430084ms)
+▶ nested sum works on compressed and cache-enabled tables
+  ✔ compressed table reads (1.1385ms)
+  ✔ cache-enabled table reads (49.053875ms)
+✔ nested sum works on compressed and cache-enabled tables (177.779333ms)
+✔ nested sum: element predicates ignore row-level column of the same name (134.934833ms)
+✔ Cleanup nested sum database (2.040583ms)
+ℹ tests 32
+ℹ suites 0
+ℹ pass 32
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 865.940042
+✔ element computed fields are evaluated per element at write time (139.314792ms)
+✔ nested sum aggregates a computed child per product (138.976375ms)
+✔ a missing operand in one element writes 0, never aborts or skips (180.138083ms)
+✔ computed children are not user-settable (138.487292ms)
+✔ put re-evaluates child computeds (by id and whole-table) (267.93375ms)
+✔ updateTable backfills an added child computed into existing rows (159.150292ms)
+✔ updateTable re-backfills a changed child computed (132.641166ms)
+✔ schema validation rejects malformed child computeds (14.4775ms)
+✔ child computeds evaluate inside transactions (118.541459ms)
+✔ Cleanup computed-child database (1.587625ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1294.831208
+✔ hardening: concurrent posts / renames / deletes stay aligned (torture) (11293.408333ms)
+✔ hardening: numeric where resolves by stored id, never by line number (274.833292ms)
+✔ hardening: transactions commit / rollback / in-txn put-by-numeric-id (222.78025ms)
+✔ hardening: generic CRUD, criteria, sort, aggregates (294.132166ms)
+✔ Cleanup hardening database (0.641625ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 12088.374958
+✔ encode/decode round-trip for scalar string types (0.582916ms)
+✔ legacy cells still decode as before (0.052375ms)
+✔ non-string fields keep Inison decoding (0.423916ms)
+▶ end to end: post, get, search and put keep strings exact
+  ✔ post + get by id (439.766875ms)
+  ✔ every column file keeps one line per row (0.265541ms)
+  ✔ equality search on an escaped value (13.141833ms)
+  ✔ put keeps strings exact (66.161375ms)
+✔ end to end: post, get, search and put keep strings exact (538.314291ms)
+✔ compressed storage keeps quotes, backslashes, unicode and newlines exact (633.075708ms)
+✔ a legacy column file written by an older version still reads (54.904417ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1229.654958
+✔ encode/scan round-trips frames with contiguous generations (0.428208ms)
+✔ scanFrames rejects a generation that is out of order (0.172625ms)
+✔ a partial trailing frame is a torn tail, and repair truncates it (18.578417ms)
+✔ a checksum failure at end-of-file is a torn tail, not corruption (0.075791ms)
+✔ a checksum failure followed by a valid frame is corruption (0.072333ms)
+✔ streaming scan detects mid-log corruption too (0.49625ms)
+✔ streaming scan ignores an implausible oversized length (0.381375ms)
+✔ buildFrames splits a batch under the cap and assigns sequential gens (0.164875ms)
+✔ a single oversized record is rejected, not silently dropped (0.090708ms)
+✔ appendBatch is durable and reopenable; scan streams every frame (7.496959ms)
+✔ scan of a missing log yields an empty committed state (0.290042ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 30.082208
+✔ put by id is proportional: base column is untouched until compaction (104.927583ms)
+✔ criteria put resolves against the merged view (139.584958ms)
+✔ criteria get reflects overlaid values (95.016458ms)
+✔ where-less put updates every row (86.483167ms)
+✔ sort and pagination read the merged overlay (89.104833ms)
+✔ columns projection only applies requested overlaid columns (85.980625ms)
+✔ post and delete interleave correctly with the overlay (272.060708ms)
+✔ uniqueness is enforced against un-compacted puts (110.536666ms)
+✔ transactions and schema DDL on a log table fail loudly (107.997667ms)
+✔ aggregates read the merged overlay (106.871625ms)
+✔ json, password and date fields round-trip through the log (93.015333ms)
+✔ legacy tables are unaffected by the log machinery (95.953375ms)
+✔ a legacy table migrates to the log atomically, preserving rows (99.145375ms)
+✔ the format marker carries the compatibility contract (29.73375ms)
+✔ a newer-format marker is refused, never mis-read (100.465667ms)
+✔ version-compat helpers classify markers correctly (0.2285ms)
+✔ a fresh instance rebuilds the overlay from disk (110.028875ms)
+✔ a torn tail is ignored on read and repaired by the next write (114.709709ms)
+✔ put returns updated data only when asked (147.204042ms)
+ℹ tests 19
+ℹ suites 0
+ℹ pass 19
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1993.011833
+✔ compact folds the overlay into base and resets the log (164.368166ms)
+✔ puts after compaction keep working and reads stay merged (171.345708ms)
+✔ a fresh instance reads a compacted table without replaying old frames (165.575208ms)
+✔ a second open instance revalidates the marker after another compacts (161.527834ms)
+✔ crash mid-compaction rolls back atomically (146.546167ms)
+✔ compaction works from a fresh, cold instance (153.390166ms)
+✔ compaction on a legacy table and an empty log are no-ops (181.441333ms)
+✔ compaction is neutral for criteria and aggregates (219.643125ms)
+✔ backpressure compacts before the log grows unbounded (220.596208ms)
+✔ delete folds the log before rewriting base (200.665917ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1788.788542
+✔ incremental replay consumes each appended frame once, including writer refresh (120.598625ms)
+✔ replacement, same-size rewrite, truncation and torn tail invalidate replay state (10.74575ms)
+✔ concurrent refreshes never clear a view another refresh is rebuilding (101.968167ms)
+✔ frame building is byte-exact across unicode and generation-width boundaries (0.428083ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 235.724875
+✔ seekable gzip 65536: random keys, oversized UTF-8 cells and misses (190.986417ms)
+✔ seekable gzip 131072: random keys, oversized UTF-8 cells and misses (166.503541ms)
+✔ seekable gzip 262144: random keys, oversized UTF-8 cells and misses (170.836958ms)
+✔ journaled migration, populated overlays, key changes, deletes, compaction and reopen (319.21825ms)
+✔ stale directories and indexes fall back instead of serving stale data (121.439666ms)
+✔ seekable legacy tables retain transactions, prepend and nested fields (249.25125ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1220.566084
+✔ logged deletes leave primary data untouched, and all reads respect tombstones (311.744875ms)
+✔ explicit format migration with populated overlay is visible to already-open readers (168.426583ms)
+✔ repeated deletion compaction retains non-dense stable IDs and last-ID allocation (987.201667ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1469.399459
+✔ a shared cache and reusable descriptors stay bounded across many tables (1739.088667ms)
+✔ key indexes reject corruption, and damaged format markers fail closed (97.234917ms)
+✔ unique checks exclude only target rows, detect duplicates, and reuse deleted keys (147.811958ms)
+✔ failed regular-file synchronization is never reported as success (0.523125ms)
+✔ resource eviction closes handles rather than relying on GC (17.90775ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2004.461708

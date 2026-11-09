@@ -12,7 +12,10 @@ await db.createTable("items", schema, { decodeID: true });
 
 await db.post("items", { name: "a" });
 await db.post("items", { name: "b" });
-const rows1 = (await db.get("items", undefined, { page: 1, perPage: -1 })) as any[];
+const rows1 = (await db.get("items", undefined, {
+	page: 1,
+	perPage: -1,
+})) as any[];
 
 await db.begin();
 await db.post("items", { name: "c" }); // rolled back
@@ -20,7 +23,10 @@ await db.rollback();
 await db.begin(["items"]);
 await db.post("items", { name: "d" });
 await db.commit();
-const rows2 = (await db.get("items", undefined, { page: 1, perPage: -1 })) as any[];
+const rows2 = (await db.get("items", undefined, {
+	page: 1,
+	perPage: -1,
+})) as any[];
 
 const report = {
 	count1: rows1.length,

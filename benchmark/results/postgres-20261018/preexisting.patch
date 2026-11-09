@@ -1,0 +1,3054 @@
+diff --git a/benchmark/computed.ts b/benchmark/computed.ts
+index 3c71c87..79aa3e4 100644
+--- a/benchmark/computed.ts
++++ b/benchmark/computed.ts
+@@ -296,7 +296,9 @@ for (const size of sizes) {
+ }
+ 
+ console.log("\n--- link-heavy: shared catalog, per-item link hops ---\n");
+-console.log(`POST bulk of ${sizes.join("/")} orders (${2 * sizes[sizes.length - 1]} line items max, ${catalogSize}-row product catalog):`);
++console.log(
++	`POST bulk of ${sizes.join("/")} orders (${2 * sizes[sizes.length - 1]} line items max, ${catalogSize}-row product catalog):`,
++);
+ for (const size of sizes)
+ 	console.log(`  ${String(size).padEnd(5)} ${linkPost[size]?.toFixed(2)} ms`);
+ console.log(
+diff --git a/src/file.ts b/src/file.ts
+index 951e86c..7d2e437 100644
+--- a/src/file.ts
++++ b/src/file.ts
+@@ -152,7 +152,7 @@ export const runWithIndependentLockStore = <T>(fn: () => T): T =>
+ const isReentrant = (resolvedPath: string) => {
+ 	if (!lockDepths.get(resolvedPath)) return false;
+ 	if (lockOwners.get(resolvedPath) !== lockContext.getStore()) return false;
+-	lockDepths.set(resolvedPath, lockDepths.get(resolvedPath)! + 1);
++	lockDepths.set(resolvedPath, (lockDepths.get(resolvedPath) ?? 0) + 1);
+ 	return true;
+ };
+ 
+diff --git a/src/index.ts b/src/index.ts
+index d88a1d2..0ce56a5 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -3200,7 +3200,7 @@ export default class Inibase {
+ 				// this is the plain per-hop engine read.
+ 				const row = env.links
+ 					? env.collect
+-						? (env.links.record(table, ref.key, value), null)
++						? (() => { env.links.record(table, ref.key, value); return null; })()
+ 						: await env.links.read(table, ref.key, value)
+ 					: await this.readLinkedRow(table, value, ref.key);
+ 				if (!env.collect && (row === undefined || row === null))
+diff --git a/tests/computed.child.test.ts b/tests/computed.child.test.ts
+index 6dddf19..2555e4a 100644
+--- a/tests/computed.child.test.ts
++++ b/tests/computed.child.test.ts
+@@ -104,12 +104,22 @@ await test("nested sum aggregates a computed child per product", async () => {
+ 	const { alpha, beta } = await fixtureOrders();
+ 
+ 	assert.equal(
+-		await inibase.sum("orders", "items.lineTotal", { product: alpha.id }, { nested: true }),
++		await inibase.sum(
++			"orders",
++			"items.lineTotal",
++			{ product: alpha.id },
++			{ nested: true },
++		),
+ 		500,
+ 		"revenue per product (Alpha)",
+ 	);
+ 	assert.equal(
+-		await inibase.sum("orders", "items.lineTotal", { product: beta.id }, { nested: true }),
++		await inibase.sum(
++			"orders",
++			"items.lineTotal",
++			{ product: beta.id },
++			{ nested: true },
++		),
+ 		250,
+ 		"revenue per product (Beta)",
+ 	);
+@@ -119,7 +129,12 @@ await test("nested sum aggregates a computed child per product", async () => {
+ 		"revenue across all rows",
+ 	);
+ 	assert.equal(
+-		await inibase.sum("orders", "items.quantity", { product: alpha.id }, { nested: true }),
++		await inibase.sum(
++			"orders",
++			"items.quantity",
++			{ product: alpha.id },
++			{ nested: true },
++		),
+ 		5,
+ 		"pieces sold per product (Alpha)",
+ 	);
+@@ -133,10 +148,7 @@ await test("a missing operand in one element writes 0, never aborts or skips", a
+ 	const row = (await seed("orders", [
+ 		{
+ 			status: "shipped",
+-			items: [
+-				{ product: alpha.id, quantity: 2 },
+-				{ product: alpha.id },
+-			],
++			items: [{ product: alpha.id, quantity: 2 }, { product: alpha.id }],
+ 		},
+ 	])) as Row[];
+ 
+@@ -178,12 +190,20 @@ await test("computed children are not user-settable", async () => {
+ await test("put re-evaluates child computeds (by id and whole-table)", async () => {
+ 	initializeDatabase();
+ 	const { alpha, o1 } = await fixtureOrders();
+-	const rows = (await inibase.get("orders", undefined, { perPage: -1 })) as Row[];
++	const rows = (await inibase.get("orders", undefined, {
++		perPage: -1,
++	})) as Row[];
+ 	const o2 = rows.find((r) => r.id !== o1.id) as Row;
+ 
+ 	// put by id: only that row is re-derived
+-	await inibase.put("orders", { items: [{ product: alpha.id, quantity: 9 }] }, { id: o2.id });
+-	const afterPut = (await inibase.get("orders", undefined, { perPage: -1 })) as Row[];
++	await inibase.put(
++		"orders",
++		{ items: [{ product: alpha.id, quantity: 9 }] },
++		{ id: o2.id },
++	);
++	const afterPut = (await inibase.get("orders", undefined, {
++		perPage: -1,
++	})) as Row[];
+ 	const updated = afterPut.find((r) => r.id === o2.id) as Row;
+ 	assert.deepEqual(
+ 		(updated.items as Row[]).map((i) => i.lineTotal),
+@@ -196,7 +216,9 @@ await test("put re-evaluates child computeds (by id and whole-table)", async ()
+ 
+ 	// whole-table put: every row is re-derived, existing rows otherwise intact
+ 	await inibase.put("orders", { status: "re-shipped" });
+-	const afterAll = (await inibase.get("orders", undefined, { perPage: -1 })) as Row[];
++	const afterAll = (await inibase.get("orders", undefined, {
++		perPage: -1,
++	})) as Row[];
+ 	assert.equal(afterAll.length, 2);
+ 	for (const r of afterAll) {
+ 		assert.equal(r.status, "re-shipped");
+@@ -257,7 +279,9 @@ await test("updateTable backfills an added child computed into existing rows", a
+ 		),
+ 	);
+ 
+-	const rows = (await inibase.get(tableName, undefined, { perPage: -1 })) as Row[];
++	const rows = (await inibase.get(tableName, undefined, {
++		perPage: -1,
++	})) as Row[];
+ 	const row1 = rows.find((r) => r.qty === 2) as Row;
+ 	const row2 = rows.find((r) => r.qty === 3) as Row;
+ 	assert.deepEqual(
+@@ -318,7 +342,9 @@ await test("updateTable re-backfills a changed child computed", async () => {
+ 
+ 	// s = a + b
+ 	await changeTo("2 + 3");
+-	let rows = (await inibase.get(tableName, undefined, { perPage: -1 })) as Row[];
++	let rows = (await inibase.get(tableName, undefined, {
++		perPage: -1,
++	})) as Row[];
+ 	assert.deepEqual(
+ 		rows.map((r) => (r.items as Row[])[0].s),
+ 		[5, 9],
+@@ -335,7 +361,9 @@ await test("updateTable re-backfills a changed child computed", async () => {
+ 	);
+ 
+ 	// and posts after the migration keep evaluating
+-	const posted = (await seed(tableName, [{ items: [{ a: 10, b: 2 }] }])) as Row[];
++	const posted = (await seed(tableName, [
++		{ items: [{ a: 10, b: 2 }] },
++	])) as Row[];
+ 	assert.equal((posted[0].items as Row[])[0].s, 20);
+ });
+ 
+@@ -349,7 +377,8 @@ await test("schema validation rejects malformed child computeds", async () => {
+ 		// attempt gets a unique name
+ 		return assert.rejects(
+ 			() => inibase.createTable(name, schema),
+-			(error: unknown) => (error as Error).name === "COMPUTED_FIELD_INVALID_TARGET",
++			(error: unknown) =>
++				(error as Error).name === "COMPUTED_FIELD_INVALID_TARGET",
+ 		);
+ 	};
+ 
+@@ -412,7 +441,8 @@ await test("schema validation rejects malformed child computeds", async () => {
+ 					],
+ 				},
+ 			]),
+-		(error: unknown) => (error as Error).name === "COMPUTED_FIELD_UNKNOWN_FIELD",
++		(error: unknown) =>
++			(error as Error).name === "COMPUTED_FIELD_UNKNOWN_FIELD",
+ 	);
+ });
+ 
+@@ -440,7 +470,9 @@ await test("child computeds evaluate inside transactions", async () => {
+ 	await inibase.commit();
+ 
+ 	// staged writes evaluated the child on commit
+-	let rows = (await inibase.get(tableName, undefined, { perPage: -1 })) as Row[];
++	let rows = (await inibase.get(tableName, undefined, {
++		perPage: -1,
++	})) as Row[];
+ 	assert.deepEqual(
+ 		rows.map((r) => (r.items as Row[])[0].sub),
+ 		[6, 12],
+@@ -460,4 +492,4 @@ await test("child computeds evaluate inside transactions", async () => {
+ 	);
+ });
+ 
+-await test("Cleanup computed-child database", removeDatabase);
+\ No newline at end of file
++await test("Cleanup computed-child database", removeDatabase);
+diff --git a/tests/durability.test.ts b/tests/durability.test.ts
+index 6f101cf..fc41134 100644
+--- a/tests/durability.test.ts
++++ b/tests/durability.test.ts
+@@ -18,9 +18,8 @@ import { hostname } from "node:os";
+ import { basename, join } from "node:path";
+ import { test } from "node:test";
+ import { fileURLToPath } from "node:url";
+-
+-import Inibase from "../src/index.js";
+ import * as File from "../src/file.js";
++import Inibase from "../src/index.js";
+ 
+ const dbPath = "test-db-durability";
+ 
+@@ -37,7 +36,8 @@ const simpleSchema = [
+ 
+ const tableDir = (tableName: string) => join(dbPath, tableName);
+ const tmpDir = (tableName: string) => join(tableDir(tableName), ".tmp");
+-const journalPath = (tableName: string) => join(tmpDir(tableName), "journal.jsonl");
++const journalPath = (tableName: string) =>
++	join(tmpDir(tableName), "journal.jsonl");
+ const lockPath = (tableName: string) => join(tmpDir(tableName), ".locked");
+ const backupDir = (tableName: string) => join(tmpDir(tableName), "backup");
+ const colFiles = (tableName: string) =>
+@@ -265,12 +265,7 @@ await test("No temp/journal/backup leftovers after a DML cycle", async () => {
+ 	const tableName = "t4";
+ 	await db.createTable(tableName, simpleSchema);
+ 	for (let i = 0; i < 5; i++)
+-		await db.post(
+-			tableName,
+-			{ name: `n${i}`, workerId: i },
+-			undefined,
+-			true,
+-		);
++		await db.post(tableName, { name: `n${i}`, workerId: i }, undefined, true);
+ 	assert.equal(
+ 		await paginationName(tableName),
+ 		"5-5.pagination",
+@@ -283,11 +278,7 @@ await test("No temp/journal/backup leftovers after a DML cycle", async () => {
+ 	);
+ 
+ 	await db.put(tableName, { workerId: 100 }, 3);
+-	assert.deepEqual(
+-		await tmpLeftovers(tableName),
+-		[],
+-		"no leftovers after put",
+-	);
++	assert.deepEqual(await tmpLeftovers(tableName), [], "no leftovers after put");
+ 
+ 	await db.delete(tableName, 2);
+ 	assert.equal(
+@@ -376,11 +367,7 @@ await test("Multi-process concurrent writers stay consistent", async () => {
+ 	);
+ 	for (const row of rows) {
+ 		assert.equal(typeof row.name, "string", "row name column complete");
+-		assert.equal(
+-			typeof row.workerId,
+-			"number",
+-			"row workerId column complete",
+-		);
++		assert.equal(typeof row.workerId, "number", "row workerId column complete");
+ 	}
+ 
+ 	assert.deepEqual(
+@@ -511,4 +498,4 @@ await test("A failed column write aborts the post and leaves data intact", async
+ 
+ await test("Cleanup durability database", async () => {
+ 	removeDatabase();
+-});
+\ No newline at end of file
++});
+diff --git a/tests/hardening.test.ts b/tests/hardening.test.ts
+index 4b80f29..ae6d3cb 100644
+--- a/tests/hardening.test.ts
++++ b/tests/hardening.test.ts
+@@ -1,6 +1,6 @@
+ import { strict as assert } from "node:assert";
+ import { existsSync, rmSync } from "node:fs";
+-import { readFile, readdir } from "node:fs/promises";
++import { readdir, readFile } from "node:fs/promises";
+ import { join } from "node:path";
+ import { test } from "node:test";
+ 
+@@ -48,12 +48,19 @@ const paginationTotal = async (tablePath: string) => {
+ 	for (const name of await readdir(tablePath))
+ 		if (name.endsWith(".pagination")) matches.push(name);
+ 	if (!matches.length) return { lastId: 0, total: 0 };
+-	const [lastId, total] = matches[0].replace(/\.pagination$/, "").split("-").map(Number);
++	const [lastId, total] = matches[0]
++		.replace(/\.pagination$/, "")
++		.split("-")
++		.map(Number);
+ 	return { lastId, total };
+ };
+ 
+ /** Every column file must hold exactly `total` lines (no drifted/torn tails). */
+-const checkColumnsAligned = async (tablePath: string, total: number, label: string) => {
++const checkColumnsAligned = async (
++	tablePath: string,
++	total: number,
++	label: string,
++) => {
+ 	const files = (await readdir(tablePath)).filter(
+ 		(f) => f.endsWith(".txt") && !f.startsWith("."),
+ 	);
+@@ -89,13 +96,22 @@ await test("hardening: concurrent posts / renames / deletes stay aligned (tortur
+ 	const postTasks: Promise<unknown>[] = [];
+ 	for (let i = 0; i < 120; i++)
+ 		postTasks.push(
+-			inibase.post(tableName, { name: `p-${i}`, folder: "w1", size: i }, { perPage: -1 }, true),
++			inibase.post(
++				tableName,
++				{ name: `p-${i}`, folder: "w1", size: i },
++				{ perPage: -1 },
++				true,
++			),
+ 		);
+ 	for (let b = 0; b < 4; b++)
+ 		postTasks.push(
+ 			inibase.post(
+ 				tableName,
+-				Array.from({ length: 8 }, (_, k) => ({ name: `b${b}-${k}`, folder: "w1", size: b })),
++				Array.from({ length: 8 }, (_, k) => ({
++					name: `b${b}-${k}`,
++					folder: "w1",
++					size: b,
++				})),
+ 				{ perPage: -1 },
+ 				true,
+ 			),
+@@ -110,7 +126,11 @@ await test("hardening: concurrent posts / renames / deletes stay aligned (tortur
+ 
+ 	let { total } = await paginationTotal(tablePath);
+ 	const expectedW1 = 120 + 4 * 8;
+-	assert.equal(total, expectedW1, `wave1 total ${total}, expected ${expectedW1}`);
++	assert.equal(
++		total,
++		expectedW1,
++		`wave1 total ${total}, expected ${expectedW1}`,
++	);
+ 	await checkColumnsAligned(tablePath, total, "wave1");
+ 
+ 	const ids1 = await idList(tablePath);
+@@ -128,7 +148,12 @@ await test("hardening: concurrent posts / renames / deletes stay aligned (tortur
+ 		wave2.push(inibase.put(tableName, { name }, id, { perPage: -1 }, false));
+ 	for (let i = 0; i < 40; i++)
+ 		wave2.push(
+-			inibase.post(tableName, { name: `w2-${i}`, folder: "w2", size: i }, { perPage: -1 }, false),
++			inibase.post(
++				tableName,
++				{ name: `w2-${i}`, folder: "w2", size: i },
++				{ perPage: -1 },
++				false,
++			),
+ 		);
+ 	const w2Res = await Promise.allSettled(wave2);
+ 	const w2Fails = w2Res.filter((r) => r.status === "rejected");
+@@ -140,7 +165,11 @@ await test("hardening: concurrent posts / renames / deletes stay aligned (tortur
+ 
+ 	total = (await paginationTotal(tablePath)).total;
+ 	const expectedW2 = expectedW1 + 40;
+-	assert.equal(total, expectedW2, `wave2 total ${total}, expected ${expectedW2}`);
++	assert.equal(
++		total,
++		expectedW2,
++		`wave2 total ${total}, expected ${expectedW2}`,
++	);
+ 	await checkColumnsAligned(tablePath, total, "wave2");
+ 
+ 	const ids2 = await idList(tablePath);
+@@ -148,10 +177,9 @@ await test("hardening: concurrent posts / renames / deletes stay aligned (tortur
+ 
+ 	// every renamed id must store the requested name on the right row; map by
+ 	// POSITION in the current id column (rows/columns are line-aligned).
+-	const dump = (await inibase.get(tableName, undefined, { perPage: -1 })) as Record<
+-		string,
+-		any
+-	>[];
++	const dump = (await inibase.get(tableName, undefined, {
++		perPage: -1,
++	})) as Record<string, any>[];
+ 	const idsNow = await idList(tablePath);
+ 	const byId = new Map(idsNow.map((id, i) => [id, dump[i]]));
+ 	for (const [id, wanted] of renamePlan) {
+@@ -166,10 +194,14 @@ await test("hardening: concurrent posts / renames / deletes stay aligned (tortur
+ 
+ 	// wave 3: parallel deletes by id (only ids that still exist)
+ 	const deletable = ids2.slice(0, 20);
+-	const w3Res = await Promise.allSettled(deletable.map((id) => inibase.delete(tableName, id)));
++	const w3Res = await Promise.allSettled(
++		deletable.map((id) => inibase.delete(tableName, id)),
++	);
+ 	const w3Fails = w3Res.filter((r) => r.status === "rejected");
+ 	assert.equal(w3Fails.length, 0, `${w3Fails.length} wave3 deletes failed`);
+-	const removed = w3Res.filter((r) => r.status === "fulfilled" && r.value).length;
++	const removed = w3Res.filter(
++		(r) => r.status === "fulfilled" && r.value,
++	).length;
+ 	total = (await paginationTotal(tablePath)).total;
+ 	assert.equal(
+ 		total,
+@@ -216,11 +248,21 @@ await test("hardening: numeric where resolves by stored id, never by line number
+ 	const numId = Math.max(...rawIds);
+ 	assert.equal(numId, 4, "largest stored id");
+ 	const lineOf = rawIds.indexOf(numId) + 1;
+-	assert.ok(lineOf <= total, "largest id is within the row count (prepend line 1..3)");
++	assert.ok(
++		lineOf <= total,
++		"largest id is within the row count (prepend line 1..3)",
++	);
+ 
+-	const got = (await inibase.get(tableName, numId, { perPage: -1 })) as Record<string, any>;
++	const got = (await inibase.get(tableName, numId, { perPage: -1 })) as Record<
++		string,
++		any
++	>;
+ 	assert.ok(got, `get(${numId}) returned nothing`);
+-	assert.equal(String(got.name), "r4", `get(${numId}) must return the id=4 row, got ${got.name}`);
++	assert.equal(
++		String(got.name),
++		"r4",
++		`get(${numId}) must return the id=4 row, got ${got.name}`,
++	);
+ 
+ 	// rename by NUMERIC id: right row, no padding, row count unchanged
+ 	const marker = `harden-${process.pid}-${Date.now()}`;
+@@ -232,11 +274,14 @@ await test("hardening: numeric where resolves by stored id, never by line number
+ 		3,
+ 		"rename must not pad the column file",
+ 	);
+-	const refreshed = (await inibase.get(tableName, numId, { perPage: -1 })) as Record<
+-		string,
+-		any
+-	>;
+-	assert.equal(String(refreshed.name), marker, "renamed id reads back on the right row");
++	const refreshed = (await inibase.get(tableName, numId, {
++		perPage: -1,
++	})) as Record<string, any>;
++	assert.equal(
++		String(refreshed.name),
++		marker,
++		"renamed id reads back on the right row",
++	);
+ 
+ 	// delete by NUMERIC id: rows drop by one and every column stays aligned
+ 	const didDel2 = await inibase.delete(tableName, numId);
+@@ -254,8 +299,12 @@ await test("hardening: numeric where resolves by stored id, never by line number
+ await test("hardening: transactions commit / rollback / in-txn put-by-numeric-id", async () => {
+ 	prepareDb();
+ 	const inibase = new Inibase("txn", dbPath);
+-	await inibase.createTable("a", structuredClone(ASSET_LIKE_SCHEMA), { prepend: true });
+-	await inibase.createTable("b", structuredClone(ASSET_LIKE_SCHEMA), { prepend: false });
++	await inibase.createTable("a", structuredClone(ASSET_LIKE_SCHEMA), {
++		prepend: true,
++	});
++	await inibase.createTable("b", structuredClone(ASSET_LIKE_SCHEMA), {
++		prepend: false,
++	});
+ 
+ 	await inibase.begin(["a", "b"]);
+ 	await inibase.post("a", { name: "t1-a" });
+@@ -271,7 +320,10 @@ await test("hardening: transactions commit / rollback / in-txn put-by-numeric-id
+ 	await inibase.rollback();
+ 	a = await inibase.get("a", undefined, { perPage: -1 });
+ 	b = await inibase.get("b", undefined, { perPage: -1 });
+-	assert.ok(a && a.length === 1 && b && b.length === 1, "rollback left 1/1 rows");
++	assert.ok(
++		a && a.length === 1 && b && b.length === 1,
++		"rollback left 1/1 rows",
++	);
+ 
+ 	// one staged op PER TABLE per txn by design: post to "a" + put by
+ 	// numeric id to "b" in one txn, commit, verify both.
+@@ -293,7 +345,9 @@ await test("hardening: transactions commit / rollback / in-txn put-by-numeric-id
+ await test("hardening: generic CRUD, criteria, sort, aggregates", async () => {
+ 	prepareDb();
+ 	const inibase = new Inibase("crud", dbPath);
+-	await inibase.createTable("t", structuredClone(ASSET_LIKE_SCHEMA), { prepend: true });
++	await inibase.createTable("t", structuredClone(ASSET_LIKE_SCHEMA), {
++		prepend: true,
++	});
+ 	await inibase.post(
+ 		"t",
+ 		[
+@@ -303,41 +357,61 @@ await test("hardening: generic CRUD, criteria, sort, aggregates", async () => {
+ 		],
+ 		{ perPage: -1 },
+ 	);
+-	let all = (await inibase.get("t", undefined, { perPage: -1 })) as Record<string, any>[];
+-	assert.equal(all.length, 3, "seed rows");
+-
+-	const byFolder = (await inibase.get("t", { folder: "x" }, { perPage: -1 })) as Record<
++	let all = (await inibase.get("t", undefined, { perPage: -1 })) as Record<
+ 		string,
+ 		any
+ 	>[];
++	assert.equal(all.length, 3, "seed rows");
++
++	const byFolder = (await inibase.get(
++		"t",
++		{ folder: "x" },
++		{ perPage: -1 },
++	)) as Record<string, any>[];
+ 	assert.equal(byFolder.length, 2, "criteria x rows");
+ 
+-	const sorted = (await inibase.get("t", undefined, { perPage: -1, sort: { size: "DESC" } })) as Record<
+-		string,
+-		any
+-	>[];
++	const sorted = (await inibase.get("t", undefined, {
++		perPage: -1,
++		sort: { size: "DESC" },
++	})) as Record<string, any>[];
+ 	assert.equal(String(sorted[0].size), "10", "sort DESC first size");
+ 
+ 	assert.equal(Number(await inibase.sum("t", "size")), 13, "sum(size)");
+ 	assert.equal(Number(await inibase.avg("t", "size")), 13 / 3, "avg(size)");
+ 
+ 	await inibase.put("t", { folder: "z" });
+-	all = (await inibase.get("t", undefined, { perPage: -1 })) as Record<string, any>[];
+-	assert.ok(all.every((r) => r.folder === "z"), "where-less put rewrote every row");
+-
+-	await inibase.put("t", { name: "hunted" }, { folder: "z", size: 2 });
+-	const hunted = (await inibase.get("t", { name: "hunted" }, { perPage: -1 })) as Record<
++	all = (await inibase.get("t", undefined, { perPage: -1 })) as Record<
+ 		string,
+ 		any
+ 	>[];
+-	assert.ok(hunted.length === 1 && Number(hunted[0].size) === 2, "criteria put mismatch");
++	assert.ok(
++		all.every((r) => r.folder === "z"),
++		"where-less put rewrote every row",
++	);
++
++	await inibase.put("t", { name: "hunted" }, { folder: "z", size: 2 });
++	const hunted = (await inibase.get(
++		"t",
++		{ name: "hunted" },
++		{ perPage: -1 },
++	)) as Record<string, any>[];
++	assert.ok(
++		hunted.length === 1 && Number(hunted[0].size) === 2,
++		"criteria put mismatch",
++	);
+ 
+ 	// delete an ARRAY OF ENCODED ids
+-	all = (await inibase.get("t", undefined, { perPage: -1 })) as Record<string, any>[];
++	all = (await inibase.get("t", undefined, { perPage: -1 })) as Record<
++		string,
++		any
++	>[];
+ 	assert.equal(all.length, 3, "pre-delete rows");
+ 	const hexIds = all.slice(0, 2).map((r) => r.id as string);
+ 	assert.equal(await inibase.delete("t", hexIds), true, "hex array delete");
+-	let left = (await inibase.get("t", undefined, { perPage: -1 })) as Record<string, any>[];
++	let left = (await inibase.get("t", undefined, { perPage: -1 })) as Record<
++		string,
++		any
++	>[];
+ 	assert.equal(left.length, 1, "hex array delete left 1 row");
+ 
+ 	// delete the final row by ARRAY OF NUMERIC ids (numeric where = id)
+@@ -346,10 +420,16 @@ await test("hardening: generic CRUD, criteria, sort, aggregates", async () => {
+ 		.filter(Boolean)
+ 		.map(Number);
+ 	assert.equal(await inibase.delete("t", rawIds), true, "numeric array delete");
+-	left = (await inibase.get("t", undefined, { perPage: -1 })) as Record<string, any>[];
+-	assert.ok(!left || left.length === 0, "numeric array delete emptied the table");
++	left = (await inibase.get("t", undefined, { perPage: -1 })) as Record<
++		string,
++		any
++	>[];
++	assert.ok(
++		!left || left.length === 0,
++		"numeric array delete emptied the table",
++	);
+ });
+ 
+ await test("Cleanup hardening database", () => {
+ 	removeDatabase();
+-});
+\ No newline at end of file
++});
+diff --git a/tests/inibase.advanced.test.ts b/tests/inibase.advanced.test.ts
+index 142d6f0..5fdaf66 100644
+--- a/tests/inibase.advanced.test.ts
++++ b/tests/inibase.advanced.test.ts
+@@ -127,16 +127,15 @@ await test("Advanced Criteria Queries (comparison operators)", async (t) => {
+ 			{ fruit: "mango", rating: 2 },
+ 		]);
+ 		const rows = await inibase.get<Row>(table, { fruit: "![]cherry" });
+-		assert.deepEqual(rows?.map((r) => r.fruit), ["banana", "apple", "mango"]);
++		assert.deepEqual(
++			rows?.map((r) => r.fruit),
++			["banana", "apple", "mango"],
++		);
+ 	});
+ 
+ 	await t.test("wildcard match (*)", async () => {
+ 		const containsI = await inibase.get<Row>(tableName, { name: "*%i%" });
+-		assert.deepEqual(await names(containsI), [
+-			"Alice",
+-			"Charlie",
+-			"Fiona",
+-		]);
++		assert.deepEqual(await names(containsI), ["Alice", "Charlie", "Fiona"]);
+ 
+ 		const startWithCha = await inibase.get<Row>(tableName, { name: "*Cha%" });
+ 		assert.deepEqual(await names(startWithCha), ["Charlie"]);
+@@ -152,13 +151,16 @@ await test("Advanced Criteria Queries (comparison operators)", async (t) => {
+ 		assert.equal(rows, null);
+ 	});
+ 
+-	await t.test("empty criteria object/array returns the full page", async () => {
+-		const byObj = await inibase.get<Row>(tableName, {});
+-		assert.equal(byObj?.length, 6);
++	await t.test(
++		"empty criteria object/array returns the full page",
++		async () => {
++			const byObj = await inibase.get<Row>(tableName, {});
++			assert.equal(byObj?.length, 6);
+ 
+-		const byArr = await inibase.get<Row>(tableName, []);
+-		assert.equal(byArr?.length, 6);
+-	});
++			const byArr = await inibase.get<Row>(tableName, []);
++			assert.equal(byArr?.length, 6);
++		},
++	);
+ });
+ 
+ await test("Advanced Criteria Queries (and / or logic)", async (t) => {
+@@ -235,7 +237,10 @@ await test("Pagination, pageInfo and onlyOne", async (t) => {
+ 
+ 	const tableName = "logs";
+ 	await inibase.createTable(tableName, [{ key: "msg", type: "string" }]);
+-	await seed(tableName, [...Array(25)].map((_, i) => ({ msg: `log-${i}` })));
++	await seed(
++		tableName,
++		[...Array(25)].map((_, i) => ({ msg: `log-${i}` })),
++	);
+ 
+ 	await t.test("pages return the expected slices", async () => {
+ 		const page1 = await inibase.get<Row>(tableName, undefined, {
+@@ -292,7 +297,12 @@ await test("Pagination, pageInfo and onlyOne", async (t) => {
+ 	});
+ 
+ 	await t.test("onlyOne with no match returns null", async () => {
+-		const row = await inibase.get<Row>(tableName, { msg: "nope" }, undefined, true);
++		const row = await inibase.get<Row>(
++			tableName,
++			{ msg: "nope" },
++			undefined,
++			true,
++		);
+ 		assert.equal(row, null);
+ 	});
+ 
+@@ -300,7 +310,10 @@ await test("Pagination, pageInfo and onlyOne", async (t) => {
+ 		// 25 records -> levels 1..25
+ 		const cursorTable = "cursor_logs";
+ 		await inibase.createTable(cursorTable, [{ key: "level", type: "number" }]);
+-		await seed(cursorTable, [...Array(25)].map((_, i) => ({ level: i + 1 })));
++		await seed(
++			cursorTable,
++			[...Array(25)].map((_, i) => ({ level: i + 1 })),
++		);
+ 
+ 		const firstPage = await inibase.get<Row>(
+ 			cursorTable,
+@@ -398,13 +411,10 @@ await test("Sorting (string, array and object forms)", async (t) => {
+ 			sort: "name",
+ 			perPage: -1,
+ 		});
+-		assert.deepEqual(rows?.map((r) => r.name), [
+-			"Alice",
+-			"Bob",
+-			"Charlie",
+-			"Dana",
+-			"Zoe",
+-		]);
++		assert.deepEqual(
++			rows?.map((r) => r.name),
++			["Alice", "Bob", "Charlie", "Dana", "Zoe"],
++		);
+ 	});
+ 
+ 	await t.test("sort combined with criteria", async () => {
+@@ -413,7 +423,10 @@ await test("Sorting (string, array and object forms)", async (t) => {
+ 			{ age: ">20" },
+ 			{ sort: "age", perPage: -1 },
+ 		);
+-		assert.deepEqual(rows?.map((r) => r.name), ["Zoe", "Alice", "Bob", "Dana"]);
++		assert.deepEqual(
++			rows?.map((r) => r.name),
++			["Zoe", "Alice", "Bob", "Dana"],
++		);
+ 	});
+ 
+ 	await t.test("sort by explicit id keeps insertion order", async () => {
+@@ -421,13 +434,10 @@ await test("Sorting (string, array and object forms)", async (t) => {
+ 			sort: "id",
+ 			perPage: -1,
+ 		});
+-		assert.deepEqual(rows?.map((r) => r.name), [
+-			"Zoe",
+-			"Alice",
+-			"Bob",
+-			"Charlie",
+-			"Dana",
+-		]);
++		assert.deepEqual(
++			rows?.map((r) => r.name),
++			["Zoe", "Alice", "Bob", "Charlie", "Dana"],
++		);
+ 	});
+ });
+ 
+@@ -495,15 +505,18 @@ await test("Columns projection (include, exclude, dotted paths)", async (t) => {
+ 		assert.deepEqual(rows?.[0].address, { city: "Springfield" });
+ 	});
+ 
+-	await t.test("requesting the parent object returns all children", async () => {
+-		const rows = await inibase.get<Row>(tableName, undefined, {
+-			columns: ["address"],
+-		});
+-		assert.deepEqual(rows?.[0].address, {
+-			street: "Main",
+-			city: "Springfield",
+-		});
+-	});
++	await t.test(
++		"requesting the parent object returns all children",
++		async () => {
++			const rows = await inibase.get<Row>(tableName, undefined, {
++				columns: ["address"],
++			});
++			assert.deepEqual(rows?.[0].address, {
++				street: "Main",
++				city: "Springfield",
++			});
++		},
++	);
+ 
+ 	await t.test("array column projection", async () => {
+ 		const rows = await inibase.get<Row>(tableName, undefined, {
+@@ -524,7 +537,10 @@ await test("decodeID config (numeric IDs end to end)", async (t) => {
+ 
+ 	await t.test("ids are returned as numbers", async () => {
+ 		const rows = await inibase.get<Row>(tableName);
+-		assert.deepEqual(rows?.map((r) => r.id), [1, 2, 3]);
++		assert.deepEqual(
++			rows?.map((r) => r.id),
++			[1, 2, 3],
++		);
+ 	});
+ 
+ 	await t.test("fetch by numeric id", async () => {
+@@ -539,36 +555,54 @@ await test("decodeID config (numeric IDs end to end)", async (t) => {
+ 	});
+ 
+ 	await t.test("update returns updated data", async () => {
+-		const row = await inibase.put(tableName, { name: "B3" }, 2, undefined, true);
++		const row = await inibase.put(
++			tableName,
++			{ name: "B3" },
++			2,
++			undefined,
++			true,
++		);
+ 		assert.equal((row as Row)?.name, "B3");
+ 	});
+ 
+ 	await t.test("delete by numeric id", async () => {
+ 		await inibase.delete(tableName, 3);
+ 		const rows = await inibase.get<Row>(tableName);
+-		assert.deepEqual(rows?.map((r) => r.id), [1, 2]);
++		assert.deepEqual(
++			rows?.map((r) => r.id),
++			[1, 2],
++		);
+ 	});
+ 
+-	await t.test("delete of non-existent ids is a no-op (does not wipe table)", async () => {
+-		assert.equal(await inibase.delete(tableName, 99), false);
+-		assert.equal(await inibase.delete(tableName, [98, 99]), false);
+-		const rows = await inibase.get<Row>(tableName);
+-		assert.deepEqual(rows?.map((r) => r.id), [1, 2]);
+-	});
++	await t.test(
++		"delete of non-existent ids is a no-op (does not wipe table)",
++		async () => {
++			assert.equal(await inibase.delete(tableName, 99), false);
++			assert.equal(await inibase.delete(tableName, [98, 99]), false);
++			const rows = await inibase.get<Row>(tableName);
++			assert.deepEqual(
++				rows?.map((r) => r.id),
++				[1, 2],
++			);
++		},
++	);
+ 
+ 	await t.test("relation lookups embed the referenced numeric id", async () => {
+ 		const users = "authors_decoded";
+ 		const posts = "posts_decoded";
+-		await inibase.createTable(
+-			users,
+-			[{ key: "first_name", type: "string" }],
+-			{ decodeID: true },
+-		);
++		await inibase.createTable(users, [{ key: "first_name", type: "string" }], {
++			decodeID: true,
++		});
+ 		await inibase.createTable(posts, [
+ 			{ key: "title", type: "string" },
+ 			{ key: "user", type: "table", table: users },
+ 		]);
+-		const created = (await inibase.post(users, { first_name: "Karim" }, undefined, true)) as Row;
++		const created = (await inibase.post(
++			users,
++			{ first_name: "Karim" },
++			undefined,
++			true,
++		)) as Row;
+ 		await inibase.post(posts, { title: "Hello", user: { id: created.id } });
+ 		const allPosts = (await inibase.get<Row>(posts, undefined, {
+ 			perPage: -1,
+@@ -576,28 +610,28 @@ await test("decodeID config (numeric IDs end to end)", async (t) => {
+ 		assert.equal(allPosts[0].user.id, created.id);
+ 	});
+ 
+-	await t.test("post returns a plain numeric id (not an encoded one)", async () => {
+-		const returning = "decoded_returning_id";
+-		await inibase.createTable(returning, [{ key: "name", type: "string" }], {
+-			decodeID: true,
+-		});
+-		const returned = await inibase.post(returning, { name: "D" });
+-		assert.equal(typeof returned, "number");
+-		assert.equal(returned, 1);
+-		// The returned id is the one every other accessor uses.
+-		const row = await inibase.get<Row>(returning, returned);
+-		assert.equal(row?.name, "D");
+-	});
++	await t.test(
++		"post returns a plain numeric id (not an encoded one)",
++		async () => {
++			const returning = "decoded_returning_id";
++			await inibase.createTable(returning, [{ key: "name", type: "string" }], {
++				decodeID: true,
++			});
++			const returned = await inibase.post(returning, { name: "D" });
++			assert.equal(typeof returned, "number");
++			assert.equal(returned, 1);
++			// The returned id is the one every other accessor uses.
++			const row = await inibase.get<Row>(returning, returned);
++			assert.equal(row?.name, "D");
++		},
++	);
+ 
+ 	await t.test("bulk post returns plain numeric ids", async () => {
+ 		const bulk = "decoded_bulk";
+ 		await inibase.createTable(bulk, [{ key: "name", type: "string" }], {
+ 			decodeID: true,
+ 		});
+-		const returned = await inibase.post(bulk, [
+-			{ name: "X" },
+-			{ name: "Y" },
+-		]);
++		const returned = await inibase.post(bulk, [{ name: "X" }, { name: "Y" }]);
+ 		assert.deepEqual(returned, [1, 2]);
+ 		assert.deepEqual(
+ 			((await inibase.get<Row>(bulk, undefined, { perPage: -1 })) as Row[]).map(
+@@ -653,7 +687,10 @@ await test("Cache config keeps criteria results fresh after writes", async (t) =
+ 		await inibase.get<Row>(tableName, { age: ">0" });
+ 		const cacheDir = join(dbPath, tableName, ".cache");
+ 		const entries = readdirSync(cacheDir);
+-		assert.ok(entries.length > 0, "cache should contain criterion result files");
++		assert.ok(
++			entries.length > 0,
++			"cache should contain criterion result files",
++		);
+ 	});
+ 
+ 	await t.test("post clears the cache and keeps reads fresh", async () => {
+@@ -695,7 +732,9 @@ await test("updateTable schema migration preserves data", async (t) => {
+ 	/** Returns the persisted schema without the auto-managed virtual fields. */
+ 	const userSchema = async () => {
+ 		const full = (await inibase.getTableSchema(tableName)) as Schema;
+-		return full.filter((f) => !["id", "createdAt", "updatedAt"].includes(f.key));
++		return full.filter(
++			(f) => !["id", "createdAt", "updatedAt"].includes(f.key),
++		);
+ 	};
+ 
+ 	await t.test("adding a field keeps existing rows intact", async () => {
+@@ -716,7 +755,12 @@ await test("updateTable schema migration preserves data", async (t) => {
+ 		// Existing rows have no value yet for the brand-new column
+ 		assert.equal(rows[0].email, undefined);
+ 
+-		const inserted = (await inibase.post(tableName, { name: "Three", age: 3, email: "three@x.com" }, undefined, true)) as Row;
++		const inserted = (await inibase.post(
++			tableName,
++			{ name: "Three", age: 3, email: "three@x.com" },
++			undefined,
++			true,
++		)) as Row;
+ 		assert.equal(inserted.email, "three@x.com");
+ 	});
+ 
+@@ -726,8 +770,14 @@ await test("updateTable schema migration preserves data", async (t) => {
+ 		await inibase.updateTable(tableName, withoutAge);
+ 		const rows = (await inibase.get<Row>(tableName)) as Row[];
+ 		assert.equal(rows.length, 3);
+-		assert.ok(rows.every((r) => !("age" in r)), "age column should be gone");
+-		assert.ok(rows.every((r) => r.name), "name column should remain");
++		assert.ok(
++			rows.every((r) => !("age" in r)),
++			"age column should be gone",
++		);
++		assert.ok(
++			rows.every((r) => r.name),
++			"name column should remain",
++		);
+ 	});
+ 
+ 	await t.test("metadata APIs reflect the migrated schema", async () => {
+@@ -755,7 +805,10 @@ await test("updateTable config toggles", async (t) => {
+ 	await t.test("decodeID can be enabled after creation", async () => {
+ 		await inibase.updateTable(tableName, undefined, { decodeID: true });
+ 		const rows = (await inibase.get<Row>(tableName)) as Row[];
+-		assert.deepEqual(rows?.map((r) => r.id), [1, 2]);
++		assert.deepEqual(
++			rows?.map((r) => r.id),
++			[1, 2],
++		);
+ 	});
+ 
+ 	await t.test("decodeID can be disabled again", async () => {
+@@ -789,7 +842,10 @@ await test("Field types: password, json, date, format types", async (t) => {
+ 		assert.match(rows[0].pwd, /^[0-9a-f]{32}:[0-9a-f]{64}$/);
+ 
+ 		const byPlain = await inibase.get<Row>(tableName, { pwd: "secret123" });
+-		assert.deepEqual(byPlain?.map((r) => r.username), ["joe"]);
++		assert.deepEqual(
++			byPlain?.map((r) => r.username),
++			["joe"],
++		);
+ 
+ 		const wrong = await inibase.get<Row>(tableName, { pwd: "guess" });
+ 		assert.equal(wrong, null);
+@@ -880,19 +936,22 @@ await test("Field types: password, json, date, format types", async (t) => {
+ 		);
+ 	});
+ 
+-	await t.test("default values are applied for missing optional fields", async () => {
+-		const tableName = "defaults";
+-		await inibase.createTable(tableName, [
+-			{ key: "a", type: "string" },
+-			{ key: "b", type: "number" },
+-			{ key: "c", type: "boolean" },
+-		]);
+-		await inibase.post(tableName, { a: "only" });
+-		const rows = (await inibase.get<Row>(tableName)) as Row[];
+-		assert.equal(rows[0].a, "only");
+-		assert.equal(rows[0].b, 0);
+-		assert.equal(rows[0].c, false);
+-	});
++	await t.test(
++		"default values are applied for missing optional fields",
++		async () => {
++			const tableName = "defaults";
++			await inibase.createTable(tableName, [
++				{ key: "a", type: "string" },
++				{ key: "b", type: "number" },
++				{ key: "c", type: "boolean" },
++			]);
++			await inibase.post(tableName, { a: "only" });
++			const rows = (await inibase.get<Row>(tableName)) as Row[];
++			assert.equal(rows[0].a, "only");
++			assert.equal(rows[0].b, 0);
++			assert.equal(rows[0].c, false);
++		},
++	);
+ });
+ 
+ await test("Advanced relationships (criteria, joins, cascade)", async (t) => {
+@@ -909,8 +968,18 @@ await test("Advanced relationships (criteria, joins, cascade)", async (t) => {
+ 		{ key: "author", type: "table", table: authors },
+ 	]);
+ 
+-	const alice = (await inibase.post(authors, { first_name: "Alice", country: "USA" }, undefined, true)) as Row;
+-	const bob = (await inibase.post(authors, { first_name: "Bob", country: "MA" }, undefined, true)) as Row;
++	const alice = (await inibase.post(
++		authors,
++		{ first_name: "Alice", country: "USA" },
++		undefined,
++		true,
++	)) as Row;
++	const bob = (await inibase.post(
++		authors,
++		{ first_name: "Bob", country: "MA" },
++		undefined,
++		true,
++	)) as Row;
+ 	await inibase.post(posts, [
+ 		{ title: "P1", author: { id: alice.id } },
+ 		{ title: "P2", author: { id: bob.id } },
+@@ -921,14 +990,20 @@ await test("Advanced relationships (criteria, joins, cascade)", async (t) => {
+ 		const rows = await inibase.get<Row>(posts, {
+ 			author: { country: "USA" },
+ 		});
+-		assert.deepEqual(rows?.map((r) => r.title), ["P1", "P3"]);
++		assert.deepEqual(
++			rows?.map((r) => r.title),
++			["P1", "P3"],
++		);
+ 	});
+ 
+ 	await t.test("or/and logic with relation criteria", async () => {
+ 		const rows = await inibase.get<Row>(posts, {
+ 			or: { author: { country: "MA" }, title: "P3" },
+ 		});
+-		assert.deepEqual(rows?.map((r) => r.title), ["P2", "P3"]);
++		assert.deepEqual(
++			rows?.map((r) => r.title),
++			["P2", "P3"],
++		);
+ 	});
+ 
+ 	await t.test("related records are denormalized into the result", async () => {
+@@ -939,7 +1014,10 @@ await test("Advanced relationships (criteria, joins, cascade)", async (t) => {
+ 	await t.test("cascade delete removes related rows", async () => {
+ 		await inibase.delete(authors, { id: alice.id });
+ 		const remaining = await inibase.get<Row>(posts, undefined, { perPage: -1 });
+-		assert.deepEqual(remaining?.map((r) => r.title), ["P2"]);
++		assert.deepEqual(
++			remaining?.map((r) => r.title),
++			["P2"],
++		);
+ 	});
+ 
+ 	await t.test("cascade delete reaches nested related tables", async () => {
+@@ -959,10 +1037,30 @@ await test("Advanced relationships (criteria, joins, cascade)", async (t) => {
+ 			{ key: "post", type: "table", table: p2 },
+ 		]);
+ 
+-		const alice2 = (await inibase.post(a2, { first_name: "Alice", country: "USA" }, undefined, true)) as Row;
+-		const bob2 = (await inibase.post(a2, { first_name: "Bob", country: "MA" }, undefined, true)) as Row;
+-		const p1 = (await inibase.post(p2, { title: "P1", author: { id: alice2.id } }, undefined, true)) as Row;
+-		const p2row = (await inibase.post(p2, { title: "P2", author: { id: bob2.id } }, undefined, true)) as Row;
++		const alice2 = (await inibase.post(
++			a2,
++			{ first_name: "Alice", country: "USA" },
++			undefined,
++			true,
++		)) as Row;
++		const bob2 = (await inibase.post(
++			a2,
++			{ first_name: "Bob", country: "MA" },
++			undefined,
++			true,
++		)) as Row;
++		const p1 = (await inibase.post(
++			p2,
++			{ title: "P1", author: { id: alice2.id } },
++			undefined,
++			true,
++		)) as Row;
++		const p2row = (await inibase.post(
++			p2,
++			{ title: "P2", author: { id: bob2.id } },
++			undefined,
++			true,
++		)) as Row;
+ 		await inibase.post(c2, [
+ 			{ text: "C1", post: { id: p1.id } },
+ 			{ text: "C2", post: { id: p1.id } },
+@@ -972,36 +1070,63 @@ await test("Advanced relationships (criteria, joins, cascade)", async (t) => {
+ 		await inibase.delete(a2, { id: alice2.id });
+ 
+ 		const restPosts = await inibase.get<Row>(p2, undefined, { perPage: -1 });
+-		assert.deepEqual(restPosts?.map((r) => r.title), ["P2"]);
++		assert.deepEqual(
++			restPosts?.map((r) => r.title),
++			["P2"],
++		);
+ 		const restComments = await inibase.get<Row>(c2, undefined, { perPage: -1 });
+-		assert.deepEqual(restComments?.map((r) => r.text), ["C3"]);
++		assert.deepEqual(
++			restComments?.map((r) => r.text),
++			["C3"],
++		);
+ 	});
+ 
+-	await t.test("cascade delete follows criteria matching multiple rows", async () => {
+-		const a3 = "authors_casc3";
+-		const p3 = "posts_casc3";
+-		await inibase.createTable(a3, [
+-			{ key: "name", type: "string" },
+-			{ key: "country", type: "string" },
+-		]);
+-		await inibase.createTable(p3, [
+-			{ key: "title", type: "string" },
+-			{ key: "author", type: "table", table: a3 },
+-		]);
+-		const a = (await inibase.post(a3, { name: "PA", country: "US" }, undefined, true)) as Row;
+-		const b = (await inibase.post(a3, { name: "PB", country: "US" }, undefined, true)) as Row;
+-		const c = (await inibase.post(a3, { name: "PC", country: "FR" }, undefined, true)) as Row;
+-		await inibase.post(p3, [
+-			{ title: "X1", author: { id: a.id } },
+-			{ title: "X2", author: { id: b.id } },
+-			{ title: "X3", author: { id: c.id } },
+-		]);
+-
+-		await inibase.delete(a3, { country: "US" });
+-
+-		const rest = await inibase.get<Row>(p3, undefined, { perPage: -1 });
+-		assert.deepEqual(rest?.map((r) => r.title), ["X3"]);
+-	});
++	await t.test(
++		"cascade delete follows criteria matching multiple rows",
++		async () => {
++			const a3 = "authors_casc3";
++			const p3 = "posts_casc3";
++			await inibase.createTable(a3, [
++				{ key: "name", type: "string" },
++				{ key: "country", type: "string" },
++			]);
++			await inibase.createTable(p3, [
++				{ key: "title", type: "string" },
++				{ key: "author", type: "table", table: a3 },
++			]);
++			const a = (await inibase.post(
++				a3,
++				{ name: "PA", country: "US" },
++				undefined,
++				true,
++			)) as Row;
++			const b = (await inibase.post(
++				a3,
++				{ name: "PB", country: "US" },
++				undefined,
++				true,
++			)) as Row;
++			const c = (await inibase.post(
++				a3,
++				{ name: "PC", country: "FR" },
++				undefined,
++				true,
++			)) as Row;
++			await inibase.post(p3, [
++				{ title: "X1", author: { id: a.id } },
++				{ title: "X2", author: { id: b.id } },
++				{ title: "X3", author: { id: c.id } },
++			]);
++
++			await inibase.delete(a3, { country: "US" });
++
++			const rest = await inibase.get<Row>(p3, undefined, { perPage: -1 });
++			assert.deepEqual(
++				rest?.map((r) => r.title),
++				["X3"],
++			);
++		},
++	);
+ 
+ 	await t.test("delete all rows cascades to related rows", async () => {
+ 		const a4 = "authors_casc4";
+@@ -1011,7 +1136,12 @@ await test("Advanced relationships (criteria, joins, cascade)", async (t) => {
+ 			{ key: "title", type: "string" },
+ 			{ key: "author", type: "table", table: a4 },
+ 		]);
+-		const row = (await inibase.post(a4, { name: "A4" }, undefined, true)) as Row;
++		const row = (await inibase.post(
++			a4,
++			{ name: "A4" },
++			undefined,
++			true,
++		)) as Row;
+ 		await inibase.post(p4, { title: "Y1", author: { id: row.id } });
+ 
+ 		assert.equal(await inibase.delete(a4), true);
+@@ -1098,12 +1228,18 @@ await test("Deeply nested array/object trees", async (t) => {
+ 
+ 	await t.test("dot-path criteria reaches array children", async () => {
+ 		const rows = await inibase.get<Row>(tableName, { "root.title": "Tree B" });
+-		assert.deepEqual(rows?.map((r) => r.root.title), ["Tree B"]);
++		assert.deepEqual(
++			rows?.map((r) => r.root.title),
++			["Tree B"],
++		);
+ 
+ 		const leaves = await inibase.get<Row>(tableName, {
+ 			"root.branches.label": "b2",
+ 		});
+-		assert.deepEqual(leaves?.map((r) => r.root.title), ["Tree A"]);
++		assert.deepEqual(
++			leaves?.map((r) => r.root.title),
++			["Tree A"],
++		);
+ 	});
+ 
+ 	await t.test("update merges into nested tree data", async () => {
+@@ -1116,7 +1252,9 @@ await test("Deeply nested array/object trees", async (t) => {
+ 			},
+ 			{ "root.title": "Tree A" },
+ 		);
+-		const rows = (await inibase.get<Row>(tableName, { "root.title": "Tree A" })) as Row[];
++		const rows = (await inibase.get<Row>(tableName, {
++			"root.title": "Tree A",
++		})) as Row[];
+ 		assert.equal(rows[0].root.branches[0].label, "b1");
+ 		assert.equal(rows[0].root.branches[0].leaves[0].size, 999);
+ 	});
+@@ -1211,16 +1349,11 @@ await test("Public validateData API", async (t) => {
+ 	});
+ 
+ 	await t.test("rejects missing required fields", () => {
++		assert.throws(() => inibase.validateData({ name: "x" }, schema), {
++			name: "FIELD_REQUIRED",
++		});
+ 		assert.throws(
+-			() => inibase.validateData({ name: "x" }, schema),
+-			{ name: "FIELD_REQUIRED" },
+-		);
+-		assert.throws(
+-			() =>
+-				inibase.validateData(
+-					{ name: "x", count: 1, meta: {} },
+-					schema,
+-				),
++			() => inibase.validateData({ name: "x", count: 1, meta: {} }, schema),
+ 			{ name: "FIELD_REQUIRED" },
+ 		);
+ 	});
+@@ -1231,19 +1364,13 @@ await test("Public validateData API", async (t) => {
+ 			{ name: "INVALID_TYPE" },
+ 		);
+ 		assert.throws(
+-			() =>
+-				inibase.validateData(
+-					{ name: "x", meta: { deep: 456 } },
+-					schema,
+-				),
++			() => inibase.validateData({ name: "x", meta: { deep: 456 } }, schema),
+ 			{ name: "INVALID_TYPE" },
+ 		);
+ 	});
+ 
+ 	await t.test("skipRequiredField bypasses required checks", () => {
+-		assert.doesNotThrow(() =>
+-			inibase.validateData({ count: 1 }, schema, true),
+-		);
++		assert.doesNotThrow(() => inibase.validateData({ count: 1 }, schema, true));
+ 	});
+ });
+ 
+@@ -1259,7 +1386,9 @@ await test("Error handling coverage", async (t) => {
+ 	});
+ 
+ 	await t.test("TABLE_NOT_EXISTS for getTable on a missing table", async () => {
+-		await assert.rejects(inibase.getTable("ghost"), { name: "TABLE_NOT_EXISTS" });
++		await assert.rejects(inibase.getTable("ghost"), {
++			name: "TABLE_NOT_EXISTS",
++		});
+ 	});
+ 
+ 	await t.test("NO_SCHEMA for a table created without a schema", async () => {
+@@ -1285,7 +1414,13 @@ await test("Error handling coverage", async (t) => {
+ 		await inibase.createTable("bulk_invalid", [{ key: "v", type: "string" }]);
+ 		await seed("bulk_invalid", [{ v: "a" }, { v: "b" }]);
+ 		await assert.rejects(
+-			inibase.put("bulk_invalid", [{ v: "x" }, { v: "y" }], undefined, undefined, true),
++			inibase.put(
++				"bulk_invalid",
++				[{ v: "x" }, { v: "y" }],
++				undefined,
++				undefined,
++				true,
++			),
+ 			{ name: "INVALID_ID" },
+ 		);
+ 	});
+@@ -1325,13 +1460,19 @@ await test("Bulk operations (post/put/delete with arrays)", async (t) => {
+ 		const rows = (await inibase.get<Row>(tableName, undefined, {
+ 			perPage: -1,
+ 		})) as Row[];
+-		assert.deepEqual(rows.map((r) => r.name), ["x1b", "x2", "x3", "x4b"]);
++		assert.deepEqual(
++			rows.map((r) => r.name),
++			["x1b", "x2", "x3", "x4b"],
++		);
+ 	});
+ 
+ 	await t.test("bulk delete by id array", async () => {
+ 		await inibase.delete(tableName, [ids[1], ids[2]]);
+ 		const rows = await inibase.get<Row>(tableName, undefined, { perPage: -1 });
+-		assert.deepEqual(rows?.map((r) => r.name), ["x1b", "x4b"]);
++		assert.deepEqual(
++			rows?.map((r) => r.name),
++			["x1b", "x4b"],
++		);
+ 	});
+ 
+ 	await t.test("put with no where updates every record", async () => {
+@@ -1342,16 +1483,24 @@ await test("Bulk operations (post/put/delete with arrays)", async (t) => {
+ 		assert.ok(rows.every((r) => r.v === 99));
+ 	});
+ 
+-	await t.test("put with a criteria that matches nothing is a no-op", async () => {
+-		await inibase.put(tableName, { name: "zzz" }, { name: "missing" });
+-		const rows = (await inibase.get<Row>(tableName, undefined, {
+-			perPage: -1,
+-		})) as Row[];
+-		assert.ok(rows.every((r) => r.name !== "zzz"));
+-	});
++	await t.test(
++		"put with a criteria that matches nothing is a no-op",
++		async () => {
++			await inibase.put(tableName, { name: "zzz" }, { name: "missing" });
++			const rows = (await inibase.get<Row>(tableName, undefined, {
++				perPage: -1,
++			})) as Row[];
++			assert.ok(rows.every((r) => r.name !== "zzz"));
++		},
++	);
+ 
+ 	await t.test("row metadata timestamps are maintained", async () => {
+-		const single = (await inibase.post(tableName, { name: "fresh", v: 1 }, undefined, true)) as Row;
++		const single = (await inibase.post(
++			tableName,
++			{ name: "fresh", v: 1 },
++			undefined,
++			true,
++		)) as Row;
+ 		assert.ok(typeof single.createdAt === "number");
+ 		assert.equal(single.updatedAt, undefined);
+ 
+@@ -1405,26 +1554,41 @@ await test("Decode resilience for `{`/`[`-leading string values", async (t) => {
+ 		},
+ 	]);
+ 
+-	await t.test("whole-table listing does not throw and returns every row", async () => {
+-		const rows = await inibase.get<Row>(pagesTable, undefined, { perPage: -1 });
+-		assert.equal(rows?.length, 3);
+-		assert.deepEqual(rows?.map((r) => r.slug), ["/", "form", "users/[id]"]);
+-	});
++	await t.test(
++		"whole-table listing does not throw and returns every row",
++		async () => {
++			const rows = await inibase.get<Row>(pagesTable, undefined, {
++				perPage: -1,
++			});
++			assert.equal(rows?.length, 3);
++			assert.deepEqual(
++				rows?.map((r) => r.slug),
++				["/", "form", "users/[id]"],
++			);
++		},
++	);
++
++	await t.test(
++		"unparseable brace/bracket values read back verbatim",
++		async () => {
++			const rows = await inibase.get<Row>(
++				pagesTable,
++				{ slug: "users/[id]" },
++				{ perPage: -1 },
++			);
++			const row = rows?.[0];
++			assert.ok(row);
++			assert.equal(row.seo?.title, "{{item.username}} Page");
++			assert.equal(row.seo?.description, "[a,{b]");
++		},
++	);
+ 
+-	await t.test("unparseable brace/bracket values read back verbatim", async () => {
++	await t.test("criteria lookups for unaffected rows still work", async () => {
+ 		const rows = await inibase.get<Row>(
+ 			pagesTable,
+-			{ slug: "users/[id]" },
++			{ slug: "/" },
+ 			{ perPage: -1 },
+ 		);
+-		const row = rows?.[0];
+-		assert.ok(row);
+-		assert.equal(row.seo?.title, "{{item.username}} Page");
+-		assert.equal(row.seo?.description, "[a,{b]");
+-	});
+-
+-	await t.test("criteria lookups for unaffected rows still work", async () => {
+-		const rows = await inibase.get<Row>(pagesTable, { slug: "/" }, { perPage: -1 });
+ 		assert.equal(rows?.[0]?.seo?.title, "HomePage");
+ 	});
+ 
+@@ -1432,7 +1596,11 @@ await test("Decode resilience for `{`/`[`-leading string values", async (t) => {
+ 		const all = await inibase.get<Row>(pagesTable, undefined, { perPage: -1 });
+ 		const bad = all?.find((r) => r.slug === "users/[id]");
+ 		assert.ok(bad);
+-		const byId = await inibase.get<Row>(pagesTable, { id: bad.id }, { perPage: -1 });
++		const byId = await inibase.get<Row>(
++			pagesTable,
++			{ id: bad.id },
++			{ perPage: -1 },
++		);
+ 		assert.equal(byId?.[0]?.seo?.title, "{{item.username}} Page");
+ 	});
+ 
+@@ -1448,58 +1616,71 @@ await test("Decode resilience for `{`/`[`-leading string values", async (t) => {
+ 		assert.equal(updated?.[0]?.seo?.description, "updated desc");
+ 	});
+ 
+-	await t.test("delete of the row with a bracket-bearing slug works", async () => {
+-		const rows = await inibase.get<Row>(pagesTable, undefined, { perPage: -1 });
+-		const bad = rows?.find((r) => r.slug === "users/[id]");
+-		assert.ok(bad);
+-		await inibase.delete(pagesTable, [bad.id]);
+-		const remaining = await inibase.get<Row>(pagesTable, undefined, { perPage: -1 });
+-		assert.equal(remaining?.length, 2);
+-	});
+-
+-	await t.test("number/boolean/json/array columns decode normally with a bad string", async () => {
+-		const typed = "typed_decode";
+-		await inibase.createTable(typed, [
+-			{ key: "label", type: "string" },
+-			{ key: "count", type: "number" },
+-			{ key: "active", type: "boolean" },
+-			{ key: "tags", type: "array", children: "string" },
+-			{ key: "config", type: "json" },
+-		]);
+-		await seed(typed, [
+-			{
+-				label: "{{item.username}}",
+-				count: 42,
+-				active: true,
+-				tags: ["a", "b"],
+-				config: { table: "users", segments: {} },
+-			},
+-			// Brace tokens inside an array of strings round-trip untouched.
+-			{ label: "plain", tags: ["plain", "{{item.username}}"] },
+-		]);
+-		const rows = await inibase.get<Row>(typed, undefined, { perPage: -1 });
+-		assert.ok(rows);
+-		assert.equal(rows.length, 2);
+-		const r0 = rows[0];
+-		assert.equal(r0.label, "{{item.username}}");
+-		assert.equal(r0.count, 42);
+-		assert.equal(r0.active, true);
+-		assert.deepEqual(r0.tags, ["a", "b"]);
+-		assert.deepEqual(r0.config, { table: "users", segments: {} });
+-		assert.equal(rows[1].label, "plain");
+-		assert.deepEqual(rows[1].tags, ["plain", "{{item.username}}"]);
+-	});
++	await t.test(
++		"delete of the row with a bracket-bearing slug works",
++		async () => {
++			const rows = await inibase.get<Row>(pagesTable, undefined, {
++				perPage: -1,
++			});
++			const bad = rows?.find((r) => r.slug === "users/[id]");
++			assert.ok(bad);
++			await inibase.delete(pagesTable, [bad.id]);
++			const remaining = await inibase.get<Row>(pagesTable, undefined, {
++				perPage: -1,
++			});
++			assert.equal(remaining?.length, 2);
++		},
++	);
++
++	await t.test(
++		"number/boolean/json/array columns decode normally with a bad string",
++		async () => {
++			const typed = "typed_decode";
++			await inibase.createTable(typed, [
++				{ key: "label", type: "string" },
++				{ key: "count", type: "number" },
++				{ key: "active", type: "boolean" },
++				{ key: "tags", type: "array", children: "string" },
++				{ key: "config", type: "json" },
++			]);
++			await seed(typed, [
++				{
++					label: "{{item.username}}",
++					count: 42,
++					active: true,
++					tags: ["a", "b"],
++					config: { table: "users", segments: {} },
++				},
++				// Brace tokens inside an array of strings round-trip untouched.
++				{ label: "plain", tags: ["plain", "{{item.username}}"] },
++			]);
++			const rows = await inibase.get<Row>(typed, undefined, { perPage: -1 });
++			assert.ok(rows);
++			assert.equal(rows.length, 2);
++			const r0 = rows[0];
++			assert.equal(r0.label, "{{item.username}}");
++			assert.equal(r0.count, 42);
++			assert.equal(r0.active, true);
++			assert.deepEqual(r0.tags, ["a", "b"]);
++			assert.deepEqual(r0.config, { table: "users", segments: {} });
++			assert.equal(rows[1].label, "plain");
++			assert.deepEqual(rows[1].tags, ["plain", "{{item.username}}"]);
++		},
++	);
+ 
+ 	// Boundary: a bracket-leading string that IS valid Inison (autoCorrect can
+ 	// close it) does not fail parsing, so no fallback applies — it decodes as
+ 	// an array. Only genuinely unparseable values fall back to the string.
+-	await t.test("a parseable `[`-leading string decodes as an array", async () => {
+-		const tbl = "bracket_boundary";
+-		await inibase.createTable(tbl, [{ key: "text", type: "string" }]);
+-		await seed(tbl, [{ text: "[not a real array" }]);
+-		const rows = await inibase.get<Row>(tbl, undefined, { perPage: -1 });
+-		assert.deepEqual(rows?.[0]?.text, ["not a real array"]);
+-	});
++	await t.test(
++		"a parseable `[`-leading string decodes as an array",
++		async () => {
++			const tbl = "bracket_boundary";
++			await inibase.createTable(tbl, [{ key: "text", type: "string" }]);
++			await seed(tbl, [{ text: "[not a real array" }]);
++			const rows = await inibase.get<Row>(tbl, undefined, { perPage: -1 });
++			assert.deepEqual(rows?.[0]?.text, ["not a real array"]);
++		},
++	);
+ });
+ 
+ await test("Computed fields (v1 id-only expression language)", async (t) => {
+@@ -1508,229 +1689,301 @@ await test("Computed fields (v1 id-only expression language)", async (t) => {
+ 	/** Round-trips the persisted schema (ids + computed specs). */
+ 	const userSchema = async (tableName: string) => {
+ 		const full = (await inibase.getTableSchema(tableName)) as Schema;
+-		return full.filter((f) => !["id", "createdAt", "updatedAt"].includes(f.key));
++		return full.filter(
++			(f) => !["id", "createdAt", "updatedAt"].includes(f.key),
++		);
+ 	};
+ 
+-	await t.test("order totals: quantity x unit price and linked product price", async () => {
+-		await inibase.createTable("c_product", [
+-			{ key: "name", type: "string" },
+-			{ key: "price", type: "number" },
+-		]);
+-		await inibase.createTable("c_orders", [
+-			{ key: "customer", type: "string" },
+-			{ key: "status", type: "number" },
+-			{
+-				key: "items",
+-				type: "array",
+-				children: [
+-					{ key: "product", type: "table", table: "c_product" },
+-					{ key: "quantity", type: "number" },
+-					{ key: "unitPriceCents", type: "number" },
+-				],
+-			},
+-			// ids: customer=1, status=2, items=3, product=4, quantity=5,
+-			// unitPriceCents=6, totalCents=7, totalCentsLive=8
+-			{ key: "totalCents", type: "number", computed: "sum(5 * 6)" },
+-			{ key: "totalCentsLive", type: "number", computed: "sum(5 * 4.2)" },
+-		]);
+-
+-		const p1 = (await inibase.post("c_product", { name: "widget", price: 199 }, undefined, true)) as Row;
+-		const p2 = (await inibase.post("c_product", { name: "gadget", price: 449 }, undefined, true)) as Row;
+-		const order = (await inibase.post(
+-			"c_orders",
+-			{
+-				customer: "acme",
+-				status: 1,
++	await t.test(
++		"order totals: quantity x unit price and linked product price",
++		async () => {
++			await inibase.createTable("c_product", [
++				{ key: "name", type: "string" },
++				{ key: "price", type: "number" },
++			]);
++			await inibase.createTable("c_orders", [
++				{ key: "customer", type: "string" },
++				{ key: "status", type: "number" },
++				{
++					key: "items",
++					type: "array",
++					children: [
++						{ key: "product", type: "table", table: "c_product" },
++						{ key: "quantity", type: "number" },
++						{ key: "unitPriceCents", type: "number" },
++					],
++				},
++				// ids: customer=1, status=2, items=3, product=4, quantity=5,
++				// unitPriceCents=6, totalCents=7, totalCentsLive=8
++				{ key: "totalCents", type: "number", computed: "sum(5 * 6)" },
++				{ key: "totalCentsLive", type: "number", computed: "sum(5 * 4.2)" },
++			]);
++
++			const p1 = (await inibase.post(
++				"c_product",
++				{ name: "widget", price: 199 },
++				undefined,
++				true,
++			)) as Row;
++			const p2 = (await inibase.post(
++				"c_product",
++				{ name: "gadget", price: 449 },
++				undefined,
++				true,
++			)) as Row;
++			const order = (await inibase.post(
++				"c_orders",
++				{
++					customer: "acme",
++					status: 1,
++					items: [
++						{ product: p1.id, quantity: 2, unitPriceCents: 250 },
++						{ product: p2.id, quantity: 1, unitPriceCents: 100 },
++					],
++				},
++				undefined,
++				true,
++			)) as Row;
++			assert.equal(order.totalCents, 600, "2*250 + 1*100");
++			assert.equal(order.totalCentsLive, 847, "2*199 + 1*449 via link hop");
++
++			// stored computed columns survive a reload-as-read
++			const fetched = (await inibase.get("c_orders", order.id)) as Row;
++			assert.equal(fetched.totalCents, 600);
++			assert.equal(fetched.totalCentsLive, 847);
++		},
++	);
++
++	await t.test(
++		"batched link hops: bulk posts share one read per distinct linked row",
++		async () => {
++			await inibase.createTable("b_product", [
++				{ key: "name", type: "string" },
++				{ key: "price", type: "number" },
++			]);
++			await inibase.createTable("b_orders", [
++				{ key: "customer", type: "string" },
++				{
++					key: "items",
++					type: "array",
++					children: [
++						{ key: "product", type: "table", table: "b_product" },
++						{ key: "quantity", type: "number" },
++					],
++				},
++				// ids: customer=1, items=2, product=3, quantity=4, total=5
++				{ key: "total", type: "number", computed: "sum(4 * 3.2)" },
++			]);
++
++			// Shared catalog: every order below links back to these few rows, so
++			// the batched reader resolves each (table, column, id) once instead of
++			// once per line item.
++			const catalog = (await seed("b_product", [
++				{ name: "p1", price: 100 },
++				{ name: "p2", price: 300 },
++				{ name: "p3", price: 500 },
++			])) as Row[];
++			const orderCount = 24;
++			const row = (i: number) => ({
++				customer: `c${i}`,
+ 				items: [
+-					{ product: p1.id, quantity: 2, unitPriceCents: 250 },
+-					{ product: p2.id, quantity: 1, unitPriceCents: 100 },
+-				],
+-			},
+-			undefined,
+-			true,
+-		)) as Row;
+-		assert.equal(order.totalCents, 600, "2*250 + 1*100");
+-		assert.equal(order.totalCentsLive, 847, "2*199 + 1*449 via link hop");
+-
+-		// stored computed columns survive a reload-as-read
+-		const fetched = (await inibase.get("c_orders", order.id)) as Row;
+-		assert.equal(fetched.totalCents, 600);
+-		assert.equal(fetched.totalCentsLive, 847);
+-	});
+-
+-	await t.test("batched link hops: bulk posts share one read per distinct linked row", async () => {
+-		await inibase.createTable("b_product", [
+-			{ key: "name", type: "string" },
+-			{ key: "price", type: "number" },
+-		]);
+-		await inibase.createTable("b_orders", [
+-			{ key: "customer", type: "string" },
+-			{
+-				key: "items",
+-				type: "array",
+-				children: [
+-					{ key: "product", type: "table", table: "b_product" },
+-					{ key: "quantity", type: "number" },
++					{ product: catalog[i % 3].id, quantity: 2 },
++					{ product: catalog[(i + 1) % 3].id, quantity: 1 },
+ 				],
+-			},
+-			// ids: customer=1, items=2, product=3, quantity=4, total=5
+-			{ key: "total", type: "number", computed: "sum(4 * 3.2)" },
+-		]);
+-
+-		// Shared catalog: every order below links back to these few rows, so
+-		// the batched reader resolves each (table, column, id) once instead of
+-		// once per line item.
+-		const catalog = (await seed("b_product", [
+-			{ name: "p1", price: 100 },
+-			{ name: "p2", price: 300 },
+-			{ name: "p3", price: 500 },
+-		])) as Row[];
+-		const orderCount = 24;
+-		const row = (i: number) => ({
+-			customer: `c${i}`,
+-			items: [
+-				{ product: catalog[i % 3].id, quantity: 2 },
+-				{ product: catalog[(i + 1) % 3].id, quantity: 1 },
+-			],
+-		});
+-		const posted = (await inibase.post(
+-			"b_orders",
+-			[...Array(orderCount)].map((_, i) => row(i)),
+-			{ perPage: -1 },
+-			true,
+-		)) as Row[];
+-		assert.equal(posted.length, orderCount);
+-		for (let i = 0; i < posted.length; i++) {
+-			const a = catalog[i % 3].price as number;
+-			const b = catalog[(i + 1) % 3].price as number;
+-			assert.equal(posted[i].total, 2 * a + 1 * b, `row ${i} total via shared links`);
+-		}
+-
+-		// Where-less put recomputes the whole batch through the same path.
+-		await inibase.put("b_orders", {
+-			items: [{ product: catalog[2].id, quantity: 5 }],
+-		});
+-		const reread = (await inibase.get<Row>("b_orders", undefined, {
+-			perPage: -1,
+-		})) as Row[];
+-		assert.equal(reread.length, orderCount);
+-		for (const r of reread)
+-			assert.equal(r.total, 5 * (catalog[2].price as number), "recomputed after where-less put");
+-
+-		// A dangling link anywhere in a bulk post still rejects evaluation.
+-		await assert.rejects(
+-			() =>
+-				inibase.post(
+-					"b_orders",
+-					[
+-						{ customer: "ok", items: [{ product: catalog[0].id, quantity: 1 }] },
+-						{ customer: "dangling", items: [{ product: 42424242, quantity: 1 }] },
+-					],
+-					{ perPage: -1 },
+-					true,
++			});
++			const posted = (await inibase.post(
++				"b_orders",
++				[...Array(orderCount)].map((_, i) => row(i)),
++				{ perPage: -1 },
++				true,
++			)) as Row[];
++			assert.equal(posted.length, orderCount);
++			for (let i = 0; i < posted.length; i++) {
++				const a = catalog[i % 3].price as number;
++				const b = catalog[(i + 1) % 3].price as number;
++				assert.equal(
++					posted[i].total,
++					2 * a + 1 * b,
++					`row ${i} total via shared links`,
++				);
++			}
++
++			// Where-less put recomputes the whole batch through the same path.
++			await inibase.put("b_orders", {
++				items: [{ product: catalog[2].id, quantity: 5 }],
++			});
++			const reread = (await inibase.get<Row>("b_orders", undefined, {
++				perPage: -1,
++			})) as Row[];
++			assert.equal(reread.length, orderCount);
++			for (const r of reread)
++				assert.equal(
++					r.total,
++					5 * (catalog[2].price as number),
++					"recomputed after where-less put",
++				);
++
++			// A dangling link anywhere in a bulk post still rejects evaluation.
++			await assert.rejects(
++				() =>
++					inibase.post(
++						"b_orders",
++						[
++							{
++								customer: "ok",
++								items: [{ product: catalog[0].id, quantity: 1 }],
++							},
++							{
++								customer: "dangling",
++								items: [{ product: 42424242, quantity: 1 }],
++							},
++						],
++						{ perPage: -1 },
++						true,
++					),
++				(error: unknown) =>
++					(error as Error).name === "COMPUTED_FIELD_DANGLING_LINK",
++			);
++		},
++	);
++
++	await t.test(
++		"rename-proof: renaming a linked key does not retarget expressions",
++		async () => {
++			// rename c_product.price -> priceCents through a schema round-trip
++			const productSchema = await userSchema("c_product");
++			await inibase.updateTable(
++				"c_product",
++				productSchema.map((f) =>
++					f.key === "price" ? { ...f, key: "priceCents" } : f,
+ 				),
+-			(error: unknown) =>
+-				(error as Error).name === "COMPUTED_FIELD_DANGLING_LINK",
+-		);
+-	});
+-
+-	await t.test("rename-proof: renaming a linked key does not retarget expressions", async () => {
+-		// rename c_product.price -> priceCents through a schema round-trip
+-		const productSchema = await userSchema("c_product");
+-		await inibase.updateTable(
+-			"c_product",
+-			productSchema.map((f) => (f.key === "price" ? { ...f, key: "priceCents" } : f)),
+-		);
+-		const order = (await inibase.get<Row>("c_orders")) as Row[];
+-		assert.deepEqual(
+-			order.map((r) => [r.totalCents, r.totalCentsLive]),
+-			[[600, 847]],
+-			"totals must be unchanged after the rename",
+-		);
+-	});
+-
+-	await t.test("bulk post computes every row; put recomputes by id, criteria and no-where", async () => {
+-		await inibase.createTable("c_put", [
+-			{ key: "qty", type: "number" },
+-			{ key: "price", type: "number" },
+-			{ key: "total", type: "number", computed: "1 * 2" },
+-		]);
+-		await seed("c_put", [
+-			{ qty: 1, price: 10 },
+-			{ qty: 2, price: 20 },
+-			{ qty: 3, price: 30 },
+-		]);
+-		const totals = (rows: Row[] | null) => rows?.map((r) => r.total);
+-		assert.deepEqual(totals(await inibase.get<Row>("c_put")), [10, 40, 90]);
+-
+-		const first = (await inibase.get<Row>("c_put")) as Row[];
+-		await inibase.put("c_put", { qty: 7 }, first[0].id);
+-		assert.deepEqual(totals(await inibase.get<Row>("c_put")), [70, 40, 90]);
+-
+-		await inibase.put("c_put", { qty: 9 }, { price: 30 });
+-		assert.deepEqual(totals(await inibase.get<Row>("c_put")), [70, 40, 270]);
+-
+-		await inibase.put("c_put", { price: 100 });
+-		assert.deepEqual(totals(await inibase.get<Row>("c_put")), [700, 200, 900]);
+-	});
+-
+-	await t.test("helpers: empty array sums to 0; avg over none is an arithmetic error", async () => {
+-		// ids: name=1, items=2, n=3, total=4, avg=5, count=6 — helpers reference
+-		// the child id (n=3), never the container (items=2)
+-		await inibase.createTable("c_agg", [
+-			{ key: "name", type: "string" },
+-			{ key: "items", type: "array", children: [{ key: "n", type: "number" }] },
+-			{ key: "total", type: "number", computed: "sum(3)" },
+-			{ key: "count", type: "number", computed: "count(3)" },
+-		]);
+-		const withItems = (await inibase.post(
+-			"c_agg",
+-			{ name: "x", items: [{ n: 4 }, { n: 6 }] },
+-			undefined,
+-			true,
+-		)) as Row;
+-		assert.equal(withItems.total, 10);
+-		assert.equal(withItems.count, 2);
+-
+-		const empty = (await inibase.post("c_agg", { name: "y" }, undefined, true)) as Row;
+-		assert.equal(empty.total, 0, "sum over no values is 0");
+-		assert.equal(empty.count, 0);
+-
+-		// avg over no values is an arithmetic error
+-		await inibase.createTable("c_agg2", [
+-			{ key: "items", type: "array", children: [{ key: "n", type: "number" }] },
+-			{ key: "avg", type: "number", computed: "avg(2)" },
+-		]);
+-		await assert.rejects(
+-			() => inibase.post("c_agg2", { items: [] }),
+-			(error: unknown) =>
+-				(error as Error).name === "COMPUTED_FIELD_ARITHMETIC",
+-		);
+-	});
+-
+-	await t.test("links: missing link value stores empty, dangling link throws", async () => {
+-		await inibase.createTable("c_owner", [{ key: "name", type: "string" }]);
+-		await inibase.createTable("c_ledger", [
+-			{ key: "owner", type: "table", table: "c_owner" },
+-			{ key: "ownerName", type: "string", computed: "1.1" },
+-		]);
+-
+-		// no owner: a single bare path may evaluate to null (stored empty)
+-		const bare = (await inibase.post("c_ledger", {}, undefined, true)) as Row;
+-		assert.ok(!("ownerName" in bare), "missing link value stays empty");
+-
+-		// dangling link: owner points at a row that does not exist
+-		await assert.rejects(
+-			() => inibase.post("c_ledger", { owner: 99999 }),
+-			(error: unknown) =>
+-				(error as Error).name === "COMPUTED_FIELD_DANGLING_LINK",
+-		);
++			);
++			const order = (await inibase.get<Row>("c_orders")) as Row[];
++			assert.deepEqual(
++				order.map((r) => [r.totalCents, r.totalCentsLive]),
++				[[600, 847]],
++				"totals must be unchanged after the rename",
++			);
++		},
++	);
++
++	await t.test(
++		"bulk post computes every row; put recomputes by id, criteria and no-where",
++		async () => {
++			await inibase.createTable("c_put", [
++				{ key: "qty", type: "number" },
++				{ key: "price", type: "number" },
++				{ key: "total", type: "number", computed: "1 * 2" },
++			]);
++			await seed("c_put", [
++				{ qty: 1, price: 10 },
++				{ qty: 2, price: 20 },
++				{ qty: 3, price: 30 },
++			]);
++			const totals = (rows: Row[] | null) => rows?.map((r) => r.total);
++			assert.deepEqual(totals(await inibase.get<Row>("c_put")), [10, 40, 90]);
++
++			const first = (await inibase.get<Row>("c_put")) as Row[];
++			await inibase.put("c_put", { qty: 7 }, first[0].id);
++			assert.deepEqual(totals(await inibase.get<Row>("c_put")), [70, 40, 90]);
++
++			await inibase.put("c_put", { qty: 9 }, { price: 30 });
++			assert.deepEqual(totals(await inibase.get<Row>("c_put")), [70, 40, 270]);
++
++			await inibase.put("c_put", { price: 100 });
++			assert.deepEqual(
++				totals(await inibase.get<Row>("c_put")),
++				[700, 200, 900],
++			);
++		},
++	);
++
++	await t.test(
++		"helpers: empty array sums to 0; avg over none is an arithmetic error",
++		async () => {
++			// ids: name=1, items=2, n=3, total=4, avg=5, count=6 — helpers reference
++			// the child id (n=3), never the container (items=2)
++			await inibase.createTable("c_agg", [
++				{ key: "name", type: "string" },
++				{
++					key: "items",
++					type: "array",
++					children: [{ key: "n", type: "number" }],
++				},
++				{ key: "total", type: "number", computed: "sum(3)" },
++				{ key: "count", type: "number", computed: "count(3)" },
++			]);
++			const withItems = (await inibase.post(
++				"c_agg",
++				{ name: "x", items: [{ n: 4 }, { n: 6 }] },
++				undefined,
++				true,
++			)) as Row;
++			assert.equal(withItems.total, 10);
++			assert.equal(withItems.count, 2);
++
++			const empty = (await inibase.post(
++				"c_agg",
++				{ name: "y" },
++				undefined,
++				true,
++			)) as Row;
++			assert.equal(empty.total, 0, "sum over no values is 0");
++			assert.equal(empty.count, 0);
++
++			// avg over no values is an arithmetic error
++			await inibase.createTable("c_agg2", [
++				{
++					key: "items",
++					type: "array",
++					children: [{ key: "n", type: "number" }],
++				},
++				{ key: "avg", type: "number", computed: "avg(2)" },
++			]);
++			await assert.rejects(
++				() => inibase.post("c_agg2", { items: [] }),
++				(error: unknown) =>
++					(error as Error).name === "COMPUTED_FIELD_ARITHMETIC",
++			);
++		},
++	);
++
++	await t.test(
++		"links: missing link value stores empty, dangling link throws",
++		async () => {
++			await inibase.createTable("c_owner", [{ key: "name", type: "string" }]);
++			await inibase.createTable("c_ledger", [
++				{ key: "owner", type: "table", table: "c_owner" },
++				{ key: "ownerName", type: "string", computed: "1.1" },
++			]);
++
++			// no owner: a single bare path may evaluate to null (stored empty)
++			const bare = (await inibase.post("c_ledger", {}, undefined, true)) as Row;
++			assert.ok(!("ownerName" in bare), "missing link value stays empty");
++
++			// dangling link: owner points at a row that does not exist
++			await assert.rejects(
++				() => inibase.post("c_ledger", { owner: 99999 }),
++				(error: unknown) =>
++					(error as Error).name === "COMPUTED_FIELD_DANGLING_LINK",
++			);
+ 
+-		// a live link resolves through the target table
+-		const owner = (await inibase.post("c_owner", { name: "aca" }, undefined, true)) as Row;
+-		const linked = (await inibase.post("c_ledger", { owner: { id: owner.id } }, undefined, true)) as Row;
+-		assert.equal(linked.ownerName, "aca");
+-	});
++			// a live link resolves through the target table
++			const owner = (await inibase.post(
++				"c_owner",
++				{ name: "aca" },
++				undefined,
++				true,
++			)) as Row;
++			const linked = (await inibase.post(
++				"c_ledger",
++				{ owner: { id: owner.id } },
++				undefined,
++				true,
++			)) as Row;
++			assert.equal(linked.ownerName, "aca");
++		},
++	);
+ 
+ 	await t.test("computed values cannot be set directly", async () => {
+ 		await inibase.createTable("c_set", [
+@@ -1749,67 +2002,87 @@ await test("Computed fields (v1 id-only expression language)", async (t) => {
+ 		);
+ 	});
+ 
+-	await t.test("DDL rejects syntax, conflicts, cycles and invalid targets", async () => {
+-		// syntax
+-		await assert.rejects(
+-			() => inibase.createTable("c_e", [{ key: "x", type: "number", computed: "1 ++" }]),
+-			(error: unknown) => (error as Error).name === "COMPUTED_FIELD_SYNTAX",
+-		);
+-		// conflicts with required / unique / regex
+-		for (const extra of [{ required: true }, { unique: true }, { regex: "^1$" }])
++	await t.test(
++		"DDL rejects syntax, conflicts, cycles and invalid targets",
++		async () => {
++			// syntax
+ 			await assert.rejects(
+ 				() =>
+-					inibase.createTable("c_e2", [
+-						{ key: "x", type: "number", computed: "1", ...extra },
++					inibase.createTable("c_e", [
++						{ key: "x", type: "number", computed: "1 ++" },
+ 					]),
+-				(error: unknown) => (error as Error).name === "COMPUTED_FIELD_CONFLICT",
++				(error: unknown) => (error as Error).name === "COMPUTED_FIELD_SYNTAX",
+ 			);
+-		// cycles (mutual and self)
+-		await assert.rejects(
+-			() =>
+-				inibase.createTable("c_cyc", [
+-					{ key: "a", type: "number", computed: "2" },
+-					{ key: "b", type: "number", computed: "1" },
+-				]),
+-			(error: unknown) => (error as Error).name === "COMPUTED_FIELD_CYCLE",
+-		);
+-		await assert.rejects(
+-			() =>
+-				inibase.createTable("c_cyc2", [
+-					{ key: "a", type: "number", computed: "1" },
+-				]),
+-			(error: unknown) => (error as Error).name === "COMPUTED_FIELD_CYCLE",
+-		);
+-		// a bare path into array content is only legal inside a helper
+-		await assert.rejects(
+-			() =>
+-				inibase.createTable("c_arr", [
+-					{ key: "items", type: "array", children: [{ key: "n", type: "number" }] },
+-					{ key: "first", type: "number", computed: "2" },
+-				]),
+-			(error: unknown) => (error as Error).name === "COMPUTED_FIELD_INVALID_TARGET",
+-		);
+-	});
++			// conflicts with required / unique / regex
++			for (const extra of [
++				{ required: true },
++				{ unique: true },
++				{ regex: "^1$" },
++			])
++				await assert.rejects(
++					() =>
++						inibase.createTable("c_e2", [
++							{ key: "x", type: "number", computed: "1", ...extra },
++						]),
++					(error: unknown) =>
++						(error as Error).name === "COMPUTED_FIELD_CONFLICT",
++				);
++			// cycles (mutual and self)
++			await assert.rejects(
++				() =>
++					inibase.createTable("c_cyc", [
++						{ key: "a", type: "number", computed: "2" },
++						{ key: "b", type: "number", computed: "1" },
++					]),
++				(error: unknown) => (error as Error).name === "COMPUTED_FIELD_CYCLE",
++			);
++			await assert.rejects(
++				() =>
++					inibase.createTable("c_cyc2", [
++						{ key: "a", type: "number", computed: "1" },
++					]),
++				(error: unknown) => (error as Error).name === "COMPUTED_FIELD_CYCLE",
++			);
++			// a bare path into array content is only legal inside a helper
++			await assert.rejects(
++				() =>
++					inibase.createTable("c_arr", [
++						{
++							key: "items",
++							type: "array",
++							children: [{ key: "n", type: "number" }],
++						},
++						{ key: "first", type: "number", computed: "2" },
++					]),
++				(error: unknown) =>
++					(error as Error).name === "COMPUTED_FIELD_INVALID_TARGET",
++			);
++		},
++	);
+ 
+-	await t.test("integer-only: a decimal written as a path fails at compile time", async () => {
+-		// `2.5` is a link hop (field 2, then field 5 of its target), never the
+-		// decimal 2.5, so this schema cannot express fractional literals.
+-		await assert.rejects(
+-			() =>
+-				inibase.createTable("c_dec", [
+-					{ key: "a", type: "number" },
+-					{ key: "b", type: "number" },
+-					{ key: "ratio", type: "number", computed: "2.5" },
+-				]),
+-			(error: unknown) => (error as Error).name === "COMPUTED_FIELD_INVALID_LINK",
+-		);
+-		// fractional results are reachable by division instead
+-		await inibase.createTable("c_div", [
+-			{ key: "z", type: "number", computed: "314 / 100" },
+-		]);
+-		const row = (await inibase.post("c_div", {}, undefined, true)) as Row;
+-		assert.equal(row.z, 3.14);
+-	});
++	await t.test(
++		"integer-only: a decimal written as a path fails at compile time",
++		async () => {
++			// `2.5` is a link hop (field 2, then field 5 of its target), never the
++			// decimal 2.5, so this schema cannot express fractional literals.
++			await assert.rejects(
++				() =>
++					inibase.createTable("c_dec", [
++						{ key: "a", type: "number" },
++						{ key: "b", type: "number" },
++						{ key: "ratio", type: "number", computed: "2.5" },
++					]),
++				(error: unknown) =>
++					(error as Error).name === "COMPUTED_FIELD_INVALID_LINK",
++			);
++			// fractional results are reachable by division instead
++			await inibase.createTable("c_div", [
++				{ key: "z", type: "number", computed: "314 / 100" },
++			]);
++			const row = (await inibase.post("c_div", {}, undefined, true)) as Row;
++			assert.equal(row.z, 3.14);
++		},
++	);
+ 
+ 	await t.test("precedence, parens and modulo", async () => {
+ 		// ids: base=1, p1=2, p2=3, p3=4, x=5, y=6, w=7, d=8
+@@ -1823,7 +2096,12 @@ await test("Computed fields (v1 id-only expression language)", async (t) => {
+ 			{ key: "w", type: "number", computed: "97 % 10" },
+ 			{ key: "d", type: "number", computed: "2 / 3" },
+ 		]);
+-		const row = (await inibase.post("c_prec", { base: 1, p1: 2, p2: 3, p3: 4 }, undefined, true)) as Row;
++		const row = (await inibase.post(
++			"c_prec",
++			{ base: 1, p1: 2, p2: 3, p3: 4 },
++			undefined,
++			true,
++		)) as Row;
+ 		assert.equal(row.x, 10, "p1*p2 + p3");
+ 		assert.equal(row.y, 14, "p1*(p2+p3)");
+ 		assert.equal(row.w, 7);
+@@ -1835,39 +2113,59 @@ await test("Computed fields (v1 id-only expression language)", async (t) => {
+ 		);
+ 	});
+ 
+-	await t.test("updateTable backfills added and changed computed fields", async () => {
+-		const tableName = "c_backfill";
+-		await inibase.createTable(tableName, [
+-			{ key: "qty", type: "number" },
+-			{ key: "price", type: "number" },
+-		]);
+-		await seed(tableName, [
+-			{ qty: 2, price: 3 },
+-			{ qty: 5, price: 4 },
+-		]);
+-
+-		// add a computed field: existing rows get backfilled values
+-		await inibase.updateTable(tableName, [
+-			...(await userSchema(tableName)),
+-			{ key: "total", type: "number", computed: "1 * 2" },
+-		]);
+-		let rows = (await inibase.get<Row>(tableName)) as Row[];
+-		assert.deepEqual(rows.map((r) => r.total), [6, 20], "backfilled totals");
+-		assert.deepEqual(rows.map((r) => r.qty), [2, 5], "existing columns survive");
++	await t.test(
++		"updateTable backfills added and changed computed fields",
++		async () => {
++			const tableName = "c_backfill";
++			await inibase.createTable(tableName, [
++				{ key: "qty", type: "number" },
++				{ key: "price", type: "number" },
++			]);
++			await seed(tableName, [
++				{ qty: 2, price: 3 },
++				{ qty: 5, price: 4 },
++			]);
++
++			// add a computed field: existing rows get backfilled values
++			await inibase.updateTable(tableName, [
++				...(await userSchema(tableName)),
++				{ key: "total", type: "number", computed: "1 * 2" },
++			]);
++			let rows = (await inibase.get<Row>(tableName)) as Row[];
++			assert.deepEqual(
++				rows.map((r) => r.total),
++				[6, 20],
++				"backfilled totals",
++			);
++			assert.deepEqual(
++				rows.map((r) => r.qty),
++				[2, 5],
++				"existing columns survive",
++			);
+ 
+-		// changing the expression re-backfills
+-		await inibase.updateTable(tableName, [
+-			...(await userSchema(tableName)).map((f) =>
+-				f.key === "total" ? { ...f, computed: "1 * 2 * 2" } : f,
+-			),
+-		]);
+-		rows = (await inibase.get<Row>(tableName)) as Row[];
+-		assert.deepEqual(rows.map((r) => r.total), [18, 80], "re-backfilled totals");
++			// changing the expression re-backfills
++			await inibase.updateTable(tableName, [
++				...(await userSchema(tableName)).map((f) =>
++					f.key === "total" ? { ...f, computed: "1 * 2 * 2" } : f,
++				),
++			]);
++			rows = (await inibase.get<Row>(tableName)) as Row[];
++			assert.deepEqual(
++				rows.map((r) => r.total),
++				[18, 80],
++				"re-backfilled totals",
++			);
+ 
+-		// posts after the migration keep computing
+-		const posted = (await inibase.post(tableName, { qty: 10, price: 2 }, undefined, true)) as Row;
+-		assert.equal(posted.total, 40);
+-	});
++			// posts after the migration keep computing
++			const posted = (await inibase.post(
++				tableName,
++				{ qty: 10, price: 2 },
++				undefined,
++				true,
++			)) as Row;
++			assert.equal(posted.total, 40);
++		},
++	);
+ 
+ 	await t.test("a failed backfill leaves the schema untouched", async () => {
+ 		const tableName = "c_fail";
+diff --git a/tests/inibase.test.ts b/tests/inibase.test.ts
+index 2534140..85a3613 100644
+--- a/tests/inibase.test.ts
++++ b/tests/inibase.test.ts
+@@ -1167,8 +1167,8 @@ await test("Name Validation (Security)", async (t) => {
+ 			{ key: "المنتجات", type: "string" },
+ 		]);
+ 		await inibase.post(tableName, {
+-			"العميل": { "اسم المنشأة": "شركة النور" },
+-			"المنتجات": "أ",
++			العميل: { "اسم المنشأة": "شركة النور" },
++			المنتجات: "أ",
+ 		});
+ 		const data = await inibase.get(tableName, undefined, {
+ 			columns: ["العميل.اسم المنشأة"],
+@@ -1182,31 +1182,34 @@ await test("Name Validation (Security)", async (t) => {
+ 		);
+ 	});
+ 
+-	await t.test("Reject Malicious Column Names via sum/avg/max/min", async () => {
+-		const tableName = "secure_table";
+-		for (const column of maliciousNames) {
+-			await assert.rejects(
+-				inibase.sum(tableName, column),
+-				{ name: "INVALID_NAME" },
+-				`Should reject column '${column}' in sum`,
+-			);
+-			await assert.rejects(
+-				inibase.avg(tableName, column),
+-				{ name: "INVALID_NAME" },
+-				`Should reject column '${column}' in avg`,
+-			);
+-			await assert.rejects(
+-				inibase.max(tableName, column),
+-				{ name: "INVALID_NAME" },
+-				`Should reject column '${column}' in max`,
+-			);
+-			await assert.rejects(
+-				inibase.min(tableName, column),
+-				{ name: "INVALID_NAME" },
+-				`Should reject column '${column}' in min`,
+-			);
+-		}
+-	});
++	await t.test(
++		"Reject Malicious Column Names via sum/avg/max/min",
++		async () => {
++			const tableName = "secure_table";
++			for (const column of maliciousNames) {
++				await assert.rejects(
++					inibase.sum(tableName, column),
++					{ name: "INVALID_NAME" },
++					`Should reject column '${column}' in sum`,
++				);
++				await assert.rejects(
++					inibase.avg(tableName, column),
++					{ name: "INVALID_NAME" },
++					`Should reject column '${column}' in avg`,
++				);
++				await assert.rejects(
++					inibase.max(tableName, column),
++					{ name: "INVALID_NAME" },
++					`Should reject column '${column}' in max`,
++				);
++				await assert.rejects(
++					inibase.min(tableName, column),
++					{ name: "INVALID_NAME" },
++					`Should reject column '${column}' in min`,
++				);
++			}
++		},
++	);
+ 
+ 	await t.test("Accept Valid Names End to End", async () => {
+ 		removeDatabase();
+diff --git a/tests/lock.holder.child.ts b/tests/lock.holder.child.ts
+index f26eead..1b24acc 100644
+--- a/tests/lock.holder.child.ts
++++ b/tests/lock.holder.child.ts
+@@ -13,4 +13,4 @@ process.send?.("locked");
+ await new Promise((resolve) => setTimeout(resolve, holdMs));
+ await File.unlock(tableTmpPath);
+ process.send?.("released");
+-process.exit(0);
+\ No newline at end of file
++process.exit(0);
+diff --git a/tests/none.mode.child.ts b/tests/none.mode.child.ts
+index c89abd8..00bc63f 100644
+--- a/tests/none.mode.child.ts
++++ b/tests/none.mode.child.ts
+@@ -12,7 +12,10 @@ await db.createTable("items", schema, { decodeID: true });
+ 
+ await db.post("items", { name: "a" });
+ await db.post("items", { name: "b" });
+-const rows1 = (await db.get("items", undefined, { page: 1, perPage: -1 })) as any[];
++const rows1 = (await db.get("items", undefined, {
++	page: 1,
++	perPage: -1,
++})) as any[];
+ 
+ await db.begin();
+ await db.post("items", { name: "c" }); // rolled back
+@@ -20,7 +23,10 @@ await db.rollback();
+ await db.begin(["items"]);
+ await db.post("items", { name: "d" });
+ await db.commit();
+-const rows2 = (await db.get("items", undefined, { page: 1, perPage: -1 })) as any[];
++const rows2 = (await db.get("items", undefined, {
++	page: 1,
++	perPage: -1,
++})) as any[];
+ 
+ const report = {
+ 	count1: rows1.length,
+@@ -29,4 +35,4 @@ const report = {
+ 	names2: rows2.map((row) => row.name as string).sort(),
+ };
+ process.send?.(JSON.stringify(report));
+-process.exit(0);
+\ No newline at end of file
++process.exit(0);
+diff --git a/tests/sum.nested.test.ts b/tests/sum.nested.test.ts
+index 888bf84..1c1c7f7 100644
+--- a/tests/sum.nested.test.ts
++++ b/tests/sum.nested.test.ts
+@@ -91,7 +91,9 @@ await test("nested sum basics", async (t) => {
+ 
+ 	await t.test("all elements when no where is given", async () => {
+ 		assert.equal(
+-			await inibase.sum("orders", "items.quantity", undefined, { nested: true }),
++			await inibase.sum("orders", "items.quantity", undefined, {
++				nested: true,
++			}),
+ 			11,
+ 		);
+ 		assert.equal(
+@@ -100,98 +102,170 @@ await test("nested sum basics", async (t) => {
+ 		);
+ 	});
+ 
+-	await t.test("bare element predicate resolves under the array root", async () => {
+-		assert.equal(
+-			await inibase.sum("orders", "items.quantity", { product: alpha.id }, { nested: true }),
+-			10,
+-		);
+-		assert.equal(
+-			await inibase.sum("orders", "items.quantity", { product: beta.id }, { nested: true }),
+-			1,
+-		);
+-	});
++	await t.test(
++		"bare element predicate resolves under the array root",
++		async () => {
++			assert.equal(
++				await inibase.sum(
++					"orders",
++					"items.quantity",
++					{ product: alpha.id },
++					{ nested: true },
++				),
++				10,
++			);
++			assert.equal(
++				await inibase.sum(
++					"orders",
++					"items.quantity",
++					{ product: beta.id },
++					{ nested: true },
++				),
++				1,
++			);
++		},
++	);
+ 
+-	await t.test("mixed-product order is not over-counted (element-wise zip)", async () => {
+-		// O1 holds both Alpha and Beta; Alpha may only count its own element.
+-		assert.equal(
+-			await inibase.sum("orders", "items.quantity", { product: alpha.id }, { nested: true }),
+-			10, // 2 (O1) + 3 (O2) + 5 (O3) — never the whole O1 row
+-		);
+-	});
++	await t.test(
++		"mixed-product order is not over-counted (element-wise zip)",
++		async () => {
++			// O1 holds both Alpha and Beta; Alpha may only count its own element.
++			assert.equal(
++				await inibase.sum(
++					"orders",
++					"items.quantity",
++					{ product: alpha.id },
++					{ nested: true },
++				),
++				10, // 2 (O1) + 3 (O2) + 5 (O3) — never the whole O1 row
++			);
++		},
++	);
+ 
+ 	await t.test("dotted element predicate is equivalent", async () => {
+ 		assert.equal(
+-			await inibase.sum("orders", "items.quantity", { "items.product": alpha.id }, { nested: true }),
++			await inibase.sum(
++				"orders",
++				"items.quantity",
++				{ "items.product": alpha.id },
++				{ nested: true },
++			),
+ 			10,
+ 		);
+ 	});
+ 
+ 	await t.test("no matching elements returns 0", async () => {
+ 		assert.equal(
+-			await inibase.sum("orders", "items.quantity", { product: "ghost" }, { nested: true }),
++			await inibase.sum(
++				"orders",
++				"items.quantity",
++				{ product: "ghost" },
++				{ nested: true },
++			),
+ 			0,
+ 		);
+ 	});
+ 
+ 	await t.test("operator predicates are supported", async () => {
+ 		assert.equal(
+-			await inibase.sum("orders", "items.quantity", { quantity: ">1" }, { nested: true }),
++			await inibase.sum(
++				"orders",
++				"items.quantity",
++				{ quantity: ">1" },
++				{ nested: true },
++			),
+ 			10, // 2 + 3 + 5
+ 		);
+ 		assert.equal(
+-			await inibase.sum("orders", "items.quantity", { quantity: "<3" }, { nested: true }),
++			await inibase.sum(
++				"orders",
++				"items.quantity",
++				{ quantity: "<3" },
++				{ nested: true },
++			),
+ 			3, // 2 + 1
+ 		);
+ 	});
+ 
+ 	await t.test("multiple element predicates AND together", async () => {
+ 		assert.equal(
+-			await inibase.sum("orders", "items.revenue", { product: alpha.id, quantity: ">2" }, { nested: true }),
++			await inibase.sum(
++				"orders",
++				"items.revenue",
++				{ product: alpha.id, quantity: ">2" },
++				{ nested: true },
++			),
+ 			800, // 300 + 500
+ 		);
+ 	});
+ 
+ 	await t.test("row-level key narrows contributing rows", async () => {
+ 		assert.equal(
+-			await inibase.sum("orders", "items.quantity", { status: "shipped" }, { nested: true }),
++			await inibase.sum(
++				"orders",
++				"items.quantity",
++				{ status: "shipped" },
++				{ nested: true },
++			),
+ 			6, // 2 + 1 + 3
+ 		);
+ 	});
+ 
+ 	await t.test("row filter combines with element predicate", async () => {
+ 		assert.equal(
+-			await inibase.sum("orders", "items.quantity", { product: alpha.id, status: "shipped" }, { nested: true }),
++			await inibase.sum(
++				"orders",
++				"items.quantity",
++				{ product: alpha.id, status: "shipped" },
++				{ nested: true },
++			),
+ 			5, // 2 + 3
+ 		);
+ 	});
+ 
+ 	await t.test("and/or groups pass through as row-level filters", async () => {
+ 		assert.equal(
+-			await inibase.sum("orders", "items.quantity", { product: alpha.id, and: { status: "shipped" } }, { nested: true }),
++			await inibase.sum(
++				"orders",
++				"items.quantity",
++				{ product: alpha.id, and: { status: "shipped" } },
++				{ nested: true },
++			),
+ 			5,
+ 		);
+ 		assert.equal(
+-			await inibase.sum("orders", "items.quantity", { or: { status: "shipped" } }, { nested: true }),
++			await inibase.sum(
++				"orders",
++				"items.quantity",
++				{ or: { status: "shipped" } },
++				{ nested: true },
++			),
+ 			6,
+ 		);
+ 	});
+ 
+-	await t.test("multi-column sum shares one predicate and returns a record", async () => {
+-		const got = (await inibase.sum(
+-			"orders",
+-			["items.quantity", "items.revenue"],
+-			{ product: alpha.id },
+-			{ nested: true },
+-		)) as Record<string, number>;
+-		assert.deepEqual(got, { "items.quantity": 10, "items.revenue": 1000 });
+-	});
++	await t.test(
++		"multi-column sum shares one predicate and returns a record",
++		async () => {
++			const got = (await inibase.sum(
++				"orders",
++				["items.quantity", "items.revenue"],
++				{ product: alpha.id },
++				{ nested: true },
++			)) as Record<string, number>;
++			assert.deepEqual(got, { "items.quantity": 10, "items.revenue": 1000 });
++		},
++	);
+ 
+-	await t.test("flat sum is unchanged and still rejects dotted columns", async () => {
+-		assert.equal(await inibase.sum("products", "price"), 350);
+-		await assert.rejects(inibase.sum("orders", "items.quantity"), {
+-			name: "INVALID_NAME",
+-		});
+-	});
++	await t.test(
++		"flat sum is unchanged and still rejects dotted columns",
++		async () => {
++			assert.equal(await inibase.sum("products", "price"), 350);
++			await assert.rejects(inibase.sum("orders", "items.quantity"), {
++				name: "INVALID_NAME",
++			});
++		},
++	);
+ });
+ 
+ await test("nested sum validation errors", async (t) => {
+@@ -209,7 +283,10 @@ await test("nested sum validation errors", async (t) => {
+ 		);
+ 
+ 	await t.test("column must be a dotted child path", async () => {
+-		await bad(["orders", "quantity", undefined, { nested: true }], "single segment");
++		await bad(
++			["orders", "quantity", undefined, { nested: true }],
++			"single segment",
++		);
+ 	});
+ 
+ 	await t.test("only one nesting level is supported", async () => {
+@@ -217,31 +294,67 @@ await test("nested sum validation errors", async (t) => {
+ 	});
+ 
+ 	await t.test("columns must share the same array root", async () => {
+-		await bad(["orders", ["items.quantity", "zzz.quantity"], undefined, { nested: true }], "two roots");
++		await bad(
++			[
++				"orders",
++				["items.quantity", "zzz.quantity"],
++				undefined,
++				{ nested: true },
++			],
++			"two roots",
++		);
+ 	});
+ 
+ 	await t.test("root must be an array-of-objects column", async () => {
+-		await bad(["products", "name.x", undefined, { nested: true }], "scalar root");
+-	});
+-
+-	await t.test("summing a non-numeric child yields 0 (consistent with flat sum)", async () => {
+-		assert.equal(
+-			await inibase.sum("orders", "items.product", undefined, { nested: true }),
+-			0,
++		await bad(
++			["products", "name.x", undefined, { nested: true }],
++			"scalar root",
+ 		);
+ 	});
+ 
+-	await t.test("criteria key matching neither root nor a row column", async () => {
+-		await bad(["orders", "items.quantity", { ghost: 1 }, { nested: true }], "unknown key");
+-	});
++	await t.test(
++		"summing a non-numeric child yields 0 (consistent with flat sum)",
++		async () => {
++			assert.equal(
++				await inibase.sum("orders", "items.product", undefined, {
++					nested: true,
++				}),
++				0,
++			);
++		},
++	);
++
++	await t.test(
++		"criteria key matching neither root nor a row column",
++		async () => {
++			await bad(
++				["orders", "items.quantity", { ghost: 1 }, { nested: true }],
++				"unknown key",
++			);
++		},
++	);
+ 
+ 	await t.test("object-valued element predicates are rejected", async () => {
+-		await bad(["orders", "items.quantity", { product: { name: "Alpha" } }, { nested: true }], "object value");
++		await bad(
++			[
++				"orders",
++				"items.quantity",
++				{ product: { name: "Alpha" } },
++				{ nested: true },
++			],
++			"object value",
++		);
+ 	});
+ 
+-	await t.test("[] / ![] operators are rejected on element predicates", async () => {
+-		await bad(["orders", "items.quantity", { quantity: "[]1,2" }, { nested: true }], "array op");
+-	});
++	await t.test(
++		"[] / ![] operators are rejected on element predicates",
++		async () => {
++			await bad(
++				["orders", "items.quantity", { quantity: "[]1,2" }, { nested: true }],
++				"array op",
++			);
++		},
++	);
+ });
+ 
+ await test("nested sum TABLE_EMPTY guard", async (t) => {
+@@ -249,9 +362,12 @@ await test("nested sum TABLE_EMPTY guard", async (t) => {
+ 	await inibase.createTable("empty", [
+ 		{ key: "items", type: "array", children: [{ key: "qty", type: "number" }] },
+ 	]);
+-	await assert.rejects(inibase.sum("empty", "items.qty", undefined, { nested: true }), {
+-		name: "TABLE_EMPTY",
+-	});
++	await assert.rejects(
++		inibase.sum("empty", "items.qty", undefined, { nested: true }),
++		{
++			name: "TABLE_EMPTY",
++		},
++	);
+ });
+ 
+ await test("aggregates with where are not capped at the default page size", async (t) => {
+@@ -274,8 +390,12 @@ await test("aggregates with where are not capped at the default page size", asyn
+ 
+ 	await t.test("avg / max / min count every matching row too", async () => {
+ 		assert.equal(await inibase.avg(tableName, "val", { grp: "a" }), 15.5);
+-		assert.deepEqual(await inibase.max(tableName, "val", { grp: "a" }), { val: 30 });
+-		assert.deepEqual(await inibase.min(tableName, "val", { grp: "a" }), { val: 1 });
++		assert.deepEqual(await inibase.max(tableName, "val", { grp: "a" }), {
++			val: 30,
++		});
++		assert.deepEqual(await inibase.min(tableName, "val", { grp: "a" }), {
++			val: 1,
++		});
+ 	});
+ });
+ 
+@@ -310,11 +430,21 @@ await test("nested sum works with decodeID referenced tables", async (t) => {
+ 
+ 	// decodeID products have numeric ids (1 and 2 here).
+ 	assert.equal(
+-		await inibase.sum("orders2", "items.quantity", { product: 1 }, { nested: true }),
++		await inibase.sum(
++			"orders2",
++			"items.quantity",
++			{ product: 1 },
++			{ nested: true },
++		),
+ 		5,
+ 	);
+ 	assert.equal(
+-		await inibase.sum("orders2", "items.quantity", { product: 2 }, { nested: true }),
++		await inibase.sum(
++			"orders2",
++			"items.quantity",
++			{ product: 2 },
++			{ nested: true },
++		),
+ 		2,
+ 	);
+ });
+@@ -324,7 +454,9 @@ await test("nested sum works on compressed and cache-enabled tables", async (t)
+ 
+ 	const tableName = "ordersC";
+ 	await inibase.createTable("products", productsSchema);
+-	const [alpha] = (await seed("products", [{ name: "Alpha", price: 100 }])) as Row[];
++	const [alpha] = (await seed("products", [
++		{ name: "Alpha", price: 100 },
++	])) as Row[];
+ 	await inibase.createTable(
+ 		tableName,
+ 		[
+@@ -347,7 +479,12 @@ await test("nested sum works on compressed and cache-enabled tables", async (t)
+ 
+ 	await t.test("compressed table reads", async () => {
+ 		assert.equal(
+-			await inibase.sum(tableName, "items.quantity", { product: alpha.id }, { nested: true }),
++			await inibase.sum(
++				tableName,
++				"items.quantity",
++				{ product: alpha.id },
++				{ nested: true },
++			),
+ 			10,
+ 		);
+ 	});
+@@ -356,7 +493,12 @@ await test("nested sum works on compressed and cache-enabled tables", async (t)
+ 		await inibase.updateTable(tableName, undefined, { cache: true });
+ 		await seed(tableName, [{ items: [{ product: alpha.id, quantity: 1 }] }]);
+ 		assert.equal(
+-			await inibase.sum(tableName, "items.quantity", { product: alpha.id }, { nested: true }),
++			await inibase.sum(
++				tableName,
++				"items.quantity",
++				{ product: alpha.id },
++				{ nested: true },
++			),
+ 			11,
+ 		);
+ 	});
+@@ -394,13 +536,23 @@ await test("nested sum: element predicates ignore row-level column of the same n
+ 
+ 	// Bare `product` resolves to items.product (element predicate), not the row link.
+ 	assert.equal(
+-		await inibase.sum("special", "items.quantity", { product: alpha.id }, { nested: true }),
++		await inibase.sum(
++			"special",
++			"items.quantity",
++			{ product: alpha.id },
++			{ nested: true },
++		),
+ 		2,
+ 	);
+ 	assert.equal(
+-		await inibase.sum("special", "items.quantity", { product: beta.id }, { nested: true }),
++		await inibase.sum(
++			"special",
++			"items.quantity",
++			{ product: beta.id },
++			{ nested: true },
++		),
+ 		8,
+ 	);
+ });
+ 
+-await test("Cleanup nested sum database", removeDatabase);
+\ No newline at end of file
++await test("Cleanup nested sum database", removeDatabase);
+diff --git a/tests/transaction.test.ts b/tests/transaction.test.ts
+index 180828f..f243ee2 100644
+--- a/tests/transaction.test.ts
++++ b/tests/transaction.test.ts
+@@ -4,18 +4,12 @@
+ import { strict as assert } from "node:assert";
+ import { fork } from "node:child_process";
+ import { existsSync, mkdirSync, rmSync } from "node:fs";
+-import {
+-	mkdir,
+-	readdir,
+-	rename,
+-	writeFile,
+-} from "node:fs/promises";
++import { mkdir, readdir, rename, writeFile } from "node:fs/promises";
+ import { basename, join } from "node:path";
+ import { test } from "node:test";
+ import { fileURLToPath } from "node:url";
+-
+-import Inibase from "../src/index.js";
+ import * as File from "../src/file.js";
++import Inibase from "../src/index.js";
+ 
+ const dbPath = "test-db-transaction";
+ 
+@@ -80,7 +74,10 @@ async function craftUncommittedDbJournal() {
+ 			tmp,
+ 			existed: true,
+ 		});
+-		await rename(live as string, join(backupDir, `0-ta-${basename(live as string)}`));
++		await rename(
++			live as string,
++			join(backupDir, `0-ta-${basename(live as string)}`),
++		);
+ 		await rename(tmp as string, live as string);
+ 	}
+ 
+@@ -193,8 +190,16 @@ await test("begin + commit makes multi-table writes atomic", async () => {
+ 		await db.post("post_t", { title: "hello", author: { id: 1 } });
+ 
+ 		// No read-your-writes yet: reads inside the txn observe committed state.
+-		assert.equal((await readAll("user_t")).length, 0, "staged write not visible");
+-		assert.equal((await readAll("post_t")).length, 0, "staged write not visible");
++		assert.equal(
++			(await readAll("user_t")).length,
++			0,
++			"staged write not visible",
++		);
++		assert.equal(
++			(await readAll("post_t")).length,
++			0,
++			"staged write not visible",
++		);
+ 	} finally {
+ 		await db.commit();
+ 	}
+@@ -297,11 +302,7 @@ await test("rollback keeps rows a cascade would have deleted", async () => {
+ 	}
+ 
+ 	assert.equal((await readAll("user_t")).length, 2, "ada still present");
+-	assert.equal(
+-		(await readAll("post_t")).length,
+-		1,
+-		"her post is untouched",
+-	);
++	assert.equal((await readAll("post_t")).length, 1, "her post is untouched");
+ });
+ 
+ await test("crash mid multi-table commit rolls every table back", async () => {
+@@ -433,7 +434,12 @@ await test("computed link-hops reject transaction-staged dependency tables", asy
+ 	const ownerId = await db.post("user_t", { name: "wallet-owner" });
+ 
+ 	// outside a transaction the link resolves
+-	const outside = (await db.post("wallet_t", { owner: { id: ownerId } }, undefined, true)) as any;
++	const outside = (await db.post(
++		"wallet_t",
++		{ owner: { id: ownerId } },
++		undefined,
++		true,
++	)) as any;
+ 	assert.equal(outside.ownerName, "wallet-owner");
+ 
+ 	// a transaction touching only wallet_t may still link-read user_t
+@@ -457,7 +463,11 @@ await test("computed link-hops reject transaction-staged dependency tables", asy
+ 	} finally {
+ 		await db.rollback();
+ 	}
+-	assert.equal((await readAll("wallet_t")).length, 2, "rejected write staged nothing");
++	assert.equal(
++		(await readAll("wallet_t")).length,
++		2,
++		"rejected write staged nothing",
++	);
+ });
+ 
+ await test("transaction() commits on resolve and returns the callback value", async () => {
+@@ -470,7 +480,11 @@ await test("transaction() commits on resolve and returns the callback value", as
+ 		return "committed-value";
+ 	});
+ 
+-	assert.equal(returned, "committed-value", "callback return value is forwarded");
++	assert.equal(
++		returned,
++		"committed-value",
++		"callback return value is forwarded",
++	);
+ 	const users = await readAll("user_t");
+ 	const posts = await readAll("post_t");
+ 	assert.equal(users.length, usersBefore + 1, "both staged writes published");
+@@ -511,14 +525,22 @@ await test("transaction() rolls back on throw and releases the database lock", a
+ 		before,
+ 		"no partial writes survived the rollback",
+ 	);
+-	assert.deepEqual(await dbTmpLeftovers(), [], "journal removed by the rollback");
++	assert.deepEqual(
++		await dbTmpLeftovers(),
++		[],
++		"journal removed by the rollback",
++	);
+ 
+ 	// The whole point: the database lock must be free again. A leaked lock
+ 	// would make this write block for the full INIBASE_LOCK_WAIT_TIMEOUT_MS.
+ 	await db.transaction(async (tx) => {
+ 		await tx.post("user_t", { name: "after-failure" });
+ 	});
+-	assert.equal((await readAll("user_t")).length, before + 1, "lock was released");
++	assert.equal(
++		(await readAll("user_t")).length,
++		before + 1,
++		"lock was released",
++	);
+ });
+ 
+ await test("transaction() rolls back when a staged write itself fails", async () => {
+@@ -547,7 +569,8 @@ await test("transaction() rolls back when a staged write itself fails", async ()
+ await test("transaction() rejects misuse", async () => {
+ 	// no callback at all
+ 	await assert.rejects(
+-		() => (db as never as { transaction: () => Promise<unknown> }).transaction(),
++		() =>
++			(db as never as { transaction: () => Promise<unknown> }).transaction(),
+ 		(error: any) => error?.name === "INVALID_PARAMETERS",
+ 	);
+ 	// nested transaction — begin() refuses a second open transaction
+@@ -597,11 +620,15 @@ await test("commit() refreshes row counts and drops derived caches", async () =>
+ 	await db.transaction(async (tx) => {
+ 		await tx.post("cached_t", { name: "second" });
+ 	});
+-	assert.equal(db.totalItems.get("cached_t-*"), 2, "row count refreshed on commit");
++	assert.equal(
++		db.totalItems.get("cached_t-*"),
++		2,
++		"row count refreshed on commit",
++	);
+ 
+ 	await db.delete("cached_t");
+ });
+ 
+ await test("Cleanup transaction database", async () => {
+ 	removeDatabase();
+-});
+\ No newline at end of file
++});
+diff --git a/tests/writer.child.ts b/tests/writer.child.ts
+index 0706668..4796e2d 100644
+--- a/tests/writer.child.ts
++++ b/tests/writer.child.ts
+@@ -49,4 +49,4 @@ for (let i = 0; i < rows; i++) {
+ }
+ 
+ process.send?.("done");
+-process.exit(0);
+\ No newline at end of file
++process.exit(0);
+diff --git a/tsconfig.json b/tsconfig.json
+index 9202724..e38a949 100644
+--- a/tsconfig.json
++++ b/tsconfig.json
+@@ -21,10 +21,5 @@
+ 		"noUnusedParameters": true
+ 	},
+ 	"include": ["src", "tests"],
+-	"exclude": [
+-		"dist",
+-		"node_modules",
+-		"tests",
+-		"**/*.test.ts"
+-	]
++	"exclude": ["dist", "node_modules", "tests", "**/*.test.ts"]
+ }
