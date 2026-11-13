@@ -1303,4 +1303,49 @@ await test("Name Validation (Security)", async (t) => {
 	});
 });
 
+await test("Order mockups retain their product positions after an update", async () => {
+	initializeDatabase();
+	await inibase.createTable("mockups", [{ key: "name", type: "string" }]);
+	await inibase.createTable("orders", [
+		{
+			key: "products",
+			type: "array",
+			children: [
+				{ key: "name", type: "string" },
+				{ key: "mockup", type: "array", children: ["table"], table: "mockups" },
+			],
+		},
+	]);
+	const [second, third] = (await inibase.post(
+		"mockups",
+		[{ name: "second" }, { name: "third" }],
+		undefined,
+		true,
+	))!;
+	await inibase.post("orders", {
+		products: [{ name: "first" }, { name: "second" }, { name: "third" }],
+	});
+	await inibase.put("orders", {
+		products: [
+			{ name: "first", mockup: [] },
+			{ name: "second", mockup: [second.id] },
+			{ name: "third", mockup: [third.id] },
+		],
+	});
+	const [order] = (await inibase.get("orders"))!;
+	assert.deepEqual(
+		order.products.map(
+			({ name, mockup }: { name: string; mockup?: { id: string }[] }) => [
+				name,
+				mockup?.[0]?.id,
+			],
+		),
+		[
+			["first", undefined],
+			["second", second.id],
+			["third", third.id],
+		],
+	);
+});
+
 await test("Cleanup Database", removeDatabase);

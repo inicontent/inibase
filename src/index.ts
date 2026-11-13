@@ -3868,7 +3868,9 @@ export default class Inibase {
 													: items?.find(({ id }) => singleContent === id)
 												: singleContent,
 										)
-										.filter((item) => item !== undefined)
+										.flatMap((item) =>
+											item !== undefined ? [item] : prefix ? [null] : [],
+										)
 								: items?.find(({ id }) => lineContent === id);
 						for (const [lineNumber, lineContent] of searchableIDs.entries()) {
 							if (!lineContent) continue;
