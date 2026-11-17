@@ -229,6 +229,22 @@ await test("Single Unique Field", async (t) => {
 			"Should reject duplicate unique field value",
 		);
 	});
+
+	await t.test("Update a row by its unique field", async () => {
+		await inibase.put(
+			tableName,
+			{ email: "test@example.com" },
+			{ email: "test@example.com" },
+		);
+		await assert.rejects(
+			inibase.put(
+				tableName,
+				{ email: "unique@example.com" },
+				{ email: "test@example.com" },
+			),
+			/FIELD_UNIQUE/,
+		);
+	});
 });
 
 await test("Group of Unique Fields", async (t) => {

@@ -6370,9 +6370,14 @@ export default class Inibase {
 			// resolved by the next branch.
 			_whereIsLinesNumbers
 		) {
-			// "where" in this case, is the line(s) number(s) and not id(s)
-
-			await this.validateTableData(tableName, clonedData, true);
+			// The selector has already resolved to physical lines under the writer lock.
+			const lines = Array.isArray(where) ? where : [where];
+			// Only a single target can be excluded safely for a shared payload.
+			if (lines.length === 1) {
+				await this.validateTableData(tableName, clonedData, true, lines, false);
+			} else {
+				await this.validateTableData(tableName, clonedData, true);
+			}
 
 			clonedData = this.formatData<TData>(
 				clonedData,
@@ -6393,7 +6398,7 @@ export default class Inibase {
 					),
 				).map(([path, content]) => [
 					path,
-					(Array.isArray(where) ? where : [where]).reduce(
+					lines.reduce(
 						(obj: Record<number, any>, lineNum, index) => {
 							obj[lineNum] = Array.isArray(content) ? content[index] : content;
 							return obj;
